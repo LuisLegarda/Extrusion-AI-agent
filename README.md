@@ -1,5 +1,7 @@
 # Monitor de extrusión: Fase 1
 
+**⬇ Descargar para Windows:** [ExtrusionMonitor-windows.zip](https://github.com/LuisLegarda/Extrusion-AI-agent/releases/download/dev/ExtrusionMonitor-windows.zip). Se actualiza con cada push. Descomprime el archivo y ejecuta `ExtrusionMonitor\ExtrusionMonitor.exe`. Para probar sin la máquina, usa `ExtrusionMonitor.exe --demo`.
+
 Aplicación de escritorio para Windows que corre en el HMI principal de una línea de extrusión.
 Verifica parámetros, recetas y ajustes, y muestra las tendencias del proceso en tiempo real.
 

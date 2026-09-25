@@ -9,6 +9,8 @@ on:
 jobs:
   build:
     runs-on: windows-latest
+    permissions:
+      contents: write  # publicar el ejecutable como release "dev"
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -26,7 +28,19 @@ jobs:
         run: |
           pyinstaller --noconfirm --distpath dist --workpath build packaging/extrusion_monitor.spec
           New-Item -ItemType Directory -Force dist/ExtrusionMonitor/data | Out-Null
+          Compress-Archive -Path dist/ExtrusionMonitor -DestinationPath ExtrusionMonitor-windows.zip
       - uses: actions/upload-artifact@v4
         with:
           name: ExtrusionMonitor-windows
           path: dist/ExtrusionMonitor
+      - name: Publicar descarga (release "dev")
+        if: github.event_name == 'push'
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          notes="Versión de prueba generada automáticamente desde la rama ${GITHUB_REF_NAME} (commit ${GITHUB_SHA::7}).
+          Descomprime el .zip y ejecuta ExtrusionMonitor\\ExtrusionMonitor.exe (usa --demo para el HMI simulado)."
+          gh release delete dev --yes --cleanup-tag || true
+          gh release create dev ExtrusionMonitor-windows.zip --prerelease --target "$GITHUB_SHA" \
+            --title "Monitor de extrusión (versión de prueba)" --notes "$notes"
