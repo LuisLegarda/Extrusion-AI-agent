@@ -23,3 +23,10 @@ def test_parse_explicit_comma_thousands():
 def test_fix_missing_decimal():
     assert parse_number("1855", var(decimals=1, fix_missing_decimal=True)) == pytest.approx(185.5)
     assert parse_number("185.5", var(decimals=1, fix_missing_decimal=True)) == pytest.approx(185.5)
+
+
+def test_ambiguous_char_inside_number_rejected():
+    from extrusion_monitor.acquisition import _AMBIGUOUS
+    assert _AMBIGUOUS.search("3?5")
+    assert _AMBIGUOUS.search("12.?4")
+    assert not _AMBIGUOUS.search("300??")

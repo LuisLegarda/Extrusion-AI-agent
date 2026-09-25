@@ -62,7 +62,7 @@ def setup_demo(ws: Workspace):
         recipes.save(demo_recipe())
     frame = sim.render()
     for page in config.pages:
-        if not ws.page_anchor_file(page.id).exists():
+        if page.anchor is not None and not ws.page_anchor_file(page.id).exists():
             save_png(ws.page_anchor_file(page.id), crop(frame, page.anchor))
     if not ws.glyphs_file.exists():
         teach_template(TemplateOcr(ws.glyphs_file), sim, config.variables[0].ocr)

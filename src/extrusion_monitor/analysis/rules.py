@@ -1,7 +1,7 @@
 """Reglas de verificación: ajustes vs. receta, tolerancias, lectura y tendencias."""
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from enum import IntEnum
 from typing import Optional
 
@@ -92,11 +92,13 @@ class _Condition:
     message: str
 
 
-def fmt(v: Optional[float], var: Optional[Variable] = None) -> str:
+def fmt(v: Optional[float], var: Optional[Variable] = None, decimals: Optional[int] = None) -> str:
     if v is None:
         return "—"
     if var is not None and var.decimals is not None:
-        return f"{v:.{var.decimals}f}"
+        decimals = var.decimals
+    if decimals is not None:
+        return f"{v:.{decimals}f}"
     return f"{v:.4g}" if abs(v) < 1e5 else f"{v:.0f}"
 
 
@@ -132,7 +134,7 @@ class RuleEngine:
                 evaluated.add(var.id)
                 if rd.fail_count >= g.read_fail_samples or (not st.fresh and rd.ts is not None):
                     conds[(R_READ, var.id)] = _Condition(
-                        Level.WARN, f"No se puede leer «{var.name}» ({rd.reason or 'sin datos recientes'})")
+                        Level.WARN, f"No se puede leer «{self.config.var_label(var)}» ({rd.reason or 'sin datos recientes'})")
 
             if var.kind == "text":
                 if var.id == g.recipe_name_var and recipe and rd.text and st.fresh and rd.visible:
@@ -187,11 +189,11 @@ class RuleEngine:
             if level > Level.OK:
                 band = alarm if level == Level.ALARM else warn
                 if var.kind == "setpoint":
-                    msg = (f"Ajuste erróneo «{var.name}»: consigna {fmt(rd.value, var)} {var.unit}, "
+                    msg = (f"Ajuste erróneo «{self.config.var_label(var)}»: consigna {fmt(rd.value, var)} {var.unit}, "
                            f"receta {fmt(ref, var)} (Δ {st.deviation:+.4g}, tolerancia ±{band:.4g})")
                     conds[(R_RECIPE, var.id)] = _Condition(level, msg)
                 else:
-                    msg = (f"«{var.name}» fuera de tolerancia: {fmt(rd.value, var)} {var.unit} vs {src} "
+                    msg = (f"«{self.config.var_label(var)}» fuera de tolerancia: {fmt(rd.value, var)} {var.unit} vs {src} "
                            f"{fmt(ref, var)} (Δ {st.deviation:+.4g}, tolerancia ±{band:.4g})")
                     conds[(R_TOL, var.id)] = _Condition(level, msg)
 
@@ -207,18 +209,18 @@ class RuleEngine:
                             and dev >= 0.25 * effect):
                         conds[(R_DRIFT, var.id)] = _Condition(
                             Level.WARN,
-                            f"«{var.name}» tiende a salir de tolerancia en ~{ts.eta_to_alarm_min:.1f} min "
+                            f"«{self.config.var_label(var)}» tiende a salir de tolerancia en ~{ts.eta_to_alarm_min:.1f} min "
                             f"({ts.slope_per_min:+.3g} {var.unit}/min)")
                     if ts.nelson:
                         conds[(R_SPC, var.id)] = _Condition(
-                            Level.INFO, f"«{var.name}»: " + "; ".join(ts.nelson))
+                            Level.INFO, f"«{self.config.var_label(var)}»: " + "; ".join(ts.nelson))
 
         events.extend(self._apply(now, conds, evaluated))
         return statuses, events
 
     def _setpoint_event(self, now: float, var: Variable, prev: float, new: float,
                         recipe: Optional[Recipe]) -> Event:
-        msg = f"Cambio de ajuste «{var.name}»: {fmt(prev, var)} → {fmt(new, var)} {var.unit}"
+        msg = f"Cambio de ajuste «{self.config.var_label(var)}»: {fmt(prev, var)} → {fmt(new, var)} {var.unit}"
         level = Level.INFO
         lim = recipe.limits.get(var.id) if recipe else None
         if lim and lim.nominal is not None:

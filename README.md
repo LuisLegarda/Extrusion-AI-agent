@@ -32,9 +32,20 @@ ExtrusionMonitor.exe --autostart
 Configuración inicial en el HMI:
 
 1. **⚙ Configurar variables → 📷 Capturar pantalla del HMI.** La app se oculta, toma la captura y vuelve.
-2. **Páginas del HMI** (solo si el HMI tiene varias pantallas): marca el título de cada pantalla y pulsa *Nueva desde selección*.
-3. **Variables:** marca el recuadro del valor y pulsa *Nueva desde selección*. Después define el tipo (real, consigna o texto), la unidad, la consigna asociada y el rango válido.
-   Con *Probar OCR* compruebas la lectura. Si usas el motor de plantillas, *Enseñar caracteres…* le enseña la fuente del HMI.
+   Se configura pestaña por pestaña: navega en el HMI a la pestaña, captura y define sus variables.
+2. **Árbol de pestañas:** el árbol es libre: componente → pestaña → sub-pestaña (p. ej. `EXT1 › Overview`, `EXT1 › Temp.contr.`, `GAS`, `MEAS`).
+   - *+ Pestaña / componente* crea un nodo raíz y *+ Sub-pestaña* crea un nodo dentro del seleccionado.
+   - El **ancla** es una parte de la pantalla que solo se ve con esa pestaña activa, por ejemplo el botón `EXT1` resaltado en la barra inferior o el botón `Overview` seleccionado.
+   - La comparación es de forma y color, así que distingue el botón seleccionado del que no lo está.
+   - Un nodo sin ancla es una carpeta: agrupa y es visible cuando su padre lo es.
+   - Lo que no tiene pestaña (por ejemplo el encabezado con Synchr., Diameter y Recipe) va en *Siempre visible*.
+3. **Variables:** tú indicas qué es consigna y qué es medición; no depende del color.
+   - *+ Par consigna / medición*: marcas primero la región de la consigna y después la del valor medido, y quedan vinculadas. En la ventana principal se ven en la misma fila.
+   - *+ Medición*, *+ Consigna* y *+ Texto* crean variables sueltas.
+   - *Crear serie…* replica las variables seleccionadas con un desplazamiento, por ejemplo Cylinder 1 → Cylinder 2…5 o Head 1 → Head 8. Si antes marcas la posición del segundo elemento, el desplazamiento se calcula solo.
+   - *Probar OCR* comprueba la lectura. *Quitar marco del campo* elimina el recuadro de los campos del HMI.
+   - Si usas el motor de plantillas, *Enseñar caracteres…* le enseña la fuente del HMI.
+   - Marca solo el número. Si la unidad está dentro del recuadro (`300 °C`), se ignora, pero es mejor dejarla fuera.
 4. **📋 Recetas:** crea la receta con el mismo nombre que muestra el HMI y llena nominales y tolerancias,
    o pulsa *Tomar valores actuales del HMI como nominales* con la máquina en un buen setup.
 5. **▶ Iniciar.**

@@ -13,15 +13,13 @@ from PySide6.QtWidgets import (
     QTabWidget, QToolBar, QVBoxLayout, QWidget,
 )
 
-from ..analysis.rules import Level, fmt
+from ..analysis.rules import Level
 from ..bootstrap import AppContext, make_ocr
 from ..capture import ScreenSource
 from ..engine import Snapshot
-from .common import LEVEL_TEXT, SnapshotBridge, level_color
+from .common import SnapshotBridge, level_color
+from .variable_tree import VariableTree
 
-COLS = ["Ver", "Variable", "Grupo", "Valor", "Unidad", "Referencia", "Desv.", "Tol. ±",
-        "Estado", "Tendencia /min", "Cpk", "Lectura"]
-C_VIEW, C_NAME, C_GROUP, C_VALUE, C_UNIT, C_REF, C_DEV, C_TOL, C_STATE, C_TREND, C_CPK, C_READ = range(12)
 MAX_PLOTS = 4
 
 
@@ -32,7 +30,7 @@ class TrendPanel(QWidget):
         self.layout_ = QVBoxLayout(self)
         self.layout_.setContentsMargins(0, 0, 0, 0)
         self.plots: dict[str, dict] = {}
-        self.placeholder = QLabel("Marca la casilla «Ver» de una variable para graficar su tendencia.")
+        self.placeholder = QLabel("Marca la casilla de una variable para graficar su tendencia.")
         self.placeholder.setAlignment(Qt.AlignCenter)
         self.layout_.addWidget(self.placeholder)
 
@@ -49,7 +47,8 @@ class TrendPanel(QWidget):
             w = pg.PlotWidget(axisItems={"bottom": pg.DateAxisItem()})
             w.setTitle(title)
             w.showGrid(x=True, y=True, alpha=0.3)
-            curve = w.plot(pen=pg.mkPen("#4fc3f7", width=2))
+            curve = w.plot(pen=pg.mkPen("#4fc3f7", width=2), name="medición")
+            sp_curve = w.plot(pen=pg.mkPen("#1e88e5", width=2, style=Qt.DashLine), name="consigna")
             lines = {
                 "ref": pg.InfiniteLine(angle=0, pen=pg.mkPen("#9e9e9e", style=Qt.DashLine)),
                 "wl": pg.InfiniteLine(angle=0, pen=pg.mkPen("#f9a825")),
@@ -61,15 +60,22 @@ class TrendPanel(QWidget):
                 ln.setVisible(False)
                 w.addItem(ln)
             self.layout_.addWidget(w)
-            self.plots[vid] = {"widget": w, "curve": curve, "lines": lines}
+            self.plots[vid] = {"widget": w, "curve": curve, "sp": sp_curve, "lines": lines}
         self.placeholder.setVisible(not self.plots)
 
     def update_plot(self, vid: str, t, y, ref: Optional[float], warn: Optional[float],
-                    alarm: Optional[float]) -> None:
+                    alarm: Optional[float], sp_series=None) -> None:
         p = self.plots.get(vid)
         if not p:
             return
         p["curve"].setData(t, y)
+        if sp_series is not None and len(sp_series[0]):
+            # La consigna es escalonada: se prolonga hasta el último instante de la medición.
+            st, sy = sp_series
+            if len(t) and t[-1] > st[-1]:
+                import numpy as np
+                st, sy = np.append(st, t[-1]), np.append(sy, sy[-1])
+            p["sp"].setData(st, sy)
         lines = p["lines"]
         for key, val in (("ref", ref),
                          ("wl", ref - warn if ref is not None and warn is not None else None),
@@ -89,7 +95,6 @@ class MainWindow(QMainWindow):
         self.bridge = SnapshotBridge()
         self.bridge.snapshot.connect(self.on_snapshot, Qt.QueuedConnection)
         self.engine.listeners.append(self.bridge.snapshot.emit)
-        self._rows: dict[str, int] = {}
         self._plotted: list[str] = []
         self._build_ui()
         self.rebuild_table()
@@ -139,14 +144,8 @@ class MainWindow(QMainWindow):
 
         vsplit = QSplitter(Qt.Vertical)
         hsplit = QSplitter(Qt.Horizontal)
-        self.table = QTableWidget(0, len(COLS))
-        self.table.setHorizontalHeaderLabels(COLS)
-        self.table.verticalHeader().setVisible(False)
-        self.table.setEditTriggers(QTableWidget.NoEditTriggers)
-        self.table.setSelectionBehavior(QTableWidget.SelectRows)
-        self.table.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeToContents)
-        self.table.horizontalHeader().setStretchLastSection(True)
-        self.table.itemChanged.connect(self._item_changed)
+        self.table = VariableTree()
+        self.table.plotToggled.connect(self._plot_toggled)
         hsplit.addWidget(self.table)
         self.trends = TrendPanel()
         hsplit.addWidget(self.trends)
@@ -185,39 +184,10 @@ class MainWindow(QMainWindow):
 
     def rebuild_table(self) -> None:
         cfg = self.ctx.config
-        self.table.blockSignals(True)
-        self.table.setRowCount(0)
-        self._rows.clear()
-        groups: list[str] = []
-        for v in cfg.variables:
-            if v.group not in groups:
-                groups.append(v.group)
-        index = {v.id: i for i, v in enumerate(cfg.variables)}
-        order = sorted(cfg.variables, key=lambda v: (groups.index(v.group), index[v.id]))
         if not self._plotted:
             self._plotted = [v.id for v in cfg.variables if v.kind == "actual" and v.trend][:3]
         self._plotted = [vid for vid in self._plotted if cfg.variable(vid)]
-        for row, var in enumerate(order):
-            self.table.insertRow(row)
-            self._rows[var.id] = row
-            view = QTableWidgetItem()
-            if var.kind != "text":
-                view.setFlags(Qt.ItemIsUserCheckable | Qt.ItemIsEnabled)
-                view.setCheckState(Qt.Checked if var.id in self._plotted else Qt.Unchecked)
-            else:
-                view.setFlags(Qt.ItemIsEnabled)
-            view.setData(Qt.UserRole, var.id)
-            self.table.setItem(row, C_VIEW, view)
-            kind = {"actual": "", "setpoint": " (consigna)", "text": " (texto)"}[var.kind]
-            self.table.setItem(row, C_NAME, QTableWidgetItem(var.name + kind))
-            self.table.setItem(row, C_GROUP, QTableWidgetItem(var.group))
-            self.table.setItem(row, C_UNIT, QTableWidgetItem(var.unit))
-            for c in (C_VALUE, C_REF, C_DEV, C_TOL, C_STATE, C_TREND, C_CPK, C_READ):
-                it = QTableWidgetItem("")
-                if c in (C_VALUE, C_REF, C_DEV, C_TOL, C_TREND, C_CPK):
-                    it.setTextAlignment(Qt.AlignRight | Qt.AlignVCenter)
-                self.table.setItem(row, c, it)
-        self.table.blockSignals(False)
+        self.table.rebuild(cfg, self._plotted)
         self._sync_plots()
 
     def _sync_plots(self) -> None:
@@ -226,24 +196,15 @@ class MainWindow(QMainWindow):
         for vid in self._plotted:
             v = cfg.variable(vid)
             if v:
-                items.append((vid, f"{v.name} [{v.unit}]" if v.unit else v.name))
+                items.append((vid, VariableTree.title(v, cfg)))
         self.trends.set_variables(items)
 
-    def _item_changed(self, item: QTableWidgetItem) -> None:
-        if item.column() != C_VIEW:
-            return
-        vid = item.data(Qt.UserRole)
-        if item.checkState() == Qt.Checked:
-            if vid not in self._plotted:
-                self._plotted.append(vid)
-                if len(self._plotted) > MAX_PLOTS:
-                    dropped = self._plotted.pop(0)
-                    row = self._rows.get(dropped)
-                    if row is not None:
-                        self.table.blockSignals(True)
-                        self.table.item(row, C_VIEW).setCheckState(Qt.Unchecked)
-                        self.table.blockSignals(False)
-        elif vid in self._plotted:
+    def _plot_toggled(self, vid: str, on: bool) -> None:
+        if on and vid not in self._plotted:
+            self._plotted.append(vid)
+            if len(self._plotted) > MAX_PLOTS:
+                self.table.set_checked(self._plotted.pop(0), False)
+        elif not on and vid in self._plotted:
             self._plotted.remove(vid)
         self._sync_plots()
         if self.engine.last:
@@ -351,46 +312,7 @@ class MainWindow(QMainWindow):
         self.lbl_cycle.setText(f"Ciclo: {snap.cycle_ms:.0f} ms · {time.strftime('%H:%M:%S', time.localtime(snap.ts))}")
 
     def _update_table(self, snap: Snapshot) -> None:
-        for vid, st in snap.statuses.items():
-            row = self._rows.get(vid)
-            if row is None:
-                continue
-            var, rd = st.var, st.reading
-            if var.kind == "text":
-                value = rd.text or ""
-            else:
-                value = fmt(rd.value, var) if rd.value is not None else ""
-            tol = ""
-            if st.warn_band is not None or st.alarm_band is not None:
-                tol = f"{fmt(st.warn_band)} / {fmt(st.alarm_band)}"
-            trend = ""
-            if st.trend:
-                arrow = "↑" if st.trend.slope_per_min > 0 else "↓"
-                trend = f"{arrow} {st.trend.slope_per_min:+.3g}" if st.trend.slope_significant else "→ estable"
-            ref = f"{fmt(st.reference, var)} ({st.ref_source})" if st.reference is not None else ""
-            cells = {
-                C_VALUE: value,
-                C_REF: ref,
-                C_DEV: f"{st.deviation:+.4g}" if st.deviation is not None else "",
-                C_TOL: tol,
-                C_STATE: LEVEL_TEXT[st.level] if st.fresh else ("no visible" if not rd.visible else "sin dato"),
-                C_TREND: trend,
-                C_CPK: f"{st.trend.cpk:.2f}" if st.trend and st.trend.cpk is not None else "",
-                C_READ: "ok" if rd.ok else (rd.reason or "—"),
-            }
-            for c, text in cells.items():
-                item = self.table.item(row, c)
-                if item.text() != text:
-                    item.setText(text)
-            color = level_color(st.level if st.fresh else None)
-            state_item = self.table.item(row, C_STATE)
-            state_item.setBackground(QBrush(color))
-            state_item.setForeground(QBrush(QColor("white")))
-            val_item = self.table.item(row, C_VALUE)
-            if st.level is not None and st.level >= Level.WARN and st.fresh:
-                val_item.setForeground(QBrush(color))
-            else:
-                val_item.setForeground(self.table.palette().text())
+        self.table.update_snapshot(snap)
 
     def _update_plots(self, snap: Snapshot) -> None:
         for vid in self._plotted:
@@ -398,7 +320,9 @@ class MainWindow(QMainWindow):
             st = snap.statuses.get(vid)
             if st is None:
                 continue
-            self.trends.update_plot(vid, t, y, st.reference, st.warn_band, st.alarm_band)
+            sp_id = self.table.setpoint_of(vid)
+            sp_series = self.engine.series(sp_id) if sp_id else None
+            self.trends.update_plot(vid, t, y, st.reference, st.warn_band, st.alarm_band, sp_series)
 
     def _update_findings(self, snap: Snapshot) -> None:
         self.findings.setRowCount(len(snap.findings))

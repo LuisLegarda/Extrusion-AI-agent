@@ -1,6 +1,7 @@
 """Lectura de variables desde la imagen del HMI, con filtros de plausibilidad."""
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass, field
 from typing import Optional
 
@@ -24,6 +25,7 @@ class Reading:
     confidence: float = 0.0
     reason: str = ""  # motivo de rechazo
     fail_count: int = 0
+    decimals: Optional[int] = None  # decimales mostrados por el HMI en la última lectura
     _pending: Optional[float] = field(default=None, repr=False)
 
     def age(self, now: float) -> Optional[float]:
@@ -31,6 +33,8 @@ class Reading:
 
 
 MIN_CONFIDENCE = 0.55
+# Carácter no reconocido entre dígitos: la lectura no es fiable (p. ej. «3?5»).
+_AMBIGUOUS = re.compile(r"[0-9.,]\?+[0-9]")
 
 
 class Acquirer:
@@ -70,6 +74,9 @@ class Acquirer:
         if res.confidence < MIN_CONFIDENCE:
             self._fail(rd, "confianza OCR baja")
             return
+        if _AMBIGUOUS.search(res.text):
+            self._fail(rd, "carácter dudoso dentro del número")
+            return
         value = parse_number(res.text, var)
         if value is None:
             self._fail(rd, "no numérico")
@@ -86,6 +93,8 @@ class Acquirer:
                 return
         rd._pending = None
         rd.value, rd.ts, rd.ok, rd.reason, rd.fail_count = value, now, True, "", 0
+        m = re.search(r"\d[.,](\d+)", res.text)
+        rd.decimals = len(m.group(1)) if m else 0
 
     @staticmethod
     def _fail(rd: Reading, reason: str) -> None:

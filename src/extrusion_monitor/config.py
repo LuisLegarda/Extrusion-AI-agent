@@ -33,14 +33,21 @@ class OcrOptions(BaseModel):
     scale: float = Field(3.0, ge=1.0, le=8.0)
     # None = umbral automático (Otsu).
     threshold: Optional[int] = Field(None, ge=0, le=255)
+    # Quita el marco del campo si la región lo incluye.
+    clear_border: bool = True
 
 
 class Page(BaseModel):
-    """Pantalla del HMI identificada por una imagen ancla (p. ej. su título)."""
+    """Nodo del árbol de pantallas del HMI (componente, pestaña o sub-pestaña).
+
+    Con `anchor` se identifica por una imagen (p. ej. el botón de la pestaña resaltado);
+    sin ancla es una carpeta que solo agrupa y es visible cuando lo es su padre.
+    """
 
     id: str
     name: str
-    anchor: Rect
+    parent: Optional[str] = None
+    anchor: Optional[Rect] = None
     match_threshold: float = Field(0.85, ge=0.3, le=1.0)
 
 
@@ -103,9 +110,52 @@ class AppConfig(BaseModel):
     def page(self, page_id: str) -> Optional[Page]:
         return next((p for p in self.pages if p.id == page_id), None)
 
+    def page_path(self, page_id: Optional[str]) -> list[Page]:
+        """Cadena de páginas desde la raíz hasta `page_id`."""
+        path: list[Page] = []
+        seen: set[str] = set()
+        while page_id and page_id not in seen:
+            seen.add(page_id)
+            p = self.page(page_id)
+            if p is None:
+                break
+            path.append(p)
+            page_id = p.parent
+        return path[::-1]
+
+    def page_label(self, page_id: Optional[str]) -> str:
+        return " › ".join(p.name for p in self.page_path(page_id))
+
+    def var_label(self, var: "Variable") -> str:
+        """Nombre completo para mensajes: «EXT1 › Overview › Cylinder 1»."""
+        prefix = self.page_label(var.page)
+        return f"{prefix} › {var.name}" if prefix else var.name
+
+    def children(self, page_id: Optional[str]) -> list[Page]:
+        return [p for p in self.pages if p.parent == page_id]
+
+    def descendants(self, page_id: str) -> set[str]:
+        out: set[str] = set()
+        stack = [page_id]
+        while stack:
+            for c in self.children(stack.pop()):
+                if c.id not in out:
+                    out.add(c.id)
+                    stack.append(c.id)
+        return out
+
     def validate_references(self) -> list[str]:
         """Devuelve una lista de problemas de coherencia (vacía si todo está bien)."""
         problems: list[str] = []
+        pids = [p.id for p in self.pages]
+        dup_p = {i for i in pids if pids.count(i) > 1}
+        if dup_p:
+            problems.append(f"IDs de página duplicados: {', '.join(sorted(dup_p))}")
+        for p in self.pages:
+            if p.parent and self.page(p.parent) is None:
+                problems.append(f"Página «{p.name}»: el padre '{p.parent}' no existe")
+            if p.id in self.descendants(p.id):
+                problems.append(f"Página «{p.name}»: el árbol tiene un ciclo")
         ids = [v.id for v in self.variables]
         dup = {i for i in ids if ids.count(i) > 1}
         if dup:

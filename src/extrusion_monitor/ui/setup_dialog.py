@@ -1,15 +1,18 @@
-"""Asistente de configuración: páginas del HMI, variables, regiones y OCR."""
+"""Asistente de configuración: árbol de pestañas del HMI, variables, regiones y OCR."""
 from __future__ import annotations
 
 import re
+from pathlib import Path
 from typing import Optional
 
 import numpy as np
 from PySide6.QtCore import Qt, QTimer
+from PySide6.QtGui import QBrush, QColor, QFont
 from PySide6.QtWidgets import (
-    QApplication, QCheckBox, QComboBox, QDialog, QDialogButtonBox, QDoubleSpinBox, QFileDialog,
-    QFormLayout, QGroupBox, QHBoxLayout, QInputDialog, QLabel, QLineEdit, QListWidget,
-    QListWidgetItem, QMessageBox, QPushButton, QScrollArea, QSpinBox, QSplitter, QTabWidget, QVBoxLayout, QWidget,
+    QAbstractItemView, QApplication, QCheckBox, QComboBox, QDialog, QDialogButtonBox, QDoubleSpinBox,
+    QFileDialog, QFormLayout, QGroupBox, QHBoxLayout, QInputDialog, QLabel, QLineEdit, QMessageBox,
+    QPushButton, QScrollArea, QSpinBox, QSplitter, QStackedWidget, QTabWidget, QTreeWidget,
+    QTreeWidgetItem, QVBoxLayout, QWidget,
 )
 
 from ..bootstrap import AppContext
@@ -20,9 +23,13 @@ from ..pages import PageDetector
 from .common import to_pixmap
 from .region_view import RegionView
 
-KIND_COLORS = {"actual": "#66bb6a", "setpoint": "#42a5f5", "text": "#ab47bc"}
-PAGE_COLOR = "#ffa726"
-KINDS = [("actual", "Valor real"), ("setpoint", "Consigna / ajuste"), ("text", "Texto (p. ej. nombre de receta)")]
+KIND_COLORS = {"actual": "#43a047", "setpoint": "#1e88e5", "text": "#8e24aa"}
+PAGE_COLOR = "#fb8c00"
+KINDS = [("actual", "Medición (valor real)"), ("setpoint", "Consigna (parámetro establecido)"),
+         ("text", "Texto (p. ej. nombre de receta)")]
+KIND_SHORT = {"actual": "medición", "setpoint": "consigna", "text": "texto"}
+ROLE = Qt.UserRole
+NO_PAGE = "__none__"
 
 
 def _opt_float(text: str) -> Optional[float]:
@@ -35,28 +42,75 @@ def _slug(text: str) -> str:
     return s or "var"
 
 
+def _unique(base: str, existing: set[str]) -> str:
+    if base not in existing:
+        return base
+    i = 2
+    while f"{base}_{i}" in existing:
+        i += 1
+    return f"{base}_{i}"
+
+
+class SeriesDialog(QDialog):
+    """Replica variables seleccionadas (p. ej. Cylinder 1 → Cylinder 2..5) con un desplazamiento."""
+
+    def __init__(self, first_name: str, dx: int, dy: int, parent=None):
+        super().__init__(parent)
+        self.setWindowTitle("Crear serie")
+        f = QFormLayout(self)
+        f.addRow(QLabel("Se copian las variables seleccionadas desplazando sus regiones.\n"
+                        "Consejo: marca en la captura la posición del segundo elemento antes de abrir este "
+                        "diálogo y el desplazamiento se calcula solo."))
+        self.sp_count = QSpinBox()
+        self.sp_count.setRange(1, 100)
+        self.sp_count.setValue(4)
+        self.sp_dx = QSpinBox()
+        self.sp_dy = QSpinBox()
+        for s, v in ((self.sp_dx, dx), (self.sp_dy, dy)):
+            s.setRange(-5000, 5000)
+            s.setSuffix(" px")
+            s.setValue(v)
+        m = re.search(r"\d+", first_name)
+        self.ed_find = QLineEdit(m.group(0) if m else "")
+        self.sp_start = QSpinBox()
+        self.sp_start.setRange(-1000, 100000)
+        self.sp_start.setValue(int(m.group(0)) + 1 if m else 2)
+        f.addRow("Copias a crear", self.sp_count)
+        f.addRow("Desplazamiento X por copia", self.sp_dx)
+        f.addRow("Desplazamiento Y por copia", self.sp_dy)
+        f.addRow("Texto del nombre a numerar", self.ed_find)
+        f.addRow("Primer número", self.sp_start)
+        bb = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel)
+        bb.button(QDialogButtonBox.Ok).setText("Crear")
+        bb.button(QDialogButtonBox.Cancel).setText("Cancelar")
+        bb.accepted.connect(self.accept)
+        bb.rejected.connect(self.reject)
+        f.addRow(bb)
+
+
 class SetupDialog(QDialog):
     def __init__(self, ctx: AppContext, parent=None):
         super().__init__(parent)
         self.setWindowTitle("Configuración de variables y lectura del HMI")
-        self.resize(1500, 900)
+        self.resize(1600, 940)
         self.ctx = ctx
         self.config: AppConfig = ctx.config.model_copy(deep=True)
         self.frame: Optional[np.ndarray] = None
         self.anchors: dict[str, np.ndarray] = {}
         for p in self.config.pages:
             img = load_png(ctx.workspace.page_anchor_file(p.id))
-            if img is not None:
+            if img is not None and p.anchor is not None:
                 self.anchors[p.id] = img
         self.removed_pages: set[str] = set()
         self._loading = False
         self._current_var: Optional[str] = None
         self._current_page: Optional[str] = None
         self._ocr_cache = None
+        # Asistente de par consigna/real: None | ("sp", nombre, página) | ("pv", nombre, página, rect_sp)
+        self._pair: Optional[tuple] = None
         self._build()
         self._load_general()
-        self._refresh_pages()
-        self._refresh_vars()
+        self._refresh_tree()
         try:
             self._set_frame(ctx.engine.grab_frame())
         except Exception:
@@ -70,36 +124,30 @@ class SetupDialog(QDialog):
         ll = QVBoxLayout(left)
         ll.setContentsMargins(0, 0, 0, 0)
         bar = QHBoxLayout()
-        b = QPushButton("📷 Capturar pantalla del HMI")
-        b.clicked.connect(self.capture_hmi)
-        bar.addWidget(b)
-        b = QPushButton("Abrir imagen…")
-        b.clicked.connect(self.load_image)
-        bar.addWidget(b)
-        b = QPushButton("Guardar captura…")
-        b.clicked.connect(self.save_image)
-        bar.addWidget(b)
-        b = QPushButton("Ajustar vista")
-        b.clicked.connect(lambda: self.view.fit())
-        bar.addWidget(b)
+        for text, slot in (("📷 Capturar pantalla del HMI", self.capture_hmi), ("Abrir imagen…", self.load_image),
+                           ("Guardar captura…", self.save_image), ("Ajustar vista", lambda: self.view.fit())):
+            b = QPushButton(text)
+            b.clicked.connect(slot)
+            bar.addWidget(b)
         bar.addStretch()
         ll.addLayout(bar)
-        hint = QLabel("Arrastra con el botón izquierdo para marcar una región · rueda = zoom · "
-                      "botón central = desplazar · clic en una región para seleccionarla")
-        hint.setStyleSheet("color:#9e9e9e;")
-        ll.addWidget(hint)
+        self.lbl_hint = QLabel()
+        self._hint()
+        ll.addWidget(self.lbl_hint)
         self.view = RegionView()
         self.view.rectDrawn.connect(self._rect_drawn)
         self.view.regionClicked.connect(self._region_clicked)
         ll.addWidget(self.view)
+        legend = QLabel(" ".join(f"<span style='color:{c}'>■</span> {KIND_SHORT[k]}" for k, c in KIND_COLORS.items())
+                        + f" <span style='color:{PAGE_COLOR}'>■</span> ancla de pestaña")
+        ll.addWidget(legend)
         split.addWidget(left)
 
         self.tabs = QTabWidget()
-        self.tabs.addTab(self._build_vars_tab(), "Variables")
-        self.tabs.addTab(self._build_pages_tab(), "Páginas del HMI")
+        self.tabs.addTab(self._build_tree_tab(), "Pestañas y variables")
         self.tabs.addTab(self._build_general_tab(), "General")
         split.addWidget(self.tabs)
-        split.setSizes([950, 550])
+        split.setSizes([950, 650])
         root.addWidget(split)
 
         buttons = QDialogButtonBox(QDialogButtonBox.Save | QDialogButtonBox.Cancel)
@@ -108,6 +156,177 @@ class SetupDialog(QDialog):
         buttons.accepted.connect(self._save)
         buttons.rejected.connect(self.reject)
         root.addWidget(buttons)
+
+    def _hint(self, text: Optional[str] = None, strong: bool = False) -> None:
+        default = ("Arrastra con el botón izquierdo para marcar una región · rueda = zoom · "
+                   "botón central = desplazar · clic en una región para seleccionarla")
+        style = "color:#fff; background:#e65100; padding:4px; font-weight:bold;" if strong else "color:#9e9e9e;"
+        self.lbl_hint.setStyleSheet(style)
+        self.lbl_hint.setText(text or default)
+
+    def _build_tree_tab(self) -> QWidget:
+        w = QWidget()
+        lay = QVBoxLayout(w)
+        self.tree = QTreeWidget()
+        self.tree.setHeaderLabels(["Nombre", "Tipo", "ID"])
+        self.tree.setSelectionMode(QAbstractItemView.ExtendedSelection)
+        self.tree.itemSelectionChanged.connect(self._tree_selected)
+        self.tree.setColumnWidth(0, 300)
+        lay.addWidget(self.tree, 3)
+
+        r1 = QHBoxLayout()
+        for text, slot, tip in (
+                ("+ Pestaña / componente", self._new_root_page, "Nuevo nodo raíz (p. ej. EXT1, GAS, MEAS)"),
+                ("+ Sub-pestaña", self._new_child_page, "Nodo dentro de la pestaña seleccionada (p. ej. Overview)")):
+            b = QPushButton(text)
+            b.setToolTip(tip)
+            b.clicked.connect(slot)
+            r1.addWidget(b)
+        lay.addLayout(r1)
+        r2 = QHBoxLayout()
+        for text, slot, tip in (
+                ("+ Par consigna / medición", self._start_pair,
+                 "Marca primero la consigna y después el valor medido; quedan vinculados"),
+                ("+ Medición", lambda: self._new_var("actual"), "Variable medida sin consigna"),
+                ("+ Consigna", lambda: self._new_var("setpoint"), "Parámetro establecido sin medición"),
+                ("+ Texto", lambda: self._new_var("text"), "Texto, p. ej. el nombre de la receta")):
+            b = QPushButton(text)
+            b.setToolTip(tip)
+            b.clicked.connect(slot)
+            r2.addWidget(b)
+        lay.addLayout(r2)
+        r3 = QHBoxLayout()
+        for text, slot in (("Crear serie…", self._series), ("Duplicar", self._duplicate), ("Eliminar", self._delete)):
+            b = QPushButton(text)
+            b.clicked.connect(slot)
+            r3.addWidget(b)
+        lay.addLayout(r3)
+
+        self.stack = QStackedWidget()
+        self.stack.addWidget(QLabel("Selecciona una pestaña o una variable del árbol."))
+        self.stack.addWidget(self._build_page_form())
+        self.stack.addWidget(self._build_var_form())
+        lay.addWidget(self.stack, 4)
+        return w
+
+    def _build_page_form(self) -> QWidget:
+        box = QGroupBox("Pestaña seleccionada")
+        f = QFormLayout(box)
+        self.ed_page_name = QLineEdit()
+        self.ed_page_name.editingFinished.connect(self._commit_page)
+        f.addRow("Nombre", self.ed_page_name)
+        self.lbl_page_id = QLabel()
+        f.addRow("ID", self.lbl_page_id)
+        self.cmb_page_parent = QComboBox()
+        self.cmb_page_parent.currentIndexChanged.connect(self._commit_page)
+        f.addRow("Dentro de", self.cmb_page_parent)
+        f.addRow(QLabel("El ancla es una parte de la pantalla que solo se ve cuando la pestaña está activa,\n"
+                        "p. ej. el botón de la pestaña resaltado o el título. Sin ancla, el nodo solo agrupa."))
+        self.lbl_page_anchor = QLabel("sin ancla (carpeta: visible si su padre lo es)")
+        f.addRow("Ancla", self.lbl_page_anchor)
+        row = QHBoxLayout()
+        b = QPushButton("Usar selección como ancla")
+        b.clicked.connect(self._set_anchor)
+        row.addWidget(b)
+        b = QPushButton("Quitar ancla")
+        b.clicked.connect(self._clear_anchor)
+        row.addWidget(b)
+        f.addRow("", row)
+        self.sp_page_thr = QDoubleSpinBox()
+        self.sp_page_thr.setRange(0.3, 1.0)
+        self.sp_page_thr.setSingleStep(0.05)
+        self.sp_page_thr.valueChanged.connect(self._commit_page)
+        f.addRow("Umbral de coincidencia", self.sp_page_thr)
+        self.lbl_page_score = QLabel()
+        b = QPushButton("Probar en la captura")
+        b.clicked.connect(self._test_page)
+        f.addRow(b, self.lbl_page_score)
+        return box
+
+    def _build_var_form(self) -> QWidget:
+        outer = QWidget()
+        lay = QVBoxLayout(outer)
+        lay.setContentsMargins(0, 0, 0, 0)
+        box = QGroupBox("Variable seleccionada")
+        f = QFormLayout(box)
+        self.ed_id = QLineEdit()
+        self.ed_name = QLineEdit()
+        self.ed_unit = QLineEdit()
+        self.cmb_kind = QComboBox()
+        for k, label in KINDS:
+            self.cmb_kind.addItem(label, k)
+        self.cmb_page = QComboBox()
+        self.cmb_sp = QComboBox()
+        self.sp_dec = QSpinBox()
+        self.sp_dec.setRange(-1, 6)
+        self.sp_dec.setSpecialValueText("libre")
+        self.cmb_sep = QComboBox()
+        for k, label in (("auto", "automático"), (".", "punto"), (",", "coma")):
+            self.cmb_sep.addItem(label, k)
+        self.chk_fixdec = QCheckBox("Reinsertar punto decimal si el OCR lo pierde")
+        self.ed_vmin = QLineEdit()
+        self.ed_vmax = QLineEdit()
+        self.ed_step = QLineEdit()
+        for e in (self.ed_vmin, self.ed_vmax, self.ed_step):
+            e.setPlaceholderText("sin límite")
+        self.cmb_invert = QComboBox()
+        for k, label in (("auto", "automático"), ("yes", "texto claro sobre fondo oscuro"),
+                         ("no", "texto oscuro sobre fondo claro")):
+            self.cmb_invert.addItem(label, k)
+        self.sp_scale = QDoubleSpinBox()
+        self.sp_scale.setRange(1, 8)
+        self.sp_scale.setSingleStep(0.5)
+        self.sp_thr = QSpinBox()
+        self.sp_thr.setRange(-1, 255)
+        self.sp_thr.setSpecialValueText("auto")
+        self.chk_border = QCheckBox("Quitar marco del campo")
+        self.chk_trend = QCheckBox("Analizar tendencia")
+        self.lbl_region = QLabel()
+        for label, wdg in (("ID", self.ed_id), ("Nombre", self.ed_name), ("Unidad", self.ed_unit),
+                           ("Tipo", self.cmb_kind), ("Pestaña", self.cmb_page),
+                           ("Consigna vinculada", self.cmb_sp), ("Decimales", self.sp_dec),
+                           ("Separador decimal", self.cmb_sep), ("", self.chk_fixdec),
+                           ("Valor mínimo válido", self.ed_vmin), ("Valor máximo válido", self.ed_vmax),
+                           ("Salto máx. entre lecturas", self.ed_step), ("Contraste", self.cmb_invert),
+                           ("Escala OCR", self.sp_scale), ("Umbral binario", self.sp_thr), ("", self.chk_border),
+                           ("", self.chk_trend), ("Región", self.lbl_region)):
+            f.addRow(label, wdg)
+        for wdg in (self.ed_id, self.ed_name, self.ed_unit, self.ed_vmin, self.ed_vmax, self.ed_step):
+            wdg.editingFinished.connect(self._commit_var)
+        for wdg in (self.cmb_kind, self.cmb_page, self.cmb_sp, self.cmb_sep, self.cmb_invert):
+            wdg.currentIndexChanged.connect(self._commit_var)
+        for wdg in (self.sp_dec, self.sp_scale, self.sp_thr):
+            wdg.valueChanged.connect(self._commit_var)
+        for wdg in (self.chk_fixdec, self.chk_trend, self.chk_border):
+            wdg.toggled.connect(self._commit_var)
+        scroll = QScrollArea()
+        scroll.setWidgetResizable(True)
+        scroll.setWidget(box)
+        lay.addWidget(scroll, 3)
+
+        test = QGroupBox("Prueba de lectura")
+        tl = QVBoxLayout(test)
+        row = QHBoxLayout()
+        for text, slot in (("Asignar selección como región", self._assign_region),
+                           ("Probar OCR", self._test_ocr), ("Enseñar caracteres…", self._teach)):
+            b = QPushButton(text)
+            b.clicked.connect(slot)
+            row.addWidget(b)
+        tl.addLayout(row)
+        prev = QHBoxLayout()
+        self.lbl_crop = QLabel()
+        self.lbl_bin = QLabel()
+        for lbl in (self.lbl_crop, self.lbl_bin):
+            lbl.setMinimumHeight(50)
+            lbl.setAlignment(Qt.AlignCenter)
+            lbl.setStyleSheet("border:1px solid #555;")
+            prev.addWidget(lbl)
+        tl.addLayout(prev)
+        self.lbl_result = QLabel()
+        self.lbl_result.setWordWrap(True)
+        tl.addWidget(self.lbl_result)
+        lay.addWidget(test, 1)
+        return outer
 
     def _build_general_tab(self) -> QWidget:
         w = QWidget()
@@ -162,147 +381,6 @@ class SetupDialog(QDialog):
         f.addRow("", self.chk_beep)
         return w
 
-    def _build_pages_tab(self) -> QWidget:
-        w = QWidget()
-        lay = QVBoxLayout(w)
-        lay.addWidget(QLabel("Si el HMI tiene varias pantallas, define una imagen ancla (p. ej. el título) "
-                             "para cada una. Las variables de una página solo se leen cuando está visible."))
-        self.lst_pages = QListWidget()
-        self.lst_pages.currentItemChanged.connect(self._page_selected)
-        lay.addWidget(self.lst_pages)
-        row = QHBoxLayout()
-        for text, slot in (("Nueva desde selección", self._new_page), ("Eliminar", self._delete_page)):
-            b = QPushButton(text)
-            b.clicked.connect(slot)
-            row.addWidget(b)
-        lay.addLayout(row)
-        box = QGroupBox("Página seleccionada")
-        f = QFormLayout(box)
-        self.ed_page_name = QLineEdit()
-        self.ed_page_name.editingFinished.connect(self._commit_page)
-        f.addRow("Nombre", self.ed_page_name)
-        self.sp_page_thr = QDoubleSpinBox()
-        self.sp_page_thr.setRange(0.3, 1.0)
-        self.sp_page_thr.setSingleStep(0.05)
-        self.sp_page_thr.valueChanged.connect(self._commit_page)
-        f.addRow("Umbral de coincidencia", self.sp_page_thr)
-        self.lbl_page_anchor = QLabel()
-        f.addRow("Ancla", self.lbl_page_anchor)
-        b = QPushButton("Reemplazar ancla con la selección")
-        b.clicked.connect(self._replace_anchor)
-        f.addRow("", b)
-        self.lbl_page_score = QLabel()
-        b = QPushButton("Probar en la captura")
-        b.clicked.connect(self._test_page)
-        f.addRow(b, self.lbl_page_score)
-        lay.addWidget(box)
-        return w
-
-    def _build_vars_tab(self) -> QWidget:
-        w = QWidget()
-        lay = QVBoxLayout(w)
-        self.lst_vars = QListWidget()
-        self.lst_vars.currentItemChanged.connect(self._var_selected)
-        lay.addWidget(self.lst_vars, 2)
-        row = QHBoxLayout()
-        for text, slot in (("Nueva desde selección", self._new_var), ("Duplicar", self._dup_var),
-                           ("Eliminar", self._delete_var)):
-            b = QPushButton(text)
-            b.clicked.connect(slot)
-            row.addWidget(b)
-        lay.addLayout(row)
-
-        box = QGroupBox("Variable seleccionada")
-        f = QFormLayout(box)
-        self.ed_id = QLineEdit()
-        self.ed_name = QLineEdit()
-        self.ed_unit = QLineEdit()
-        self.ed_group = QLineEdit()
-        self.cmb_kind = QComboBox()
-        for k, label in KINDS:
-            self.cmb_kind.addItem(label, k)
-        self.cmb_page = QComboBox()
-        self.cmb_sp = QComboBox()
-        self.sp_dec = QSpinBox()
-        self.sp_dec.setRange(-1, 6)
-        self.sp_dec.setSpecialValueText("libre")
-        self.cmb_sep = QComboBox()
-        for k, label in (("auto", "automático"), (".", "punto"), (",", "coma")):
-            self.cmb_sep.addItem(label, k)
-        self.chk_fixdec = QCheckBox("Reinsertar punto decimal si el OCR lo pierde")
-        self.ed_vmin = QLineEdit()
-        self.ed_vmax = QLineEdit()
-        self.ed_step = QLineEdit()
-        for e in (self.ed_vmin, self.ed_vmax, self.ed_step):
-            e.setPlaceholderText("sin límite")
-        self.cmb_invert = QComboBox()
-        for k, label in (("auto", "automático"), ("yes", "texto claro sobre fondo oscuro"),
-                         ("no", "texto oscuro sobre fondo claro")):
-            self.cmb_invert.addItem(label, k)
-        self.sp_scale = QDoubleSpinBox()
-        self.sp_scale.setRange(1, 8)
-        self.sp_scale.setSingleStep(0.5)
-        self.sp_thr = QSpinBox()
-        self.sp_thr.setRange(-1, 255)
-        self.sp_thr.setSpecialValueText("auto")
-        self.chk_trend = QCheckBox("Analizar tendencia")
-        self.lbl_region = QLabel()
-        f.addRow("ID", self.ed_id)
-        f.addRow("Nombre", self.ed_name)
-        f.addRow("Unidad", self.ed_unit)
-        f.addRow("Grupo", self.ed_group)
-        f.addRow("Tipo", self.cmb_kind)
-        f.addRow("Página", self.cmb_page)
-        f.addRow("Consigna asociada", self.cmb_sp)
-        f.addRow("Decimales", self.sp_dec)
-        f.addRow("Separador decimal", self.cmb_sep)
-        f.addRow("", self.chk_fixdec)
-        f.addRow("Valor mínimo válido", self.ed_vmin)
-        f.addRow("Valor máximo válido", self.ed_vmax)
-        f.addRow("Salto máx. entre lecturas", self.ed_step)
-        f.addRow("Contraste", self.cmb_invert)
-        f.addRow("Escala OCR", self.sp_scale)
-        f.addRow("Umbral binario", self.sp_thr)
-        f.addRow("", self.chk_trend)
-        f.addRow("Región", self.lbl_region)
-        for wdg in (self.ed_id, self.ed_name, self.ed_unit, self.ed_group, self.ed_vmin, self.ed_vmax,
-                    self.ed_step):
-            wdg.editingFinished.connect(self._commit_var)
-        for wdg in (self.cmb_kind, self.cmb_page, self.cmb_sp, self.cmb_sep, self.cmb_invert):
-            wdg.currentIndexChanged.connect(self._commit_var)
-        for wdg in (self.sp_dec, self.sp_scale, self.sp_thr):
-            wdg.valueChanged.connect(self._commit_var)
-        for wdg in (self.chk_fixdec, self.chk_trend):
-            wdg.toggled.connect(self._commit_var)
-        scroll = QScrollArea()
-        scroll.setWidgetResizable(True)
-        scroll.setWidget(box)
-        lay.addWidget(scroll, 3)
-
-        test = QGroupBox("Prueba de lectura")
-        tl = QVBoxLayout(test)
-        row = QHBoxLayout()
-        for text, slot in (("Asignar selección como región", self._assign_region),
-                           ("Probar OCR", self._test_ocr), ("Enseñar caracteres…", self._teach)):
-            b = QPushButton(text)
-            b.clicked.connect(slot)
-            row.addWidget(b)
-        tl.addLayout(row)
-        prev = QHBoxLayout()
-        self.lbl_crop = QLabel()
-        self.lbl_bin = QLabel()
-        for lbl in (self.lbl_crop, self.lbl_bin):
-            lbl.setMinimumHeight(50)
-            lbl.setAlignment(Qt.AlignCenter)
-            lbl.setStyleSheet("border:1px solid #555;")
-            prev.addWidget(lbl)
-        tl.addLayout(prev)
-        self.lbl_result = QLabel()
-        self.lbl_result.setWordWrap(True)
-        tl.addWidget(self.lbl_result)
-        lay.addWidget(test, 1)
-        return w
-
     # --- imagen -------------------------------------------------------------------
     def _set_frame(self, frame: np.ndarray) -> None:
         self.frame = frame
@@ -329,7 +407,8 @@ class SetupDialog(QDialog):
         QTimer.singleShot(800, grab)
 
     def load_image(self) -> None:
-        path, _ = QFileDialog.getOpenFileName(self, "Abrir captura del HMI", "", "Imágenes (*.png *.jpg *.bmp)")
+        path, _ = QFileDialog.getOpenFileName(self, "Abrir captura del HMI", "",
+                                              "Imágenes (*.png *.jpg *.jpeg *.bmp *.webp)")
         if path:
             try:
                 self._set_frame(ImageFileSource(path).grab())
@@ -341,36 +420,168 @@ class SetupDialog(QDialog):
             return
         path, _ = QFileDialog.getSaveFileName(self, "Guardar captura", "captura_hmi.png", "PNG (*.png)")
         if path:
-            from pathlib import Path
             save_png(Path(path), self.frame)
 
+    def _visible_pages(self) -> set[str]:
+        if self.frame is None:
+            return set()
+        return PageDetector(self.config, self.anchors).visible_pages(self.frame)
+
     def _redraw(self) -> None:
+        """Dibuja las regiones de las pestañas visibles en la captura (o todas si no hay captura)."""
+        visible = self._visible_pages() if self.frame is not None else None
+        show = lambda pid: pid is None or visible is None or pid in visible or pid == self._current_page  # noqa: E731
         regions = []
         for p in self.config.pages:
-            regions.append((f"page:{p.id}", f"[{p.name}]", p.anchor, PAGE_COLOR))
+            if p.anchor is not None and (show(p.parent) or p.id == self._current_page):
+                regions.append((f"page:{p.id}", f"[{p.name}]", p.anchor, PAGE_COLOR))
+        selected_vars = set(self._selected("var")) | {self._current_var}
         for v in self.config.variables:
-            regions.append((v.id, v.name, v.region, KIND_COLORS[v.kind]))
-        sel = self._current_var if self.tabs.currentIndex() == 0 else (
-            f"page:{self._current_page}" if self._current_page else None)
+            if show(v.page) or v.id in selected_vars:
+                # Solo se rotula la selección: en HMI densos las etiquetas se encimarían.
+                label = v.name if v.id in selected_vars else ""
+                regions.append((v.id, label, v.region, KIND_COLORS[v.kind]))
+        sel = self._current_var or (f"page:{self._current_page}" if self._current_page else None)
         self.view.set_regions(regions, sel)
 
     def _rect_drawn(self, rect: Rect) -> None:
+        if self._pair is not None:
+            self._pair_step(rect)
+            return
         self.lbl_result.setText(f"Selección: x={rect.x} y={rect.y} {rect.w}×{rect.h}")
 
     def _region_clicked(self, rid: str) -> None:
-        if rid.startswith("page:"):
-            self.tabs.setCurrentIndex(1)
-            self._select_in(self.lst_pages, rid[5:])
-        else:
-            self.tabs.setCurrentIndex(0)
-            self._select_in(self.lst_vars, rid)
+        key = ("page", rid[5:]) if rid.startswith("page:") else ("var", rid)
+        self._select_key(key)
 
-    @staticmethod
-    def _select_in(lst: QListWidget, key: str) -> None:
-        for i in range(lst.count()):
-            if lst.item(i).data(Qt.UserRole) == key:
-                lst.setCurrentRow(i)
+    # --- árbol ----------------------------------------------------------------------
+    def _refresh_tree(self, select: Optional[tuple[str, str]] = None) -> None:
+        self.tree.blockSignals(True)
+        first = self.tree.topLevelItemCount() == 0
+        expanded = {it.data(0, ROLE) for it in self._all_items() if it.isExpanded()}
+        self.tree.clear()
+        bold = QFont()
+        bold.setBold(True)
+        nodes: dict[Optional[str], QTreeWidgetItem] = {}
+        none = QTreeWidgetItem(["Siempre visible (sin pestaña)", "", ""])
+        none.setData(0, ROLE, ("page", NO_PAGE))
+        none.setFont(0, bold)
+        self.tree.addTopLevelItem(none)
+        nodes[None] = none
+
+        def add_page(p: Page, parent_item: Optional[QTreeWidgetItem]):
+            it = QTreeWidgetItem([p.name, "pestaña" if p.anchor else "carpeta", p.id])
+            it.setData(0, ROLE, ("page", p.id))
+            it.setFont(0, bold)
+            it.setForeground(0, QBrush(QColor(PAGE_COLOR)))
+            (parent_item.addChild(it) if parent_item else self.tree.addTopLevelItem(it))
+            nodes[p.id] = it
+            for c in self.config.children(p.id):
+                add_page(c, it)
+
+        for p in self.config.children(None):
+            add_page(p, None)
+        linked_sp = {v.setpoint_var for v in self.config.variables if v.setpoint_var}
+        for v in self.config.variables:
+            if v.kind == "setpoint" and v.id in linked_sp:
+                continue  # se muestra bajo su medición
+            parent = nodes.get(v.page, none)
+            it = self._var_item(v)
+            parent.addChild(it)
+            if v.kind == "actual" and v.setpoint_var:
+                sp = self.config.variable(v.setpoint_var)
+                if sp:
+                    it.addChild(self._var_item(sp))
+                    it.setExpanded(True)
+        for it in self._all_items():
+            key = it.data(0, ROLE)
+            if key[0] == "page":
+                it.setExpanded(first or key in expanded)
+        self.tree.blockSignals(False)
+        self._refresh_combos()
+        if select:
+            self._select_key(select)
+        else:
+            self._redraw()
+
+    def _var_item(self, v: Variable) -> QTreeWidgetItem:
+        kind = KIND_SHORT[v.kind]
+        if v.kind == "actual" and v.setpoint_var:
+            kind = "medición + consigna"
+        it = QTreeWidgetItem([f"{v.name}" + (f" [{v.unit}]" if v.unit else ""), kind, v.id])
+        it.setData(0, ROLE, ("var", v.id))
+        it.setForeground(1, QBrush(QColor(KIND_COLORS[v.kind])))
+        return it
+
+    def _all_items(self) -> list[QTreeWidgetItem]:
+        out = []
+        stack = [self.tree.topLevelItem(i) for i in range(self.tree.topLevelItemCount())]
+        while stack:
+            it = stack.pop()
+            out.append(it)
+            stack.extend(it.child(i) for i in range(it.childCount()))
+        return out
+
+    def _select_key(self, key: tuple[str, str]) -> None:
+        for it in self._all_items():
+            if it.data(0, ROLE) == key:
+                self.tree.setCurrentItem(it)
+                self.tree.scrollToItem(it)
                 return
+
+    def _selected(self, kind: str) -> list[str]:
+        return [it.data(0, ROLE)[1] for it in self.tree.selectedItems() if it.data(0, ROLE)[0] == kind]
+
+    def _tree_selected(self) -> None:
+        item = self.tree.currentItem()
+        key = item.data(0, ROLE) if item else None
+        self._current_var = self._current_page = None
+        if key and key[0] == "var":
+            self._current_var = key[1]
+            self._load_var()
+            self.stack.setCurrentIndex(2)
+        elif key and key[0] == "page" and key[1] != NO_PAGE:
+            self._current_page = key[1]
+            self._load_page()
+            self.stack.setCurrentIndex(1)
+        else:
+            self.stack.setCurrentIndex(0)
+        self._redraw()
+
+    def _context_page(self) -> Optional[str]:
+        """Pestaña donde crear elementos nuevos: la seleccionada, la de la variable o la visible más profunda."""
+        if self._current_page:
+            return self._current_page
+        item = self.tree.currentItem()
+        if item and item.data(0, ROLE) == ("page", NO_PAGE):
+            return None
+        if self._current_var:
+            v = self.config.variable(self._current_var)
+            return v.page if v else None
+        visible = self._visible_pages()
+        if visible:
+            return max(visible, key=lambda pid: len(self.config.page_path(pid)))
+        return None
+
+    def _refresh_combos(self) -> None:
+        self._loading = True
+        labels = [(p.id, self.config.page_label(p.id)) for p in self.config.pages]
+        labels.sort(key=lambda x: x[1])
+        cur = self.cmb_page.currentData()
+        self.cmb_page.clear()
+        self.cmb_page.addItem("— siempre visible —", None)
+        for pid, label in labels:
+            self.cmb_page.addItem(label, pid)
+        self.cmb_page.setCurrentIndex(max(0, self.cmb_page.findData(cur)))
+        cur = self.cmb_sp.currentData()
+        self.cmb_sp.clear()
+        self.cmb_sp.addItem("— ninguna —", None)
+        for v in self.config.variables:
+            if v.kind == "setpoint":
+                self.cmb_sp.addItem(self.config.var_label(v), v.id)
+        self.cmb_sp.setCurrentIndex(max(0, self.cmb_sp.findData(cur)))
+        self._loading = False
+        self._refresh_recipe_var_combo()
 
     # --- general ----------------------------------------------------------------
     def _load_general(self) -> None:
@@ -395,7 +606,7 @@ class SetupDialog(QDialog):
         self.cmb_recipe_var.addItem("— ninguna —", None)
         for v in self.config.variables:
             if v.kind == "text":
-                self.cmb_recipe_var.addItem(v.name, v.id)
+                self.cmb_recipe_var.addItem(self.config.var_label(v), v.id)
         self.cmb_recipe_var.setCurrentIndex(max(0, self.cmb_recipe_var.findData(current)))
 
     def _commit_general(self) -> None:
@@ -414,89 +625,58 @@ class SetupDialog(QDialog):
         g.recipe_name_var = self.cmb_recipe_var.currentData()
         g.beep_on_alarm = self.chk_beep.isChecked()
 
-    # --- páginas ---------------------------------------------------------------------
-    def _refresh_pages(self, select: Optional[str] = None) -> None:
-        self.lst_pages.blockSignals(True)
-        self.lst_pages.clear()
-        for p in self.config.pages:
-            it = QListWidgetItem(f"{p.name}  ({p.id})")
-            it.setData(Qt.UserRole, p.id)
-            self.lst_pages.addItem(it)
-        self.lst_pages.blockSignals(False)
-        if select:
-            self._select_in(self.lst_pages, select)
-        self._refresh_page_combo()
-        self._redraw()
+    # --- pestañas ------------------------------------------------------------------------
+    def _new_root_page(self) -> None:
+        self._new_page(None)
 
-    def _refresh_page_combo(self) -> None:
-        self._loading = True
-        cur = self.cmb_page.currentData()
-        self.cmb_page.clear()
-        self.cmb_page.addItem("— siempre visible —", None)
-        for p in self.config.pages:
-            self.cmb_page.addItem(p.name, p.id)
-        self.cmb_page.setCurrentIndex(max(0, self.cmb_page.findData(cur)))
-        self._loading = False
-
-    def _page_selected(self, item: Optional[QListWidgetItem], _prev=None) -> None:
-        self._current_page = item.data(Qt.UserRole) if item else None
-        page = self.config.page(self._current_page) if self._current_page else None
-        self._loading = True
-        self.ed_page_name.setText(page.name if page else "")
-        self.sp_page_thr.setValue(page.match_threshold if page else 0.85)
-        anchor = self.anchors.get(self._current_page) if page else None
-        self.lbl_page_anchor.setPixmap(to_pixmap(anchor) if anchor is not None else to_pixmap(
-            np.zeros((1, 1), np.uint8)))
-        self.lbl_page_score.setText("")
-        self._loading = False
-        self._redraw()
-
-    def _need_selection(self) -> Optional[Rect]:
-        if self.frame is None or self.view.selection is None:
-            QMessageBox.information(self, "Selección", "Primero captura la pantalla y marca una región.")
-            return None
-        return self.view.selection
-
-    def _new_page(self) -> None:
-        r = self._need_selection()
-        if r is None:
+    def _new_child_page(self) -> None:
+        parent = self._context_page()
+        if parent is None:
+            QMessageBox.information(self, "Sub-pestaña", "Selecciona primero la pestaña o componente padre.")
             return
-        name, ok = QInputDialog.getText(self, "Nueva página", "Nombre de la pantalla del HMI:")
+        self._new_page(parent)
+
+    def _new_page(self, parent: Optional[str]) -> None:
+        where = f" dentro de «{self.config.page_label(parent)}»" if parent else ""
+        name, ok = QInputDialog.getText(self, "Nueva pestaña", f"Nombre de la pestaña{where}:")
         if not ok or not name.strip():
             return
-        pid = self._unique(_slug(name), {p.id for p in self.config.pages})
-        self.config.pages.append(Page(id=pid, name=name.strip(), anchor=r))
-        self.anchors[pid] = crop(self.frame, r).copy()
+        base = f"{parent}_{_slug(name)}" if parent else _slug(name)
+        pid = _unique(base, {p.id for p in self.config.pages})
+        page = Page(id=pid, name=name.strip(), parent=parent)
+        if self.frame is not None and self.view.selection is not None:
+            if QMessageBox.question(self, "Ancla", "¿Usar la región marcada como ancla de la pestaña?\n"
+                                    "(Debe verse solo cuando la pestaña está activa, p. ej. su botón resaltado)"
+                                    ) == QMessageBox.Yes:
+                page.anchor = self.view.selection
+                self.anchors[pid] = crop(self.frame, page.anchor).copy()
+        self.config.pages.append(page)
         self.removed_pages.discard(pid)
-        self._refresh_pages(pid)
+        self._refresh_tree(("page", pid))
 
-    def _replace_anchor(self) -> None:
-        page = self.config.page(self._current_page) if self._current_page else None
-        r = self._need_selection()
-        if page is None or r is None:
+    def _load_page(self) -> None:
+        page = self.config.page(self._current_page)
+        if page is None:
             return
-        page.anchor = r
-        self.anchors[page.id] = crop(self.frame, r).copy()
-        self._page_selected(self.lst_pages.currentItem())
-
-    def _delete_page(self) -> None:
-        pid = self._current_page
-        if not pid:
-            return
-        used = [v.name for v in self.config.variables if v.page == pid]
-        if used and QMessageBox.question(
-                self, "Eliminar página",
-                f"{len(used)} variables usan esta página y pasarán a «siempre visible». ¿Continuar?") \
-                != QMessageBox.Yes:
-            return
-        for v in self.config.variables:
-            if v.page == pid:
-                v.page = None
-        self.config.pages = [p for p in self.config.pages if p.id != pid]
-        self.anchors.pop(pid, None)
-        self.removed_pages.add(pid)
-        self._current_page = None
-        self._refresh_pages()
+        self._loading = True
+        self.ed_page_name.setText(page.name)
+        self.lbl_page_id.setText(page.id)
+        self.cmb_page_parent.clear()
+        self.cmb_page_parent.addItem("— raíz —", None)
+        forbidden = self.config.descendants(page.id) | {page.id}
+        for p in sorted(self.config.pages, key=lambda x: self.config.page_label(x.id)):
+            if p.id not in forbidden:
+                self.cmb_page_parent.addItem(self.config.page_label(p.id), p.id)
+        self.cmb_page_parent.setCurrentIndex(max(0, self.cmb_page_parent.findData(page.parent)))
+        self.sp_page_thr.setValue(page.match_threshold)
+        anchor = self.anchors.get(page.id) if page.anchor else None
+        if anchor is not None:
+            self.lbl_page_anchor.setPixmap(to_pixmap(anchor))
+        else:
+            self.lbl_page_anchor.setPixmap(to_pixmap(np.full((1, 1), 255, np.uint8)))
+            self.lbl_page_anchor.setText("sin ancla (carpeta: visible si su padre lo es)")
+        self.lbl_page_score.setText("")
+        self._loading = False
 
     def _commit_page(self) -> None:
         if self._loading or not self._current_page:
@@ -506,59 +686,63 @@ class SetupDialog(QDialog):
             return
         page.name = self.ed_page_name.text().strip() or page.name
         page.match_threshold = self.sp_page_thr.value()
-        item = self.lst_pages.currentItem()
-        if item:
-            item.setText(f"{page.name}  ({page.id})")
-        self._refresh_page_combo()
+        new_parent = self.cmb_page_parent.currentData()
+        changed = new_parent != page.parent
+        page.parent = new_parent
+        item = self.tree.currentItem()
+        if changed:
+            self._refresh_tree(("page", page.id))
+        elif item:
+            item.setText(0, page.name)
+            self._refresh_combos()
+
+    def _need_selection(self) -> Optional[Rect]:
+        if self.frame is None or self.view.selection is None:
+            QMessageBox.information(self, "Selección", "Primero captura la pantalla y marca una región.")
+            return None
+        return self.view.selection
+
+    def _set_anchor(self) -> None:
+        page = self.config.page(self._current_page) if self._current_page else None
+        r = self._need_selection()
+        if page is None or r is None:
+            return
+        page.anchor = r
+        self.anchors[page.id] = crop(self.frame, r).copy()
+        self._refresh_tree(("page", page.id))
+
+    def _clear_anchor(self) -> None:
+        page = self.config.page(self._current_page) if self._current_page else None
+        if page is None:
+            return
+        page.anchor = None
+        self.anchors.pop(page.id, None)
+        self.removed_pages.add(page.id)
+        self._refresh_tree(("page", page.id))
 
     def _test_page(self) -> None:
         if self.frame is None or not self._current_page:
             return
-        det = _MemoryPageDetector(self.config, self.anchors)
-        score = det.score(self.frame, self._current_page)
         page = self.config.page(self._current_page)
-        verdict = "VISIBLE" if score >= page.match_threshold else "no visible"
-        self.lbl_page_score.setText(f"Coincidencia {score:.2f} → {verdict}")
+        det = PageDetector(self.config, self.anchors)
+        visible = self._current_page in det.visible_pages(self.frame)
+        score = det.score(self.frame, page.id) if page.anchor else None
+        s = f"coincidencia {score:.2f} · " if score is not None else ""
+        self.lbl_page_score.setText(f"{s}{'VISIBLE' if visible else 'no visible'}")
 
     # --- variables -----------------------------------------------------------------------
-    def _refresh_vars(self, select: Optional[str] = None) -> None:
-        self.lst_vars.blockSignals(True)
-        self.lst_vars.clear()
-        for v in self.config.variables:
-            it = QListWidgetItem(f"{v.name}  [{v.id}]  · {dict(KINDS)[v.kind].split(' ')[0].lower()}")
-            it.setData(Qt.UserRole, v.id)
-            self.lst_vars.addItem(it)
-        self.lst_vars.blockSignals(False)
-        self._refresh_sp_combo()
-        self._refresh_recipe_var_combo()
-        if select:
-            self._select_in(self.lst_vars, select)
-        self._redraw()
-
-    def _refresh_sp_combo(self) -> None:
-        self._loading = True
-        cur = self.cmb_sp.currentData()
-        self.cmb_sp.clear()
-        self.cmb_sp.addItem("— ninguna —", None)
-        for v in self.config.variables:
-            if v.kind == "setpoint":
-                self.cmb_sp.addItem(v.name, v.id)
-        self.cmb_sp.setCurrentIndex(max(0, self.cmb_sp.findData(cur)))
-        self._loading = False
-
-    def _var_selected(self, item: Optional[QListWidgetItem], _prev=None) -> None:
-        self._current_var = item.data(Qt.UserRole) if item else None
-        v = self.config.variable(self._current_var) if self._current_var else None
+    def _load_var(self) -> None:
+        v = self.config.variable(self._current_var)
         if v is None:
             return
         self._loading = True
         self.ed_id.setText(v.id)
         self.ed_name.setText(v.name)
         self.ed_unit.setText(v.unit)
-        self.ed_group.setText(v.group)
         self.cmb_kind.setCurrentIndex(max(0, self.cmb_kind.findData(v.kind)))
         self.cmb_page.setCurrentIndex(max(0, self.cmb_page.findData(v.page)))
         self.cmb_sp.setCurrentIndex(max(0, self.cmb_sp.findData(v.setpoint_var)))
+        self.cmb_sp.setEnabled(v.kind == "actual")
         self.sp_dec.setValue(-1 if v.decimals is None else v.decimals)
         self.cmb_sep.setCurrentIndex(max(0, self.cmb_sep.findData(v.decimal_separator)))
         self.chk_fixdec.setChecked(v.fix_missing_decimal)
@@ -568,11 +752,11 @@ class SetupDialog(QDialog):
         self.cmb_invert.setCurrentIndex(max(0, self.cmb_invert.findData(v.ocr.invert)))
         self.sp_scale.setValue(v.ocr.scale)
         self.sp_thr.setValue(-1 if v.ocr.threshold is None else v.ocr.threshold)
+        self.chk_border.setChecked(v.ocr.clear_border)
         self.chk_trend.setChecked(v.trend)
         r = v.region
         self.lbl_region.setText(f"x={r.x} y={r.y} {r.w}×{r.h}")
         self._loading = False
-        self._redraw()
         self._test_ocr()
 
     def _commit_var(self) -> None:
@@ -587,91 +771,212 @@ class SetupDialog(QDialog):
             QMessageBox.warning(self, "ID duplicado", f"Ya existe una variable con ID «{new_id}».")
             self.ed_id.setText(old.id)
             new_id = old.id
+        kind = self.cmb_kind.currentData()
         try:
             var = Variable(
                 id=new_id, name=self.ed_name.text().strip() or new_id, unit=self.ed_unit.text().strip(),
-                group=self.ed_group.text().strip() or "General", kind=self.cmb_kind.currentData(),
-                page=self.cmb_page.currentData(), region=old.region,
-                setpoint_var=self.cmb_sp.currentData() if self.cmb_kind.currentData() == "actual" else None,
+                group=old.group, kind=kind, page=self.cmb_page.currentData(), region=old.region,
+                setpoint_var=self.cmb_sp.currentData() if kind == "actual" else None,
                 decimals=None if self.sp_dec.value() < 0 else self.sp_dec.value(),
                 decimal_separator=self.cmb_sep.currentData(), fix_missing_decimal=self.chk_fixdec.isChecked(),
                 valid_min=_opt_float(self.ed_vmin.text()), valid_max=_opt_float(self.ed_vmax.text()),
                 max_step=_opt_float(self.ed_step.text()),
                 ocr=OcrOptions(invert=self.cmb_invert.currentData(), scale=self.sp_scale.value(),
-                               threshold=None if self.sp_thr.value() < 0 else self.sp_thr.value()),
+                               threshold=None if self.sp_thr.value() < 0 else self.sp_thr.value(),
+                               clear_border=self.chk_border.isChecked()),
                 trend=self.chk_trend.isChecked())
         except ValueError as exc:
             self.lbl_result.setText(f"<span style='color:#e53935'>Valor inválido: {exc}</span>")
             return
         self.config.variables[idx] = var
         if new_id != old.id:
-            for v in self.config.variables:
-                if v.setpoint_var == old.id:
-                    v.setpoint_var = new_id
-            if self.config.general.recipe_name_var == old.id:
-                self.config.general.recipe_name_var = new_id
+            self._rename_refs(old.id, new_id)
             self._current_var = new_id
-        item = self.lst_vars.currentItem()
-        if item:
-            item.setData(Qt.UserRole, var.id)
-            item.setText(f"{var.name}  [{var.id}]  · {dict(KINDS)[var.kind].split(' ')[0].lower()}")
-        if old.kind != var.kind or new_id != old.id or old.name != var.name:
-            self._refresh_sp_combo()
-            self._refresh_recipe_var_combo()
-        self._redraw()
+        if kind != "setpoint":
+            # Si dejó de ser consigna, se desvincula de las mediciones que la usaban.
+            for v in self.config.variables:
+                if v.setpoint_var == var.id:
+                    v.setpoint_var = None
+        structural = (old.kind, old.page, old.setpoint_var, old.id) != (var.kind, var.page, var.setpoint_var, var.id)
+        if structural:
+            self._refresh_tree(("var", var.id))
+        else:
+            item = self.tree.currentItem()
+            if item:
+                fresh = self._var_item(var)
+                for c in range(3):
+                    item.setText(c, fresh.text(c))
+            self._redraw()
+        self.cmb_sp.setEnabled(kind == "actual")
 
-    @staticmethod
-    def _unique(base: str, existing: set[str]) -> str:
-        if base not in existing:
-            return base
-        i = 2
-        while f"{base}_{i}" in existing:
-            i += 1
-        return f"{base}_{i}"
+    def _rename_refs(self, old: str, new: str) -> None:
+        for v in self.config.variables:
+            if v.setpoint_var == old:
+                v.setpoint_var = new
+        if self.config.general.recipe_name_var == old:
+            self.config.general.recipe_name_var = new
 
-    def _new_var(self) -> None:
+    def _make_var(self, kind: str, name: str, region: Rect, page: Optional[str]) -> Variable:
+        base = f"{page}_{_slug(name)}" if page else _slug(name)
+        if kind == "setpoint":
+            base += "_sp"
+        vid = _unique(base, {v.id for v in self.config.variables})
+        return Variable(id=vid, name=name, kind=kind, region=region, page=page, trend=kind == "actual")
+
+    def _new_var(self, kind: str) -> None:
         r = self._need_selection()
         if r is None:
             return
-        name, ok = QInputDialog.getText(self, "Nueva variable", "Nombre (p. ej. «Zona 3 real»):")
+        page = self._context_page()
+        where = f" en «{self.config.page_label(page)}»" if page else " (siempre visible)"
+        name, ok = QInputDialog.getText(self, f"Nueva {KIND_SHORT[kind]}", f"Nombre{where}:")
         if not ok or not name.strip():
             return
-        vid = self._unique(_slug(name), {v.id for v in self.config.variables})
-        page = self._guess_page()
-        self.config.variables.append(Variable(id=vid, name=name.strip(), region=r, page=page))
-        self._refresh_vars(vid)
+        var = self._make_var(kind, name.strip(), r, page)
+        self.config.variables.append(var)
+        self._refresh_tree(("var", var.id))
 
-    def _guess_page(self) -> Optional[str]:
-        if self.frame is None or not self.config.pages:
-            return None
-        det = _MemoryPageDetector(self.config, self.anchors)
-        visible = det.visible_pages(self.frame)
-        return next(iter(sorted(visible)), None)
-
-    def _dup_var(self) -> None:
-        v = self.config.variable(self._current_var) if self._current_var else None
-        if v is None:
+    # Par consigna / medición: dos regiones marcadas en secuencia.
+    def _start_pair(self) -> None:
+        if self.frame is None:
+            QMessageBox.information(self, "Captura", "Primero captura la pantalla del HMI.")
             return
-        copy = v.model_copy(deep=True)
-        copy.id = self._unique(v.id, {x.id for x in self.config.variables})
-        copy.name = v.name + " (copia)"
+        page = self._context_page()
+        where = f" en «{self.config.page_label(page)}»" if page else " (siempre visible)"
+        name, ok = QInputDialog.getText(self, "Nuevo par consigna / medición",
+                                        f"Nombre de la variable{where} (p. ej. «Cylinder 1»):")
+        if not ok or not name.strip():
+            return
+        self._pair = ("sp", name.strip(), page)
+        self._hint(f"① Marca la región de la CONSIGNA de «{name.strip()}» (Esc para cancelar)", strong=True)
+
+    def _pair_step(self, rect: Rect) -> None:
+        if self._pair[0] == "sp":
+            _, name, page = self._pair
+            self._pair = ("pv", name, page, rect)
+            self._hint(f"② Ahora marca la región de la MEDICIÓN (valor real) de «{name}»", strong=True)
+            return
+        _, name, page, sp_rect = self._pair
+        self._pair = None
+        self._hint()
+        sp = self._make_var("setpoint", name, sp_rect, page)
+        sp.name = f"{name} consigna"
+        self.config.variables.append(sp)
+        pv = self._make_var("actual", name, rect, page)
+        pv.setpoint_var = sp.id
+        self.config.variables.append(pv)
+        self._refresh_tree(("var", pv.id))
+
+    def keyPressEvent(self, event) -> None:
+        if event.key() == Qt.Key_Escape and self._pair is not None:
+            self._pair = None
+            self._hint()
+            return
+        super().keyPressEvent(event)
+
+    def _group_for_copy(self) -> list[Variable]:
+        """Variables seleccionadas; al elegir una medición se incluye su consigna vinculada."""
+        ids = list(dict.fromkeys(self._selected("var")))
+        for vid in list(ids):
+            v = self.config.variable(vid)
+            if v and v.setpoint_var and v.setpoint_var not in ids:
+                ids.append(v.setpoint_var)
+        return [v for v in (self.config.variable(i) for i in ids) if v]
+
+    def _clone_group(self, group: list[Variable], dx: int, dy: int, rename) -> list[Variable]:
+        existing = {v.id for v in self.config.variables}
+        mapping: dict[str, str] = {}
+        clones = []
+        for v in group:
+            c = v.model_copy(deep=True)
+            c.name = rename(v.name)
+            base = f"{v.page}_{_slug(c.name)}" if v.page else _slug(c.name)
+            if c.kind == "setpoint" and not base.endswith("_sp"):
+                base += "_sp"
+            c.id = _unique(base, existing)
+            existing.add(c.id)
+            c.region = Rect(x=v.region.x + dx, y=v.region.y + dy, w=v.region.w, h=v.region.h)
+            mapping[v.id] = c.id
+            clones.append(c)
+        for c in clones:
+            if c.setpoint_var in mapping:
+                c.setpoint_var = mapping[c.setpoint_var]
+        return clones
+
+    def _duplicate(self) -> None:
+        group = self._group_for_copy()
+        if not group:
+            return
+        dx = dy = 0
         if self.view.selection is not None:
-            copy.region = self.view.selection
-        self.config.variables.append(copy)
-        self._refresh_vars(copy.id)
+            dx = self.view.selection.x - min(v.region.x for v in group)
+            dy = self.view.selection.y - min(v.region.y for v in group)
+        clones = self._clone_group(group, dx, dy, lambda n: n + " (copia)")
+        self.config.variables.extend(clones)
+        self._refresh_tree(("var", clones[0].id))
 
-    def _delete_var(self) -> None:
-        vid = self._current_var
-        if not vid:
+    def _series(self) -> None:
+        group = self._group_for_copy()
+        if not group:
+            QMessageBox.information(self, "Crear serie", "Selecciona en el árbol las variables a replicar.")
             return
-        self.config.variables = [v for v in self.config.variables if v.id != vid]
+        dx = dy = 0
+        if self.view.selection is not None:
+            dx = self.view.selection.x - min(v.region.x for v in group)
+            dy = self.view.selection.y - min(v.region.y for v in group)
+        dlg = SeriesDialog(group[0].name, dx, dy, self)
+        if not dlg.exec():
+            return
+        find = dlg.ed_find.text()
+        created = []
+        for k in range(dlg.sp_count.value()):
+            number = str(dlg.sp_start.value() + k)
+
+            def rename(n: str, number=number, k=k) -> str:
+                if find and find in n:
+                    return n.replace(find, number, 1)
+                return f"{n} {k + 2}"
+
+            clones = self._clone_group(group, dlg.sp_dx.value() * (k + 1), dlg.sp_dy.value() * (k + 1), rename)
+            self.config.variables.extend(clones)
+            created += clones
+        self._refresh_tree(("var", created[0].id) if created else None)
+        self.lbl_result.setText(f"Se crearon {len(created)} variables.")
+
+    def _delete(self) -> None:
+        var_ids = set(self._selected("var"))
+        page_ids = {p for p in self._selected("page") if p != NO_PAGE}
+        for pid in list(page_ids):
+            page_ids |= self.config.descendants(pid)
+        in_pages = {v.id for v in self.config.variables if v.page in page_ids}
+        # Al borrar una medición también se borra su consigna vinculada.
+        for vid in list(var_ids):
+            v = self.config.variable(vid)
+            if v and v.setpoint_var:
+                var_ids.add(v.setpoint_var)
+        all_vars = var_ids | in_pages
+        if not all_vars and not page_ids:
+            return
+        msg = []
+        if page_ids:
+            msg.append(f"{len(page_ids)} pestañas")
+        if all_vars:
+            msg.append(f"{len(all_vars)} variables")
+        if QMessageBox.question(self, "Eliminar", f"¿Eliminar {' y '.join(msg)}?") != QMessageBox.Yes:
+            return
+        self.config.variables = [v for v in self.config.variables if v.id not in all_vars]
         for v in self.config.variables:
-            if v.setpoint_var == vid:
+            if v.setpoint_var in all_vars:
                 v.setpoint_var = None
-        if self.config.general.recipe_name_var == vid:
+        if self.config.general.recipe_name_var in all_vars:
             self.config.general.recipe_name_var = None
-        self._current_var = None
-        self._refresh_vars()
+        self.config.pages = [p for p in self.config.pages if p.id not in page_ids]
+        for pid in page_ids:
+            self.anchors.pop(pid, None)
+        self.removed_pages |= page_ids
+        self._current_var = self._current_page = None
+        self._refresh_tree()
+        self.stack.setCurrentIndex(0)
 
     def _assign_region(self) -> None:
         v = self.config.variable(self._current_var) if self._current_var else None
@@ -716,7 +1021,7 @@ class SetupDialog(QDialog):
             self.lbl_result.setText(f"Motor {engine.name}{note}: texto «{res.text}» · confianza {res.confidence:.2f}")
             return
         value = parse_number(res.text, v)
-        color = "#66bb6a" if value is not None else "#e53935"
+        color = "#43a047" if value is not None else "#e53935"
         extra = ""
         if isinstance(engine, TemplateOcr) and not engine.known_chars:
             extra = "<br>El motor de plantillas aún no conoce caracteres: usa «Enseñar caracteres…»."
@@ -748,27 +1053,18 @@ class SetupDialog(QDialog):
     def _save(self) -> None:
         self._commit_general()
         problems = self.config.validate_references()
-        missing = [p.name for p in self.config.pages if p.id not in self.anchors]
+        missing = [p.name for p in self.config.pages if p.anchor is not None and p.id not in self.anchors]
         if missing:
-            problems.append(f"Páginas sin imagen ancla: {', '.join(missing)}")
+            problems.append(f"Pestañas sin imagen ancla: {', '.join(missing)}")
         if problems:
             QMessageBox.warning(self, "Revisa la configuración", "\n".join(problems))
             return
         ws = self.ctx.workspace
         for pid in self.removed_pages:
             f = ws.page_anchor_file(pid)
-            if f.exists():
+            if f.exists() and pid not in self.anchors:
                 f.unlink()
         for pid, img in self.anchors.items():
             save_png(ws.page_anchor_file(pid), img)
         ws.save_config(self.config)
         self.accept()
-
-
-class _MemoryPageDetector(PageDetector):
-    """Detector que usa las anclas en memoria (aún no guardadas)."""
-
-    def __init__(self, config: AppConfig, anchors: dict[str, np.ndarray]):
-        import cv2
-        self.config = config
-        self._anchors = {k: cv2.cvtColor(v, cv2.COLOR_BGR2GRAY) for k, v in anchors.items()}

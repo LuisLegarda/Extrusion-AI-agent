@@ -159,9 +159,12 @@ class TemplateOcr:
                         best_ch, second, best = ch, best, s
                     elif s > second:
                         second = s
-                text.append(best_ch if best > 0.5 else "?")
-                confs.append(max(0.0, min(1.0, best)) * (1.0 if second < best - 0.05 else 0.8))
-        return OcrResult("".join(text), float(min(confs)))
+                if best > 0.5:
+                    text.append(best_ch)
+                    confs.append(max(0.0, min(1.0, best)) * (1.0 if second < best - 0.05 else 0.8))
+                else:
+                    text.append("?")  # p. ej. la unidad dentro del recuadro; no cuenta en la confianza
+        return OcrResult("".join(text), float(min(confs)) if confs else 0.0)
 
     def save(self) -> None:
         data = {

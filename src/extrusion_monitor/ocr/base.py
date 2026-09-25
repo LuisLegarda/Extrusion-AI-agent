@@ -44,7 +44,27 @@ def preprocess(image: np.ndarray, opts: OcrOptions) -> np.ndarray:
         # El texto ocupa menos área que el fondo: si predomina lo negro, se invierte.
         if np.count_nonzero(binary == 0) > binary.size / 2:
             binary = 255 - binary
+    if opts.clear_border:
+        binary = clear_border(binary)
     return binary
+
+
+def clear_border(binary: np.ndarray) -> np.ndarray:
+    """Elimina marcos y líneas que tocan el borde de la región (cajas de campos del HMI).
+
+    Solo se borran componentes que tocan el borde y además son largos (>60 % del ancho o del
+    alto), para no perder dígitos que queden rozando el borde de una región ajustada.
+    """
+    ink = (binary == 0).astype(np.uint8)
+    n, labels, stats, _ = cv2.connectedComponentsWithStats(ink, connectivity=8)
+    h, w = binary.shape
+    out = binary.copy()
+    for i in range(1, n):
+        x, y, cw, ch, _ = stats[i]
+        touches = x == 0 or y == 0 or x + cw >= w or y + ch >= h
+        if touches and (cw > 0.6 * w or ch > 0.6 * h):
+            out[labels == i] = 255
+    return out
 
 
 _CONFUSIONS = str.maketrans({

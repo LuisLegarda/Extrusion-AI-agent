@@ -64,7 +64,7 @@ class MonitorEngine:
 
     def _build(self) -> None:
         g = self.config.general
-        self.pages = PageDetector(self.config, self.workspace)
+        self.pages = PageDetector.from_workspace(self.config, self.workspace)
         self.acquirer = Acquirer(self.config, self.ocr, self.pages)
         self.rules = RuleEngine(self.config)
         self.trends = TrendTracker(g.trend_window_min * 60, g.spc_subgroup_s)
