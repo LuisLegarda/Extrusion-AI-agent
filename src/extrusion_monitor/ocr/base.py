@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import re
+import unicodedata
 from dataclasses import dataclass
 from typing import Optional, Protocol
 
@@ -75,11 +76,33 @@ _CONFUSIONS = str.maketrans({
 })
 
 
+def _normalize_digits(text: str) -> str:
+    """Unicode a ASCII: dígitos de otros alfabetos y variantes de «O» (p. ej. Ο griega, О cirílica)."""
+    out = []
+    for ch in unicodedata.normalize("NFKC", text):
+        if ch.isascii():
+            out.append(ch)
+            continue
+        cat = unicodedata.category(ch)
+        name = unicodedata.name(ch, "")
+        if cat == "Nd":
+            out.append(str(unicodedata.digit(ch)))
+        elif " LETTER O" in name and ("CAPITAL LETTER O" in name or "SMALL LETTER O" in name):
+            out.append("0")
+        elif name.startswith(("DEGREE", "MASCULINE ORDINAL")):
+            out.append(" ")  # unidad «°C»: no debe confundirse con un cero
+        elif cat.startswith("P") and ("DOT" in name or "STOP" in name):
+            out.append(".")
+        else:
+            out.append(ch)
+    return "".join(out)
+
+
 def parse_number(text: str, var: Variable | None = None) -> Optional[float]:
     """Convierte el texto de OCR a número tolerando confusiones típicas y coma decimal."""
     if text is None:
         return None
-    s = text.strip().translate(_CONFUSIONS)
+    s = _normalize_digits(text).strip().translate(_CONFUSIONS)
     s = re.sub(r"\s+", "", s)
     m = re.search(r"-?[0-9][0-9.,]*", s)
     if not m:

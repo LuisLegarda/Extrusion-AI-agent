@@ -30,3 +30,15 @@ def test_ambiguous_char_inside_number_rejected():
     assert _AMBIGUOUS.search("3?5")
     assert _AMBIGUOUS.search("12.?4")
     assert not _AMBIGUOUS.search("300??")
+
+
+@pytest.mark.parametrize("text,expected", [
+    ("3\u039f\u039f.\u039f", 300.0),  # Ο griega
+    ("3\u043e\u043e.\u043e", 300.0),  # о cirílica
+    ("3\u00f6\u00f6.\u00f6", 300.0),  # ö
+    ("\uff13\uff10\uff10", 300.0),  # dígitos de ancho completo
+    ("300 \u00b0C", 300.0),  # la unidad no se vuelve un cero
+    ("25\u00b75", 25.5),
+])
+def test_parse_unicode_lookalikes(text, expected):
+    assert parse_number(text) == expected

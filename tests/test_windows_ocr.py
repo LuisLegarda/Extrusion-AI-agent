@@ -40,4 +40,4 @@ def test_reads_hmi_like_fields(text, kw):
     from extrusion_monitor.config import OcrOptions
     from extrusion_monitor.ocr import parse_number
     res = engine().read(field(text, **kw), True, OcrOptions(scale=2.0))
-    assert parse_number(res.text) == float(text), res.text
+    assert parse_number(res.text) == float(text), ascii(res.text)
