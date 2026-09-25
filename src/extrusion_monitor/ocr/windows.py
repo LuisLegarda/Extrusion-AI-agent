@@ -55,10 +55,37 @@ class WindowsOcr:
         binary = cv2.copyMakeBorder(binary, 16, 16, 16, 16, cv2.BORDER_CONSTANT, value=255)
         rgba = cv2.cvtColor(binary, cv2.COLOR_GRAY2RGBA)
         h, w = rgba.shape[:2]
-        writer = self._DataWriter()
-        writer.write_bytes(list(rgba.tobytes()))
         bitmap = self._SoftwareBitmap.create_copy_from_buffer(
-            writer.detach_buffer(), self._BitmapPixelFormat.RGBA8, w, h)
-        result = self._loop().run_until_complete(self._engine.recognize_async(bitmap))
+            self._buffer(rgba.tobytes()), self._BitmapPixelFormat.RGBA8, w, h)
+        engine = self._engine
+
+        async def recognize():
+            return await engine.recognize_async(bitmap)
+
+        result = self._loop().run_until_complete(recognize())
         text = " ".join(line.text for line in result.lines).strip()
         return OcrResult(text, 0.85 if text else 0.0)
+
+    def _buffer(self, data: bytes):
+        """IBuffer con los píxeles. Según la versión de pywinrt `write_bytes` acepta bytes o una lista."""
+        last: Exception | None = None
+        for payload in (data, bytearray(data), list(data)):
+            writer = self._DataWriter()
+            try:
+                writer.write_bytes(payload)
+            except TypeError as exc:
+                last = exc
+                continue
+            return writer.detach_buffer()
+        raise OcrUnavailable(f"No se pudo pasar la imagen al OCR de Windows: {last}")
+
+    def self_test(self) -> None:
+        """Lee un número dibujado para confirmar que el motor funciona en este equipo."""
+        img = np.full((60, 200, 3), 255, np.uint8)
+        cv2.putText(img, "1234", (10, 45), cv2.FONT_HERSHEY_SIMPLEX, 1.5, (0, 0, 0), 3, cv2.LINE_AA)
+        try:
+            res = self.read(img, True, OcrOptions(scale=1.0, clear_border=False))
+        except Exception as exc:
+            raise OcrUnavailable(f"El OCR de Windows falló en la autoprueba: {exc}") from exc
+        if "1234" not in res.text.replace(" ", ""):
+            raise OcrUnavailable(f"El OCR de Windows no pasó la autoprueba (leyó «{res.text}»)")

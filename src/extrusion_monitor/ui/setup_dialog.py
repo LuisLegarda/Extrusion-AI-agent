@@ -1035,7 +1035,9 @@ class SetupDialog(QDialog):
             return
         note = ""
         if engine.name != self.config.general.ocr_engine:
-            note = f" (motor «{self.config.general.ocr_engine}» no disponible, se usa «{engine.name}»)"
+            from .. import ocr as ocr_mod
+            why = f": {ocr_mod.last_error}" if ocr_mod.last_error else ""
+            note = f" (motor «{self.config.general.ocr_engine}» no disponible{why}; se usa «{engine.name}»)"
         if v.kind == "text":
             self.lbl_result.setText(f"Motor {engine.name}{note}: texto «{res.text}» · confianza {res.confidence:.2f}")
             return

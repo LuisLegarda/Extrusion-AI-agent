@@ -23,7 +23,7 @@ jobs:
       - name: Pruebas
         env:
           QT_QPA_PLATFORM: offscreen
-        run: python -m pytest -q
+        run: python -m pytest -q -rs
       - name: Construir ejecutable
         run: |
           pyinstaller --noconfirm --distpath dist --workpath build packaging/extrusion_monitor.spec
