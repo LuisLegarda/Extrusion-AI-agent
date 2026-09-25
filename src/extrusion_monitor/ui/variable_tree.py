@@ -123,7 +123,8 @@ class VariableTree(QTreeWidget):
             level = page_levels.get(pid)
             text = LEVEL_TEXT[level] if level is not None else ""
             if pid is not None and pid not in snap.pages and self.config and self.config.page(pid):
-                text = (text + " · " if text else "") + "no visible"
+                note = "vía recorrido" if pid in self.config.toured_pages() else "no visible"
+                text = (text + " · " if text else "") + note
             it.setText(C_STATE, text)
             it.setForeground(C_STATE, QBrush(level_color(level)))
 

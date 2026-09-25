@@ -145,7 +145,11 @@ class SetupDialog(QDialog):
 
         self.tabs = QTabWidget()
         self.tabs.addTab(self._build_tree_tab(), "Pestañas y variables")
+        from .tour_tab import TourTab
+        self.tour_tab = TourTab(self)
+        self.tabs.addTab(self.tour_tab, "Recorrido automático")
         self.tabs.addTab(self._build_general_tab(), "General")
+        self.tabs.currentChanged.connect(self._tab_changed)
         split.addWidget(self.tabs)
         split.setSizes([950, 650])
         root.addWidget(split)
@@ -156,6 +160,14 @@ class SetupDialog(QDialog):
         buttons.accepted.connect(self._save)
         buttons.rejected.connect(self.reject)
         root.addWidget(buttons)
+
+    def _tab_changed(self, index: int) -> None:
+        if self.tabs.widget(index) is self.tour_tab:
+            self.tour_tab.refresh()
+        else:
+            if self.tour_tab.recording is not None:
+                self.tour_tab.stop_recording()
+            self.view.set_markers([])
 
     def _hint(self, text: Optional[str] = None, strong: bool = False) -> None:
         default = ("Arrastra con el botón izquierdo para marcar una región · rueda = zoom · "
@@ -382,11 +394,12 @@ class SetupDialog(QDialog):
         return w
 
     # --- imagen -------------------------------------------------------------------
-    def _set_frame(self, frame: np.ndarray) -> None:
+    def _set_frame(self, frame: np.ndarray, fit: bool = True) -> None:
         self.frame = frame
         self.view.set_image(frame)
         self._redraw()
-        QTimer.singleShot(0, self.view.fit)
+        if fit:
+            QTimer.singleShot(0, self.view.fit)
 
     def capture_hmi(self) -> None:
         if self.ctx.demo:
@@ -872,6 +885,9 @@ class SetupDialog(QDialog):
             self._pair = None
             self._hint()
             return
+        if event.key() == Qt.Key_Escape and self.tour_tab.recording is not None:
+            self.tour_tab.stop_recording()
+            return
         super().keyPressEvent(event)
 
     def _group_for_copy(self) -> list[Variable]:
@@ -971,6 +987,9 @@ class SetupDialog(QDialog):
         if self.config.general.recipe_name_var in all_vars:
             self.config.general.recipe_name_var = None
         self.config.pages = [p for p in self.config.pages if p.id not in page_ids]
+        self.config.tour.steps = [st for st in self.config.tour.steps if st.page not in page_ids]
+        if self.config.tour.home_page in page_ids:
+            self.config.tour.home_page = None
         for pid in page_ids:
             self.anchors.pop(pid, None)
         self.removed_pages |= page_ids
@@ -1056,6 +1075,9 @@ class SetupDialog(QDialog):
         missing = [p.name for p in self.config.pages if p.anchor is not None and p.id not in self.anchors]
         if missing:
             problems.append(f"Pestañas sin imagen ancla: {', '.join(missing)}")
+        no_patch = [c for c in self.config.tour.all_clicks() if c.id not in self.tour_tab.patches]
+        if no_patch:
+            problems.append(f"Recorrido: {len(no_patch)} clics sin imagen del botón; vuelve a grabarlos")
         if problems:
             QMessageBox.warning(self, "Revisa la configuración", "\n".join(problems))
             return
@@ -1066,5 +1088,12 @@ class SetupDialog(QDialog):
                 f.unlink()
         for pid, img in self.anchors.items():
             save_png(ws.page_anchor_file(pid), img)
+        used = {c.id for c in self.config.tour.all_clicks()}
+        for cid, img in self.tour_tab.patches.items():
+            if cid in used:
+                save_png(ws.click_patch_file(cid), img)
+        for f in ws.clicks_dir.glob("*.png"):
+            if f.stem not in used:
+                f.unlink()
         ws.save_config(self.config)
         self.accept()

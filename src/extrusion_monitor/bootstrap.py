@@ -23,8 +23,8 @@ class AppContext:
     demo: bool = False
 
 
-def build(home: Optional[Path] = None, demo: bool = False,
-          source: Optional[FrameSource] = None) -> AppContext:
+def build(home: Optional[Path] = None, demo: bool = False, source: Optional[FrameSource] = None,
+          clock=None, sleep=None) -> AppContext:
     ws = Workspace(home)
     if demo:
         demo_source = setup_demo(ws)
@@ -34,12 +34,28 @@ def build(home: Optional[Path] = None, demo: bool = False,
     template = TemplateOcr(ws.glyphs_file)
     ocr = template if config.general.ocr_engine == "template" else create_engine(config.general, ws.glyphs_file)
     source = source or ScreenSource(config.general.monitor)
-    engine = MonitorEngine(ws, config, recipes, source, ocr, Historian(ws.history_db))
+    extra = {k: v for k, v in (("clock", clock), ("sleep", sleep)) if v is not None}
+    engine = MonitorEngine(ws, config, recipes, source, ocr, Historian(ws.history_db),
+                           clicker=make_clicker(source), **extra)
     state = ws.load_state()
     engine.state.auto_recipe = bool(state.get("auto_recipe", True))
     if state.get("recipe") in recipes.names():
         engine.state.recipe = state["recipe"]
     return AppContext(ws, config, recipes, engine, template, demo)
+
+
+def make_clicker(source: FrameSource):
+    """Clics del recorrido: sobre el simulador en la demo, reales en Windows, o ninguno."""
+    sim = getattr(source, "sim", None)
+    if sim is not None:
+        from .simulator import SimClicker
+        return SimClicker(sim)
+    import sys
+    if sys.platform == "win32" and isinstance(source, ScreenSource):
+        from .navigation import WindowsClicker
+        return WindowsClicker(source.offset())
+    from .navigation import UnavailableClicker
+    return UnavailableClicker()
 
 
 def make_ocr(ctx: AppContext):
@@ -49,7 +65,8 @@ def make_ocr(ctx: AppContext):
 
 def setup_demo(ws: Workspace):
     """Prepara una carpeta de datos con la configuración del HMI simulado."""
-    from .simulator import HmiSimulator, SimulatorSource, demo_config, demo_recipe, teach_template
+    from .simulator import (HmiSimulator, SimulatorSource, demo_click_patches, demo_config, demo_recipe,
+                            teach_template)
 
     sim = HmiSimulator()
     config = demo_config()
@@ -60,10 +77,14 @@ def setup_demo(ws: Workspace):
     recipes = RecipeStore(ws.recipes_dir)
     if not recipes.names():
         recipes.save(demo_recipe())
-    frame = sim.render()
     for page in config.pages:
         if page.anchor is not None and not ws.page_anchor_file(page.id).exists():
-            save_png(ws.page_anchor_file(page.id), crop(frame, page.anchor))
+            saved, sim.page = sim.page, page.id
+            save_png(ws.page_anchor_file(page.id), crop(sim.render(), page.anchor))
+            sim.page = saved
+    for cid, patch in demo_click_patches(sim, config).items():
+        if not ws.click_patch_file(cid).exists():
+            save_png(ws.click_patch_file(cid), patch)
     if not ws.glyphs_file.exists():
         teach_template(TemplateOcr(ws.glyphs_file), sim, config.variables[0].ocr)
     return SimulatorSource(sim)

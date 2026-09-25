@@ -15,6 +15,7 @@ from .common import to_pixmap
 class RegionView(QGraphicsView):
     rectDrawn = Signal(object)  # Rect
     regionClicked = Signal(str)
+    pointClicked = Signal(int, int)  # solo en modo de grabación de clics
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -27,6 +28,8 @@ class RegionView(QGraphicsView):
         self._start: Optional[QPointF] = None
         self._rubber: Optional[QGraphicsRectItem] = None
         self.selection: Optional[Rect] = None
+        self.point_mode = False
+        self._markers: list = []
 
     def set_image(self, img: np.ndarray) -> None:
         scene = self.scene()
@@ -63,11 +66,32 @@ class RegionView(QGraphicsView):
             scene.addItem(text)
             self._items += [item, text]
 
+    def set_markers(self, points: list[tuple[int, int, str]]) -> None:
+        """Marcas numeradas de los clics grabados del recorrido."""
+        scene = self.scene()
+        for it in self._markers:
+            scene.removeItem(it)
+        self._markers.clear()
+        for x, y, label in points:
+            pen = QPen(QColor("#ff1744"), 3)
+            pen.setCosmetic(True)
+            ring = scene.addEllipse(x - 14, y - 14, 28, 28, pen)
+            text = QGraphicsSimpleTextItem(label)
+            text.setBrush(QBrush(QColor("#ff1744")))
+            text.setPos(x + 14, y - 30)
+            text.setFlag(QGraphicsSimpleTextItem.ItemIgnoresTransformations)
+            scene.addItem(text)
+            self._markers += [ring, text]
+
     def wheelEvent(self, event) -> None:
         factor = 1.25 if event.angleDelta().y() > 0 else 0.8
         self.scale(factor, factor)
 
     def mousePressEvent(self, event) -> None:
+        if event.button() == Qt.LeftButton and self.point_mode:
+            p = self.mapToScene(event.position().toPoint())
+            self.pointClicked.emit(int(p.x()), int(p.y()))
+            return
         if event.button() == Qt.LeftButton:
             self._start = self.mapToScene(event.position().toPoint())
             if self._rubber is None:
@@ -88,6 +112,8 @@ class RegionView(QGraphicsView):
         super().mouseMoveEvent(event)
 
     def mouseReleaseEvent(self, event) -> None:
+        if self.point_mode and event.button() == Qt.LeftButton:
+            return
         if event.button() == Qt.LeftButton and self._start is not None:
             end = self.mapToScene(event.position().toPoint())
             r = QRectF(self._start, end).normalized()

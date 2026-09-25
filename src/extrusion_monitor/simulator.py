@@ -14,7 +14,7 @@ from typing import Callable, Optional
 import numpy as np
 from PIL import Image, ImageDraw, ImageFont
 
-from .config import AppConfig, GeneralSettings, OcrOptions, Page, Rect, Variable
+from .config import AppConfig, Click, GeneralSettings, OcrOptions, Page, Rect, TourSettings, TourStep, Variable
 from .recipes import Limit, Recipe
 
 W, H = 1280, 800
@@ -42,6 +42,7 @@ class SimVar:
     alarm: float = 0.0
     sp_tol: float = 0.0
     lag: float = 0.15
+    page: str = "ext1"
 
 
 SIM_VARS = [
@@ -54,12 +55,12 @@ SIM_VARS = [
     SimVar("cabezal", "Cabezal", "°C", 205, 0, 0.3, warn=3, alarm=6, sp_tol=1),
     SimVar("dado", "Dado", "°C", 210, 0, 0.3, warn=3, alarm=6, sp_tol=1),
     SimVar("rpm", "Husillo", "rpm", 45.0, 1, 0.15, warn=1.5, alarm=3, sp_tol=0.5, lag=0.3),
-    SimVar("vel", "Velocidad linea", "m/min", 350.0, 1, 0.8, warn=5, alarm=10, sp_tol=2, lag=0.3),
+    SimVar("vel", "Velocidad linea", "m/min", 350.0, 1, 0.8, warn=5, alarm=10, sp_tol=2, lag=0.3, page="linea"),
     SimVar("presion", "Presion fundido", "bar", 250, 0, 2.0, has_sp=False, warn=20, alarm=35),
     SimVar("carga", "Carga motor", "%", 65, 0, 0.8, has_sp=False, warn=10, alarm=15),
-    SimVar("diam", "Diametro ext.", "mm", 3.20, 2, 0.004, has_sp=False, warn=0.03, alarm=0.05),
-    SimVar("exc", "Excentricidad", "%", 5.0, 1, 0.3, has_sp=False, warn=3, alarm=5),
-    SimVar("agua", "Agua enfriam.", "°C", 25.0, 1, 0.15, has_sp=False, warn=3, alarm=5),
+    SimVar("diam", "Diametro ext.", "mm", 3.20, 2, 0.004, has_sp=False, warn=0.03, alarm=0.05, page="principal"),
+    SimVar("exc", "Excentricidad", "%", 5.0, 1, 0.3, has_sp=False, warn=3, alarm=5, page="principal"),
+    SimVar("agua", "Agua enfriam.", "°C", 25.0, 1, 0.15, has_sp=False, warn=3, alarm=5, page="linea"),
 ]
 
 COL_LABEL, COL_SP, COL_ACT = 60, 420, 640
@@ -67,6 +68,24 @@ BOX_W, BOX_H = 180, 36
 ROW_Y0, ROW_DY = 150, 42
 TITLE_RECT = Rect(x=40, y=20, w=420, h=44)
 RECIPE_RECT = Rect(x=880, y=24, w=360, h=36)
+# Barra inferior de botones de navegación (como la de los HMI de línea).
+SIM_PAGES = [("principal", "PRINCIPAL"), ("ext1", "EXT1"), ("linea", "LINEA")]
+NAV_Y, NAV_W, NAV_H, NAV_X0, NAV_DX = 730, 170, 56, 30, 190
+NAV_ON, NAV_OFF = (30, 110, 200), (70, 74, 82)
+
+
+def nav_rect(page_id: str) -> Rect:
+    i = [p for p, _ in SIM_PAGES].index(page_id)
+    return Rect(x=NAV_X0 + i * NAV_DX, y=NAV_Y, w=NAV_W, h=NAV_H)
+
+
+def nav_center(page_id: str) -> tuple[int, int]:
+    r = nav_rect(page_id)
+    return r.x + r.w // 2, r.y + r.h // 2
+
+
+def page_vars(page_id: str) -> list[SimVar]:
+    return [v for v in SIM_VARS if v.page == page_id]
 
 
 def _font(size: int = FONT_SIZE) -> ImageFont.ImageFont:
@@ -116,6 +135,16 @@ class HmiSimulator:
         self.recipe_name = RECIPE_NAME
         self.font = _font()
         self.title_font = _font(30)
+        self.page = "principal"
+        self.clicks: list[tuple[int, int]] = []
+
+    def click(self, x: int, y: int) -> None:
+        """Clic en la pantalla simulada: los botones de la barra inferior cambian de página."""
+        self.clicks.append((x, y))
+        for pid, _ in SIM_PAGES:
+            r = nav_rect(pid)
+            if r.x <= x < r.x + r.w and r.y <= y < r.y + r.h:
+                self.page = pid
 
     def set_setpoint(self, var_id: str, value: float) -> None:
         self.overrides[var_id] = value
@@ -145,7 +174,12 @@ class HmiSimulator:
         d.text((RECIPE_RECT.x + 10, RECIPE_RECT.y + 6), self.recipe_name, font=self.font, fill=FG)
         d.text((COL_SP + 40, ROW_Y0 - 40), "CONSIGNA", font=self.font, fill=FG)
         d.text((COL_ACT + 50, ROW_Y0 - 40), "REAL", font=self.font, fill=FG)
-        for i, v in enumerate(SIM_VARS):
+        for pid, label in SIM_PAGES:
+            r = nav_rect(pid)
+            d.rectangle(_xy(r), fill=NAV_ON if pid == self.page else NAV_OFF)
+            tw = d.textlength(label, font=self.font)
+            d.text((r.x + (r.w - tw) / 2, r.y + 15), label, font=self.font, fill=FG)
+        for i, v in enumerate(page_vars(self.page)):
             y = _row_y(i)
             d.text((COL_LABEL, y + 6), f"{v.name} [{v.unit}]", font=self.font, fill=FG)
             if v.has_sp:
@@ -173,39 +207,93 @@ def _xy(r: Rect) -> tuple[int, int, int, int]:
 class SimulatorSource:
     def __init__(self, sim: Optional[HmiSimulator] = None):
         self.sim = sim or HmiSimulator()
+        self._last_update: Optional[float] = None
 
     def grab(self) -> np.ndarray:
-        self.sim.update()
+        # El proceso avanza una vez por segundo de reloj aunque se capture varias veces (recorrido).
+        now = self.sim.clock()
+        if self._last_update is None or now - self._last_update >= 1.0:
+            self.sim.update()
+            self._last_update = now
         return self.sim.render()
+
+
+class SimClicker:
+    """Clics sobre el HMI simulado; `operator_input()` simula que el operador toca el mouse."""
+
+    def __init__(self, sim: HmiSimulator):
+        self.sim = sim
+        self._last_operator: Optional[float] = None
+        self._last_any: Optional[float] = None
+
+    def click(self, x: int, y: int) -> None:
+        self.sim.click(x, y)
+        self._last_any = self.sim.clock()
+
+    def operator_input(self) -> None:
+        self._last_operator = self._last_any = self.sim.clock()
+
+    def idle_seconds(self) -> float:
+        if self._last_any is None:
+            return 1e9
+        return self.sim.clock() - self._last_any
 
 
 def demo_config() -> AppConfig:
     ocr = OcrOptions(invert="auto", scale=2.0)
     variables: list[Variable] = [
-        Variable(id="receta_hmi", name="Receta en HMI", kind="text", group="Receta", page="principal",
-                 region=RECIPE_RECT, ocr=ocr, trend=False),
+        Variable(id="receta_hmi", name="Receta en HMI", kind="text", region=RECIPE_RECT, ocr=ocr, trend=False),
     ]
-    for i, v in enumerate(SIM_VARS):
-        group = "Temperaturas" if v.unit == "°C" and v.id != "agua" else (
-            "Calidad" if v.id in ("diam", "exc") else "Proceso")
-        if v.has_sp:
+    for pid, _ in SIM_PAGES:
+        for i, v in enumerate(page_vars(pid)):
+            if v.has_sp:
+                variables.append(Variable(
+                    id=f"{v.id}_sp", name=f"{v.name} consigna", unit=v.unit, kind="setpoint", page=pid,
+                    region=_box(COL_SP, i), decimals=v.decimals, ocr=ocr, trend=False,
+                    valid_min=0, valid_max=v.nominal * 3))
             variables.append(Variable(
-                id=f"{v.id}_sp", name=f"{v.name} consigna", unit=v.unit, group=group, kind="setpoint",
-                page="principal", region=_box(COL_SP, i), decimals=v.decimals, ocr=ocr, trend=False,
-                valid_min=0, valid_max=v.nominal * 3))
-        variables.append(Variable(
-            id=v.id, name=v.name, unit=v.unit, group=group, kind="actual", page="principal",
-            region=_box(COL_ACT, i), setpoint_var=f"{v.id}_sp" if v.has_sp else None,
-            decimals=v.decimals, ocr=ocr, valid_min=0, valid_max=v.nominal * 3,
-            max_step=max(v.alarm * 4, v.nominal * 0.2)))
+                id=v.id, name=v.name, unit=v.unit, kind="actual", page=pid,
+                region=_box(COL_ACT, i), setpoint_var=f"{v.id}_sp" if v.has_sp else None,
+                decimals=v.decimals, ocr=ocr, valid_min=0, valid_max=v.nominal * 3,
+                max_step=max(v.alarm * 4, v.nominal * 0.2)))
+
+    def click(cid: str, page_id: str) -> Click:
+        x, y = nav_center(page_id)
+        return Click(id=cid, x=x, y=y)
+
+    tour = TourSettings(
+        enabled=True, home_page="principal", interval_s=15, idle_required_s=5, home_settle_s=0.5,
+        home_clicks=[click("home", "principal")],
+        steps=[TourStep(id="s_ext1", page="ext1", clicks=[click("c_ext1", "ext1")], settle_s=0.5),
+               TourStep(id="s_linea", page="linea", clicks=[click("c_linea", "linea")], settle_s=0.5)])
     return AppConfig(
         machine_name="Demo línea de cable",
         general=GeneralSettings(ocr_engine="template", sample_interval_s=1.0, recipe_name_var="receta_hmi",
                                 trend_window_min=5, trend_horizon_min=5, spc_subgroup_s=10,
                                 debounce_samples=2),
-        pages=[Page(id="principal", name="Principal", anchor=TITLE_RECT, match_threshold=0.8)],
+        pages=[Page(id=pid, name=label.capitalize() if pid != "ext1" else label, anchor=nav_rect(pid))
+               for pid, label in SIM_PAGES],
         variables=variables,
+        tour=tour,
     )
+
+
+def demo_click_patches(sim: HmiSimulator, config: AppConfig) -> dict[str, np.ndarray]:
+    """Imágenes de los botones tal como se ven antes de cada clic del recorrido de la demo."""
+    from .capture import crop
+    from .navigation import click_rect
+
+    saved = sim.page
+    out = {}
+    sim.page = "principal"
+    on_home = sim.render()
+    sim.page = "linea"
+    on_linea = sim.render()
+    sim.page = saved
+    for c in config.tour.all_clicks():
+        frame = on_linea if c.id == "home" else on_home
+        out[c.id] = crop(frame, click_rect(c)).copy()
+    return out
 
 
 def demo_recipe() -> Recipe:

@@ -119,6 +119,9 @@ class RuleEngine:
         evaluated: set[str] = {""}
         events: list[Event] = []
         statuses: dict[str, VarStatus] = {}
+        # Las pestañas del recorrido se leen una vez por recorrido: su dato vale hasta el siguiente.
+        toured = self.config.toured_pages()
+        tour_stale = max(g.stale_after_s, self.config.tour.interval_s * 2.5)
 
         if recipe is None:
             conds[(R_NO_RECIPE, "")] = _Condition(Level.INFO, "No hay receta activa: solo se registran valores")
@@ -128,7 +131,7 @@ class RuleEngine:
             st = VarStatus(var=var, reading=rd)
             statuses[var.id] = st
             age = rd.age(now)
-            st.fresh = age is not None and age <= g.stale_after_s
+            st.fresh = age is not None and age <= (tour_stale if var.page in toured else g.stale_after_s)
 
             if rd.visible:
                 evaluated.add(var.id)
@@ -143,14 +146,14 @@ class RuleEngine:
                             Level.WARN, f"El HMI muestra la receta «{rd.text}» pero la activa es «{recipe.name}»")
                 continue
 
-            if var.kind == "setpoint" and rd.value is not None and rd.ok:
+            if var.kind == "setpoint" and rd.value is not None and rd.ts is not None:
                 prev = self._last_sp.get(var.id)
                 if prev is not None and prev != rd.value:
                     events.append(self._setpoint_event(now, var, prev, rd.value, recipe))
                 self._last_sp[var.id] = rd.value
 
-            if rd.value is not None and rd.ok:
-                trends.add(var.id, rd.ts, rd.value)
+            if rd.value is not None and rd.ts is not None:
+                trends.add(var.id, rd.ts, rd.value)  # ignora lecturas ya agregadas
 
             if recipe is None or not st.fresh or rd.value is None:
                 if not st.fresh:

@@ -35,6 +35,12 @@ class ScreenSource:
     def monitors(self) -> list[dict]:
         return list(self._mss().monitors)
 
+    def offset(self) -> tuple[int, int]:
+        """Posición del monitor capturado en el escritorio virtual (para traducir clics)."""
+        mons = self.monitors()
+        m = mons[self.monitor] if self.monitor < len(mons) else mons[1]
+        return int(m["left"]), int(m["top"])
+
     def grab(self) -> np.ndarray:
         sct = self._mss()
         idx = self.monitor if self.monitor < len(sct.monitors) else 1

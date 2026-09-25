@@ -13,6 +13,7 @@ from .analysis.trends import TrendTracker
 from .capture import FrameSource
 from .config import AppConfig, Workspace
 from .ocr import OcrEngine
+from .navigation import Clicker, TourResult, TourRunner, UnavailableClicker
 from .pages import PageDetector
 from .recipes import Recipe, RecipeStore
 from .storage import Historian
@@ -34,6 +35,7 @@ class Snapshot:
     overall: Level = Level.OK
     read_ok: int = 0
     read_total: int = 0
+    tour: Optional[TourResult] = None  # recorrido ejecutado en este ciclo
 
 
 @dataclass
@@ -45,7 +47,8 @@ class EngineState:
 class MonitorEngine:
     def __init__(self, workspace: Workspace, config: AppConfig, recipes: RecipeStore,
                  source: FrameSource, ocr: OcrEngine, historian: Optional[Historian] = None,
-                 clock: Callable[[], float] = time.time):
+                 clock: Callable[[], float] = time.time, clicker: Optional[Clicker] = None,
+                 sleep: Callable[[float], None] = time.sleep):
         self.workspace = workspace
         self.config = config
         self.recipes = recipes
@@ -53,13 +56,19 @@ class MonitorEngine:
         self.ocr = ocr
         self.historian = historian
         self.clock = clock
+        self.clicker = clicker or UnavailableClicker()
+        self.sleep = sleep
+        self.tour_paused = False
+        self._last_skip = ""
         self.state = EngineState()
         self.listeners: list[Callable[[Snapshot], None]] = []
         self.last: Optional[Snapshot] = None
         self._thread: Optional[threading.Thread] = None
         self._stop = threading.Event()
-        self._lock = threading.RLock()
+        self._lock = threading.RLock()  # un ciclo a la vez
+        self._data_lock = threading.RLock()  # tendencias/estado, para que la UI no espere al recorrido
         self._pending_events: list[Event] = []
+        self._stored: dict[str, float] = {}
         self._build()
 
     def _build(self) -> None:
@@ -68,6 +77,11 @@ class MonitorEngine:
         self.acquirer = Acquirer(self.config, self.ocr, self.pages)
         self.rules = RuleEngine(self.config)
         self.trends = TrendTracker(g.trend_window_min * 60, g.spc_subgroup_s)
+        last = getattr(self, "tour", None)
+        self.tour = TourRunner(self.config, self.workspace, self.source, self.clicker, self.pages,
+                               clock=self.clock, sleep=self.sleep)
+        if last is not None:
+            self.tour.last_run, self.tour.last_result = last.last_run, last.last_result
 
     def reconfigure(self, config: AppConfig, ocr: Optional[OcrEngine] = None) -> None:
         with self._lock:
@@ -103,12 +117,15 @@ class MonitorEngine:
             self.set_recipe(match.name)
 
     def series(self, var_id: str):
-        with self._lock:
+        with self._data_lock:
             return self.trends.series(var_id)
 
     def grab_frame(self):
-        with self._lock:
-            return self.source.grab()
+        return self.source.grab()
+
+    def run_tour_now(self) -> None:
+        """Fuerza el recorrido en el siguiente ciclo."""
+        self.tour.last_run = None
 
     # --- ciclo ---------------------------------------------------------------
     def step(self) -> Snapshot:
@@ -116,15 +133,30 @@ class MonitorEngine:
             t0 = time.perf_counter()
             now = self.clock()
             error = ""
+            tour_result: Optional[TourResult] = None
+            pages: set[str] = set()
+            readings = self.acquirer.readings
             try:
-                frame = self.source.grab()
-                pages, readings = self.acquirer.read(frame, now)
+                if not self.tour_paused and self.tour.due(now):
+                    def on_frame(frame):
+                        seen, _ = self.acquirer.read(frame, self.clock())
+                        pages.update(seen)
+
+                    tour_result = self.tour.run(on_frame, stop=self._stop.is_set)
+                    self._tour_events(tour_result)
+                    if tour_result.skipped:
+                        tour_result_frame = self.source.grab()
+                        pages, readings = self.acquirer.read(tour_result_frame, now)
+                    now = self.clock()
+                else:
+                    frame = self.source.grab()
+                    pages, readings = self.acquirer.read(frame, now)
             except Exception as exc:
                 log.exception("Fallo de captura")
                 error = f"Fallo de captura: {exc}"
-                pages, readings = set(), self.acquirer.readings
             self._auto_select_recipe(readings)
-            statuses, events = self.rules.evaluate(now, readings, self.recipe, self.trends)
+            with self._data_lock:
+                statuses, events = self.rules.evaluate(now, readings, self.recipe, self.trends)
             events = self._pending_events + events
             self._pending_events = []
             findings = self.rules.active_findings()
@@ -133,7 +165,8 @@ class MonitorEngine:
             snap = Snapshot(
                 ts=now, cycle_ms=(time.perf_counter() - t0) * 1000, pages=pages, statuses=statuses,
                 findings=findings, events=events, recipe=self.state.recipe, ocr_engine=self.ocr.name,
-                error=error, overall=overall, read_ok=sum(r.ok for r in visible), read_total=len(visible))
+                error=error, overall=overall, read_ok=sum(r.ok for r in visible), read_total=len(visible),
+                tour=tour_result)
             self._store(snap)
             self.last = snap
         for cb in list(self.listeners):
@@ -143,14 +176,29 @@ class MonitorEngine:
                 log.exception("Error en listener")
         return snap
 
+    def _tour_events(self, res: TourResult) -> None:
+        if res.skipped:
+            # Solo se registra cuando cambia el motivo, para no llenar el registro.
+            if res.message != self._last_skip:
+                self._pending_events.append(Event(self.clock(), "tour", Level.INFO, "RECORRIDO", "",
+                                                  f"Recorrido {res.message}"))
+            self._last_skip = res.message
+            return
+        self._last_skip = ""
+        if not res.ok:
+            self._pending_events.append(Event(self.clock(), "tour", Level.WARN, "RECORRIDO", "",
+                                              f"Recorrido {res.message}"))
+
     def _store(self, snap: Snapshot) -> None:
         if not self.historian:
             return
         rows = []
         for vid, st in snap.statuses.items():
             rd = st.reading
-            if rd.ok and rd.ts == snap.ts:
-                rows.append((snap.ts, vid, rd.value, rd.text if st.var.kind == "text" else None))
+            # Con recorrido, cada variable se lee en un instante distinto: se guarda cada lectura nueva.
+            if rd.ts is not None and rd.ts > self._stored.get(vid, 0.0):
+                self._stored[vid] = rd.ts
+                rows.append((rd.ts, vid, rd.value, rd.text if st.var.kind == "text" else None))
         try:
             self.historian.write_samples(rows)
             self.historian.write_events(

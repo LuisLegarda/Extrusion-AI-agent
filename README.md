@@ -12,7 +12,8 @@ Por eso sirve para cualquier línea de extrusión.
 | Función | Detalle |
 |---|---|
 | Lectura en vivo | Captura la pantalla del HMI y lee con OCR las regiones configuradas. Se puede usar el OCR integrado de Windows, plantillas enseñadas o Tesseract. |
-| Páginas del HMI | Una imagen ancla (por ejemplo, el título de la pantalla) identifica cada pantalla. Una variable solo se lee cuando su página está visible. |
+| Pestañas del HMI | Árbol libre de componente → pestaña → sub-pestaña. Una imagen ancla (forma y color) identifica cada pestaña, y sus variables se leen cuando está visible. |
+| Recorrido automático | Macro grabada en vivo que navega por las pestañas con clics verificados, lee cada pantalla y regresa a la principal. |
 | Filtros de lectura | Rango válido, salto máximo confirmado en 2 lecturas, confianza mínima, coma o punto decimal y corrección de confusiones típicas del OCR (O→0, l→1…). |
 | Recetas | Nominal, tolerancia de aviso y tolerancia de alarma (absoluta o en %) por variable. Cada variable se compara contra la receta o contra la consigna leída del HMI. Las recetas se importan y exportan en CSV (compatible con Excel), y los valores actuales del HMI se pueden tomar como nominales. |
 | Selección automática de receta | Si configuras una variable de texto con el nombre de la receta que muestra el HMI, la receta activa se elige sola y se avisa si no coincide. |
@@ -46,9 +47,21 @@ Configuración inicial en el HMI:
    - *Probar OCR* comprueba la lectura. *Quitar marco del campo* elimina el recuadro de los campos del HMI.
    - Si usas el motor de plantillas, *Enseñar caracteres…* le enseña la fuente del HMI.
    - Marca solo el número. Si la unidad está dentro del recuadro (`300 °C`), se ignora, pero es mejor dejarla fuera.
-4. **📋 Recetas:** crea la receta con el mismo nombre que muestra el HMI y llena nominales y tolerancias,
+4. **Recorrido automático (macro):** la app cambia de pestaña en el HMI con clics, lee cada pantalla y regresa a la principal.
+   - Elige la *pantalla principal*. Debe tener ancla, por ejemplo el botón de la barra inferior resaltado.
+   - Agrega un paso por pestaña. En cada paso, *● Grabar clics (en vivo)*: haz clic en la captura sobre el botón. El clic se ejecuta en el HMI y la captura se actualiza.
+   - Graba también los clics de *⌂ Regreso a la principal* y comprueba todo con *▶ Probar recorrido completo*.
+   - **Seguridad:**
+     - Solo hace clic en los puntos grabados, y solo si el botón se ve igual que al grabarlo.
+     - Solo inicia desde la pantalla principal y verifica que llegó a cada pantalla.
+     - Se pospone si el operador usó el mouse o el teclado en los últimos N segundos, y se interrumpe sin más clics si el operador lo toca a mitad del recorrido.
+     - No hace clic si la ventana del monitor tapa el botón.
+     - Mientras está abierto el configurador, el monitoreo se detiene.
+   - En la barra: *⏸ Pausar recorrido* y *⟳ Recorrer ahora*.
+   - La ventana del monitor se excluye de las capturas de pantalla (Windows 10 2004+).
+5. **📋 Recetas:** crea la receta con el mismo nombre que muestra el HMI y llena nominales y tolerancias,
    o pulsa *Tomar valores actuales del HMI como nominales* con la máquina en un buen setup.
-5. **▶ Iniciar.**
+6. **▶ Iniciar.**
 
 Los datos se guardan en `%LOCALAPPDATA%\ExtrusionMonitor`. Para usar el modo portátil, crea una carpeta `data` junto al `.exe`.
 

@@ -14,8 +14,9 @@ from PySide6.QtWidgets import (
 )
 
 from ..analysis.rules import Level
-from ..bootstrap import AppContext, make_ocr
+from ..bootstrap import AppContext, make_clicker, make_ocr
 from ..capture import ScreenSource
+from ..navigation import exclude_window_from_capture
 from ..engine import Snapshot
 from .common import SnapshotBridge, level_color
 from .variable_tree import VariableTree
@@ -131,6 +132,14 @@ class MainWindow(QMainWindow):
         act_export.triggered.connect(self.export_csv)
         tb.addAction(act_export)
         tb.addSeparator()
+        self.act_tour_pause = QAction("⏸ Pausar recorrido", self, checkable=True)
+        self.act_tour_pause.setToolTip("Detiene los clics automáticos en el HMI (se siguen leyendo los datos visibles)")
+        self.act_tour_pause.toggled.connect(self._tour_pause)
+        tb.addAction(self.act_tour_pause)
+        act = QAction("⟳ Recorrer ahora", self)
+        act.triggered.connect(self.engine.run_tour_now)
+        tb.addAction(act)
+        tb.addSeparator()
         self.act_top = QAction("📌 Siempre visible", self, checkable=True)
         self.act_top.toggled.connect(self._always_on_top)
         tb.addAction(self.act_top)
@@ -168,10 +177,11 @@ class MainWindow(QMainWindow):
         lay.addWidget(vsplit)
         self.setCentralWidget(central)
 
+        self.lbl_tour = QLabel()
         self.lbl_page = QLabel()
         self.lbl_ocr = QLabel()
         self.lbl_cycle = QLabel()
-        for w in (self.lbl_page, self.lbl_ocr, self.lbl_cycle):
+        for w in (self.lbl_tour, self.lbl_page, self.lbl_ocr, self.lbl_cycle):
             self.statusBar().addPermanentWidget(w)
 
     def _update_title(self) -> None:
@@ -254,17 +264,20 @@ class MainWindow(QMainWindow):
     def open_setup(self) -> None:
         from .setup_dialog import SetupDialog
         was_running = self.engine.running
+        # Durante la configuración el monitoreo (y su recorrido con clics) se detiene.
+        self.engine.stop()
         dlg = SetupDialog(self.ctx, self)
-        if dlg.exec():
-            self.engine.stop()
+        accepted = dlg.exec()
+        if accepted:
             if not self.ctx.demo and dlg.config.general.monitor != self.ctx.config.general.monitor:
                 self.engine.source = ScreenSource(dlg.config.general.monitor)
+                self.engine.clicker = make_clicker(self.engine.source)
             self.ctx.config = dlg.config
             self.engine.reconfigure(dlg.config, make_ocr(self.ctx))
             self.rebuild_table()
             self._update_title()
-            if was_running:
-                self.engine.start()
+        if was_running:
+            self.engine.start()
 
     def open_recipes(self) -> None:
         from .recipe_dialog import RecipeDialog
@@ -285,6 +298,32 @@ class MainWindow(QMainWindow):
             return
         n = self.engine.historian.export_csv(path, time.time() - 86400)
         QMessageBox.information(self, "Exportado", f"Se exportaron {n} registros.")
+
+    def _tour_pause(self, on: bool) -> None:
+        self.engine.tour_paused = on
+
+    def showEvent(self, event) -> None:
+        super().showEvent(event)
+        # La ventana del monitor no debe aparecer en las capturas del HMI (Windows 10 2004+).
+        exclude_window_from_capture(int(self.winId()))
+
+    def _update_tour_label(self) -> None:
+        t = self.ctx.config.tour
+        if not t.enabled or not t.steps:
+            self.lbl_tour.setText("Recorrido: desactivado")
+            return
+        if self.engine.tour_paused:
+            self.lbl_tour.setText("Recorrido: EN PAUSA")
+            return
+        res = self.engine.tour.last_result
+        if res is None:
+            self.lbl_tour.setText("Recorrido: pendiente")
+            return
+        when = time.strftime("%H:%M:%S", time.localtime(res.started))
+        state = "OK" if res.ok else ("pospuesto" if res.skipped else "FALLÓ")
+        color = "#2e7d32" if res.ok else ("#9e9e9e" if res.skipped else "#c62828")
+        detail = res.message.replace("pospuesto: ", "") if res.skipped else res.message
+        self.lbl_tour.setText(f"<span style='color:{color}'>Recorrido {when}: {state}</span> · {detail}")
 
     def _always_on_top(self, on: bool) -> None:
         self.setWindowFlag(Qt.WindowStaysOnTopHint, on)
@@ -308,6 +347,7 @@ class MainWindow(QMainWindow):
             self._set_banner(snap.overall if snap.overall > Level.INFO else Level.OK, text + detail)
         pages = ", ".join(sorted(snap.pages)) or ("—" if self.ctx.config.pages else "sin páginas definidas")
         self.lbl_page.setText(f"Página HMI: {pages}")
+        self._update_tour_label()
         self.lbl_ocr.setText(f"OCR: {snap.ocr_engine} · lecturas {snap.read_ok}/{snap.read_total}")
         self.lbl_cycle.setText(f"Ciclo: {snap.cycle_ms:.0f} ms · {time.strftime('%H:%M:%S', time.localtime(snap.ts))}")
 
