@@ -1,0 +1,39 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "extrusion-monitor"
+version = "0.1.0"
+description = "Verificación de parámetros, recetas y tendencias para líneas de extrusión mediante lectura de pantalla del HMI"
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = [
+    "numpy>=1.24",
+    "opencv-python-headless>=4.8",
+    "mss>=9.0",
+    "pillow>=10.1",
+    "pydantic>=2.5",
+    "PySide6>=6.6",
+    "pyqtgraph>=0.13.3",
+    # OCR integrado de Windows 10/11
+    "winrt-runtime>=2.0; sys_platform == 'win32'",
+    "winrt-Windows.Foundation>=2.0; sys_platform == 'win32'",
+    "winrt-Windows.Foundation.Collections>=2.0; sys_platform == 'win32'",
+    "winrt-Windows.Globalization>=2.0; sys_platform == 'win32'",
+    "winrt-Windows.Graphics.Imaging>=2.0; sys_platform == 'win32'",
+    "winrt-Windows.Media.Ocr>=2.0; sys_platform == 'win32'",
+    "winrt-Windows.Storage.Streams>=2.0; sys_platform == 'win32'",
+]
+
+[project.optional-dependencies]
+dev = ["pytest>=7", "pyinstaller>=6.3"]
+
+[project.scripts]
+extrusion-monitor = "extrusion_monitor.app:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

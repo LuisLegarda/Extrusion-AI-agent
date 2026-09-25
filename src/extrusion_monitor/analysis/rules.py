@@ -1,0 +1,273 @@
+"""Reglas de verificación: ajustes vs. receta, tolerancias, lectura y tendencias."""
+from __future__ import annotations
+
+from dataclasses import dataclass, field
+from enum import IntEnum
+from typing import Optional
+
+from ..acquisition import Reading
+from ..config import AppConfig, Variable
+from ..recipes import Recipe, normalize_name
+from .trends import TrendStats, TrendTracker
+
+
+class Level(IntEnum):
+    OK = 0
+    INFO = 1
+    WARN = 2
+    ALARM = 3
+
+    @property
+    def label(self) -> str:
+        return {0: "OK", 1: "INFO", 2: "AVISO", 3: "ALARMA"}[int(self)]
+
+
+# Reglas
+R_RECIPE = "AJUSTE_RECETA"  # consigna distinta de la receta
+R_TOL = "TOLERANCIA"  # valor real fuera de tolerancia
+R_READ = "LECTURA"  # no se puede leer la variable
+R_DRIFT = "TENDENCIA"  # la tendencia alcanzará el límite dentro del horizonte
+R_SPC = "SPC"  # reglas de Nelson
+R_HMI_RECIPE = "RECETA_HMI"  # el HMI muestra otra receta
+R_NO_RECIPE = "SIN_RECETA"
+
+IMMEDIATE_RULES = {R_READ, R_HMI_RECIPE, R_NO_RECIPE}
+# Reglas estadísticas: se desactivan con más histéresis y no generan eventos en el registro.
+SLOW_CLEAR_RULES = {R_DRIFT, R_SPC}
+SILENT_RULES = {R_SPC}
+SLOW_CLEAR_FACTOR = 3
+# Histéresis: un hallazgo de tolerancia activo se mantiene hasta volver por debajo del 90 % de la banda.
+HYSTERESIS = 0.9
+MIN_TREND_SPAN_S = 60.0
+
+
+@dataclass
+class Finding:
+    rule: str
+    var_id: str
+    level: Level
+    message: str
+    since: float
+    peak: Level = Level.OK
+
+    @property
+    def key(self) -> tuple[str, str]:
+        return self.rule, self.var_id
+
+
+@dataclass
+class Event:
+    ts: float
+    kind: str  # raised | escalated | cleared | setpoint_change | recipe_change
+    level: Level
+    rule: str
+    var_id: str
+    message: str
+
+
+@dataclass
+class VarStatus:
+    var: Variable
+    reading: Reading
+    reference: Optional[float] = None
+    ref_source: str = ""  # "receta" | "consigna"
+    deviation: Optional[float] = None
+    warn_band: Optional[float] = None
+    alarm_band: Optional[float] = None
+    level: Optional[Level] = None  # None = sin evaluar (dato viejo o no visible)
+    trend: Optional[TrendStats] = None
+    fresh: bool = False
+
+
+@dataclass
+class _KeyState:
+    hits: int = 0
+    misses: int = 0
+    finding: Optional[Finding] = None
+
+
+@dataclass
+class _Condition:
+    level: Level
+    message: str
+
+
+def fmt(v: Optional[float], var: Optional[Variable] = None) -> str:
+    if v is None:
+        return "—"
+    if var is not None and var.decimals is not None:
+        return f"{v:.{var.decimals}f}"
+    return f"{v:.4g}" if abs(v) < 1e5 else f"{v:.0f}"
+
+
+class RuleEngine:
+    def __init__(self, config: AppConfig):
+        self.config = config
+        self._state: dict[tuple[str, str], _KeyState] = {}
+        self._last_sp: dict[str, float] = {}
+
+    def active_findings(self) -> list[Finding]:
+        out = [s.finding for s in self._state.values() if s.finding]
+        return sorted(out, key=lambda f: (-f.level, f.since))
+
+    def evaluate(self, now: float, readings: dict[str, Reading], recipe: Optional[Recipe],
+                 trends: TrendTracker) -> tuple[dict[str, VarStatus], list[Event]]:
+        g = self.config.general
+        conds: dict[tuple[str, str], _Condition] = {}
+        evaluated: set[str] = {""}
+        events: list[Event] = []
+        statuses: dict[str, VarStatus] = {}
+
+        if recipe is None:
+            conds[(R_NO_RECIPE, "")] = _Condition(Level.INFO, "No hay receta activa: solo se registran valores")
+
+        for var in self.config.variables:
+            rd = readings.get(var.id) or Reading(var.id)
+            st = VarStatus(var=var, reading=rd)
+            statuses[var.id] = st
+            age = rd.age(now)
+            st.fresh = age is not None and age <= g.stale_after_s
+
+            if rd.visible:
+                evaluated.add(var.id)
+                if rd.fail_count >= g.read_fail_samples or (not st.fresh and rd.ts is not None):
+                    conds[(R_READ, var.id)] = _Condition(
+                        Level.WARN, f"No se puede leer «{var.name}» ({rd.reason or 'sin datos recientes'})")
+
+            if var.kind == "text":
+                if var.id == g.recipe_name_var and recipe and rd.text and st.fresh and rd.visible:
+                    if normalize_name(rd.text) != normalize_name(recipe.name):
+                        conds[(R_HMI_RECIPE, var.id)] = _Condition(
+                            Level.WARN, f"El HMI muestra la receta «{rd.text}» pero la activa es «{recipe.name}»")
+                continue
+
+            if var.kind == "setpoint" and rd.value is not None and rd.ok:
+                prev = self._last_sp.get(var.id)
+                if prev is not None and prev != rd.value:
+                    events.append(self._setpoint_event(now, var, prev, rd.value, recipe))
+                self._last_sp[var.id] = rd.value
+
+            if rd.value is not None and rd.ok:
+                trends.add(var.id, rd.ts, rd.value)
+
+            if recipe is None or not st.fresh or rd.value is None:
+                if not st.fresh:
+                    evaluated.discard(var.id)  # sin dato fresco: los hallazgos se mantienen
+                continue
+            lim = recipe.limits.get(var.id)
+            if lim is None:
+                st.level = Level.OK
+                continue
+
+            ref, src = lim.nominal, "receta"
+            if var.kind == "actual" and lim.reference == "setpoint" and var.setpoint_var:
+                sp = readings.get(var.setpoint_var)
+                if sp is not None and sp.value is not None:
+                    ref, src = sp.value, "consigna"
+            if ref is None:
+                st.level = Level.OK
+                continue
+            warn, alarm = lim.band(ref)
+            st.reference, st.ref_source = ref, src
+            st.deviation = rd.value - ref
+            st.warn_band, st.alarm_band = warn, alarm
+            dev = abs(st.deviation)
+            rule = R_RECIPE if var.kind == "setpoint" else R_TOL
+            active = self._state.get((rule, var.id))
+            active_level = active.finding.level if active and active.finding else Level.OK
+            k_alarm = HYSTERESIS if active_level >= Level.ALARM else 1.0
+            k_warn = HYSTERESIS if active_level >= Level.WARN else 1.0
+            level = Level.OK
+            if alarm is not None and dev > alarm * k_alarm:
+                level = Level.ALARM
+            elif warn is not None and dev > warn * k_warn:
+                level = Level.WARN
+            st.level = level
+
+            if level > Level.OK:
+                band = alarm if level == Level.ALARM else warn
+                if var.kind == "setpoint":
+                    msg = (f"Ajuste erróneo «{var.name}»: consigna {fmt(rd.value, var)} {var.unit}, "
+                           f"receta {fmt(ref, var)} (Δ {st.deviation:+.4g}, tolerancia ±{band:.4g})")
+                    conds[(R_RECIPE, var.id)] = _Condition(level, msg)
+                else:
+                    msg = (f"«{var.name}» fuera de tolerancia: {fmt(rd.value, var)} {var.unit} vs {src} "
+                           f"{fmt(ref, var)} (Δ {st.deviation:+.4g}, tolerancia ±{band:.4g})")
+                    conds[(R_TOL, var.id)] = _Condition(level, msg)
+
+            if var.trend and var.kind == "actual":
+                lo = ref - alarm if alarm is not None else None
+                hi = ref + alarm if alarm is not None else None
+                effect = warn if warn is not None else (alarm / 2 if alarm is not None else 0.0)
+                ts = trends.stats(var.id, now, center=ref, lo_limit=lo, hi_limit=hi, min_effect=effect)
+                st.trend = ts
+                enough = ts is not None and ts.span_s >= max(MIN_TREND_SPAN_S, g.trend_window_min * 15)
+                if enough and level < Level.ALARM:
+                    if (ts.eta_to_alarm_min is not None and ts.eta_to_alarm_min <= g.trend_horizon_min
+                            and dev >= 0.25 * effect):
+                        conds[(R_DRIFT, var.id)] = _Condition(
+                            Level.WARN,
+                            f"«{var.name}» tiende a salir de tolerancia en ~{ts.eta_to_alarm_min:.1f} min "
+                            f"({ts.slope_per_min:+.3g} {var.unit}/min)")
+                    if ts.nelson:
+                        conds[(R_SPC, var.id)] = _Condition(
+                            Level.INFO, f"«{var.name}»: " + "; ".join(ts.nelson))
+
+        events.extend(self._apply(now, conds, evaluated))
+        return statuses, events
+
+    def _setpoint_event(self, now: float, var: Variable, prev: float, new: float,
+                        recipe: Optional[Recipe]) -> Event:
+        msg = f"Cambio de ajuste «{var.name}»: {fmt(prev, var)} → {fmt(new, var)} {var.unit}"
+        level = Level.INFO
+        lim = recipe.limits.get(var.id) if recipe else None
+        if lim and lim.nominal is not None:
+            warn, alarm = lim.band(lim.nominal)
+            tol = warn if warn is not None else alarm
+            if tol is not None and abs(new - lim.nominal) > tol:
+                level = Level.WARN
+                msg += f" (se aleja de la receta: {fmt(lim.nominal, var)})"
+            else:
+                msg += " (dentro de receta)"
+        return Event(now, "setpoint_change", level, "CAMBIO_AJUSTE", var.id, msg)
+
+    def _apply(self, now: float, conds: dict[tuple[str, str], _Condition],
+               evaluated: set[str]) -> list[Event]:
+        debounce = self.config.general.debounce_samples
+        events: list[Event] = []
+        for key, cond in conds.items():
+            s = self._state.setdefault(key, _KeyState())
+            s.hits += 1
+            s.misses = 0
+            need = 1 if key[0] in IMMEDIATE_RULES else debounce
+            log = key[0] not in SILENT_RULES
+            if s.finding is None:
+                if s.hits >= need:
+                    s.finding = Finding(key[0], key[1], cond.level, cond.message, now, cond.level)
+                    if log:
+                        events.append(Event(now, "raised", cond.level, key[0], key[1], cond.message))
+            else:
+                if cond.level > s.finding.peak:
+                    s.finding.peak = cond.level
+                    if log:
+                        events.append(Event(now, "escalated", cond.level, key[0], key[1], cond.message))
+                s.finding.level, s.finding.message = cond.level, cond.message
+        for key, s in list(self._state.items()):
+            if key in conds or key[1] not in evaluated:
+                continue
+            s.hits = 0
+            s.misses += 1
+            need = 1 if key[0] in IMMEDIATE_RULES else debounce
+            if key[0] in SLOW_CLEAR_RULES:
+                need *= SLOW_CLEAR_FACTOR
+            if s.finding is not None and s.misses >= need:
+                if key[0] not in SILENT_RULES:
+                    events.append(Event(now, "cleared", Level.OK, key[0], key[1],
+                                        f"Normalizado: {s.finding.message}"))
+                s.finding = None
+            if s.finding is None and s.misses >= need:
+                del self._state[key]
+        return events
+
+    def reset(self) -> None:
+        self._state.clear()
