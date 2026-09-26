@@ -85,6 +85,12 @@ def setup_demo(ws: Workspace):
     for cid, patch in demo_click_patches(sim, config).items():
         if not ws.click_patch_file(cid).exists():
             save_png(ws.click_patch_file(cid), patch)
+    for v in config.variables:
+        if v.kind == "selector" and v.id == "inyeccion":
+            for st in v.states:
+                f = ws.selector_state_file(v.id, st)
+                if not f.exists():
+                    save_png(f, sim.selector_image(st))
     if not ws.glyphs_file.exists():
         teach_template(TemplateOcr(ws.glyphs_file), sim, config.variables[0].ocr)
     return SimulatorSource(sim)

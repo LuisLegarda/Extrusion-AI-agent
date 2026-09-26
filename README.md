@@ -20,6 +20,9 @@ Por eso sirve para cualquier línea de extrusión.
 | Recetas | Nominal, tolerancia de aviso y tolerancia de alarma (absoluta o en %) por variable. Cada variable se compara contra la receta o contra la consigna leída del HMI. Las recetas se importan y exportan en CSV (compatible con Excel), y los valores actuales del HMI se pueden tomar como nominales. |
 | Selección automática de receta | Si configuras una variable de texto con el nombre de la receta que muestra el HMI, la receta activa se elige sola y se avisa si no coincide. |
 | Detección de errores | **Ajuste erróneo**: la consigna difiere de la receta. **Fuera de tolerancia**: el valor real se sale de su tolerancia. **Cambio de ajuste**: registra el valor anterior y el nuevo, e indica si se aleja de la receta. **Fallo de lectura**: la variable no se pudo leer o el dato es viejo. |
+| Selectores | Variable tipo selector o indicador: se capturan imágenes de cada estado (ON/OFF, AUTO/MAN…) y se reconoce el estado actual por imagen, sin importar color o forma. La receta define el estado esperado. |
+| Comportamiento aprendido | Se entrena con un periodo del historial. Aprende la variación normal de cada variable y la correlación entre varias, y en vivo avisa cuando una variable o una relación se sale de lo normal (distancia de Mahalanobis), aunque siga dentro de tolerancia. |
+| Análisis en pantalla | Pestañas **Tendencias**: curva de consigna y proyección con banda. **Estadística**: histograma, Cp/Cpk/Pp/Ppk y carta X̄. **Correlación**: matriz y dispersión con regresión. **Comportamiento**: D²/umbral en el tiempo y contribución por variable. |
 | Tendencias / SPC | Pendiente con prueba de significancia, tiempo estimado hasta el límite de alarma, reglas de Nelson sobre subgrupos y Cpk. |
 | Anti-falsas alarmas | Confirmación durante N ciclos, histéresis del 10 %, efecto mínimo relativo a la tolerancia y hallazgos que se mantienen mientras la página no está visible. |
 | Historial | SQLite propio (`history.sqlite`) con retención de 90 días. Exporta a CSV con una columna por variable. |
@@ -45,6 +48,8 @@ Configuración inicial en el HMI:
 3. **Variables:** tú indicas qué es consigna y qué es medición; no depende del color.
    - *+ Par consigna / medición*: marcas primero la región de la consigna y después la del valor medido, y quedan vinculadas. En la ventana principal se ven en la misma fila.
    - *+ Medición*, *+ Consigna* y *+ Texto* crean variables sueltas.
+   - *+ Selector*: marca el recuadro del selector. Luego, con el HMI en cada estado, pulsa *Capturar estado actual como…* (por ejemplo ON y después OFF).
+   - *🧠 Entrenar comportamiento…* (también en la barra principal): elige las variables de referencia y el periodo del historial en que el proceso estuvo bien.
    - *Crear serie…* replica las variables seleccionadas con un desplazamiento, por ejemplo Cylinder 1 → Cylinder 2…5 o Head 1 → Head 8. Si antes marcas la posición del segundo elemento, el desplazamiento se calcula solo.
    - *Probar OCR* comprueba la lectura. *Quitar marco del campo* elimina el recuadro de los campos del HMI.
    - Si usas el motor de plantillas, *Enseñar caracteres…* le enseña la fuente del HMI.

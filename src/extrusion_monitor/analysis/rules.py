@@ -30,10 +30,12 @@ R_DRIFT = "TENDENCIA"  # la tendencia alcanzará el límite dentro del horizonte
 R_SPC = "SPC"  # reglas de Nelson
 R_HMI_RECIPE = "RECETA_HMI"  # el HMI muestra otra receta
 R_NO_RECIPE = "SIN_RECETA"
+R_SELECTOR = "SELECTOR"  # selector en estado distinto al de la receta
+R_BEHAVIOR = "COMPORTAMIENTO"  # comportamiento aprendido
 
 IMMEDIATE_RULES = {R_READ, R_HMI_RECIPE, R_NO_RECIPE}
 # Reglas estadísticas: se desactivan con más histéresis y no generan eventos en el registro.
-SLOW_CLEAR_RULES = {R_DRIFT, R_SPC}
+SLOW_CLEAR_RULES = {R_DRIFT, R_SPC, R_BEHAVIOR}
 SILENT_RULES = {R_SPC}
 SLOW_CLEAR_FACTOR = 3
 # Histéresis: un hallazgo de tolerancia activo se mantiene hasta volver por debajo del 90 % de la banda.
@@ -77,6 +79,7 @@ class VarStatus:
     level: Optional[Level] = None  # None = sin evaluar (dato viejo o no visible)
     trend: Optional[TrendStats] = None
     fresh: bool = False
+    expected: Optional[str] = None  # selector: estado esperado por la receta
 
 
 @dataclass
@@ -107,13 +110,32 @@ class RuleEngine:
         self.config = config
         self._state: dict[tuple[str, str], _KeyState] = {}
         self._last_sp: dict[str, float] = {}
+        self._last_state: dict[str, str] = {}
+
+    def stale_limit(self, var: Variable) -> float:
+        g = self.config.general
+        if var.page in self.config.toured_pages():
+            return max(g.stale_after_s, self.config.tour.interval_s * 2.5)
+        return g.stale_after_s
+
+    def fresh_values(self, now: float, readings: dict[str, Reading]) -> dict[str, float]:
+        """Valores numéricos con dato vigente (para el modelo de comportamiento)."""
+        out = {}
+        for var in self.config.variables:
+            rd = readings.get(var.id)
+            if var.numeric and rd and rd.value is not None and rd.ts is not None:
+                if now - rd.ts <= self.stale_limit(var):
+                    out[var.id] = rd.value
+        return out
 
     def active_findings(self) -> list[Finding]:
         out = [s.finding for s in self._state.values() if s.finding]
         return sorted(out, key=lambda f: (-f.level, f.since))
 
     def evaluate(self, now: float, readings: dict[str, Reading], recipe: Optional[Recipe],
-                 trends: TrendTracker) -> tuple[dict[str, VarStatus], list[Event]]:
+                 trends: TrendTracker, extra: Optional[tuple[dict, set]] = None
+                 ) -> tuple[dict[str, VarStatus], list[Event]]:
+        """`extra`: condiciones externas ({(regla, clave): (nivel, mensaje)}, claves evaluadas)."""
         g = self.config.general
         conds: dict[tuple[str, str], _Condition] = {}
         evaluated: set[str] = {""}
@@ -138,6 +160,12 @@ class RuleEngine:
                 if rd.fail_count >= g.read_fail_samples or (not st.fresh and rd.ts is not None):
                     conds[(R_READ, var.id)] = _Condition(
                         Level.WARN, f"No se puede leer «{self.config.var_label(var)}» ({rd.reason or 'sin datos recientes'})")
+
+            if var.kind == "selector":
+                self._eval_selector(now, var, rd, st, recipe, conds, events)
+                if not st.fresh:
+                    evaluated.discard(var.id)
+                continue
 
             if var.kind == "text":
                 if var.id == g.recipe_name_var and recipe and rd.text and st.fresh and rd.visible:
@@ -218,8 +246,33 @@ class RuleEngine:
                         conds[(R_SPC, var.id)] = _Condition(
                             Level.INFO, f"«{self.config.var_label(var)}»: " + "; ".join(ts.nelson))
 
+        if extra is not None:
+            ext_conds, ext_eval = extra
+            conds.update({k: _Condition(lv, msg) for k, (lv, msg) in ext_conds.items()})
+            evaluated |= ext_eval
         events.extend(self._apply(now, conds, evaluated))
         return statuses, events
+
+    def _eval_selector(self, now, var, rd, st, recipe, conds, events) -> None:
+        if rd.text and rd.ts is not None:
+            prev = self._last_state.get(var.id)
+            if prev is not None and prev != rd.text:
+                events.append(Event(now, "setpoint_change", Level.INFO, "CAMBIO_SELECTOR", var.id,
+                                    f"Cambio de selector «{self.config.var_label(var)}»: {prev} → {rd.text}"))
+            self._last_state[var.id] = rd.text
+        lim = recipe.limits.get(var.id) if recipe else None
+        if not (lim and lim.expected and st.fresh and rd.text):
+            st.level = Level.OK if st.fresh and rd.text else None
+            return
+        st.ref_source = "receta"
+        st.expected = lim.expected
+        if rd.text != lim.expected:
+            st.level = Level.ALARM
+            conds[(R_SELECTOR, var.id)] = _Condition(
+                Level.ALARM, f"Selector «{self.config.var_label(var)}» en «{rd.text}»; "
+                             f"la receta espera «{lim.expected}»")
+        else:
+            st.level = Level.OK
 
     def _setpoint_event(self, now: float, var: Variable, prev: float, new: float,
                         recipe: Optional[Recipe]) -> Event:

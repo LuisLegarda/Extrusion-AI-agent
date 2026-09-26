@@ -16,7 +16,7 @@ from ..recipes import Limit, Recipe, recipe_from_csv, recipe_to_csv
 
 COLS = ["Variable", "Tipo", "Nominal", "Aviso ±", "Alarma ±", "Modo", "Comparar contra"]
 C_VAR, C_KIND, C_NOM, C_WARN, C_ALARM, C_MODE, C_REF = range(7)
-KIND_TEXT = {"actual": "real", "setpoint": "consigna"}
+KIND_TEXT = {"actual": "real", "setpoint": "consigna", "selector": "selector"}
 
 
 def _num(text: str) -> Optional[float]:
@@ -121,6 +121,18 @@ class RecipeDialog(QDialog):
             it = QTableWidgetItem(KIND_TEXT.get(var.kind, var.kind))
             it.setFlags(Qt.ItemIsEnabled)
             self.table.setItem(row, C_KIND, it)
+            if var.kind == "selector":
+                exp = QComboBox()
+                exp.addItem("— no verificar —", None)
+                for st in var.states:
+                    exp.addItem(f"esperado: {st}", st)
+                exp.setCurrentIndex(max(0, exp.findData(lim.expected)))
+                self.table.setCellWidget(row, C_NOM, exp)
+                for c in (C_WARN, C_ALARM, C_MODE, C_REF):
+                    cell = QTableWidgetItem("")
+                    cell.setFlags(Qt.ItemIsEnabled)
+                    self.table.setItem(row, c, cell)
+                continue
             for c, val in ((C_NOM, lim.nominal), (C_WARN, lim.warn), (C_ALARM, lim.alarm)):
                 cell = QTableWidgetItem("" if val is None else f"{val:g}")
                 cell.setTextAlignment(Qt.AlignRight | Qt.AlignVCenter)
@@ -152,6 +164,12 @@ class RecipeDialog(QDialog):
         limits: dict[str, Limit] = {}
         for row in range(self.table.rowCount()):
             vid = self.table.item(row, C_VAR).data(Qt.UserRole)
+            var = self.ctx.config.variable(vid)
+            if var is not None and var.kind == "selector":
+                expected = self.table.cellWidget(row, C_NOM).currentData()
+                if expected:
+                    limits[vid] = Limit(expected=expected)
+                continue
             try:
                 nominal = _num(self.table.item(row, C_NOM).text())
                 warn = _num(self.table.item(row, C_WARN).text())
@@ -260,7 +278,11 @@ class RecipeDialog(QDialog):
         for row in range(self.table.rowCount()):
             vid = self.table.item(row, C_VAR).data(Qt.UserRole)
             st = snap.statuses.get(vid)
-            if st and st.reading.value is not None and st.fresh:
+            if st and st.var.kind == "selector":
+                combo = self.table.cellWidget(row, C_NOM)
+                if st.fresh and st.reading.text:
+                    combo.setCurrentIndex(max(0, combo.findData(st.reading.text)))
+            elif st and st.reading.value is not None and st.fresh:
                 self.table.item(row, C_NOM).setText(f"{st.reading.value:g}")
 
     def _save(self) -> None:

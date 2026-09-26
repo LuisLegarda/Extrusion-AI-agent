@@ -4,6 +4,7 @@ from __future__ import annotations
 import time
 from typing import Optional
 
+import numpy as np
 import pyqtgraph as pg
 from PySide6.QtCore import Qt, QTimer
 from PySide6.QtGui import QAction, QBrush, QColor
@@ -20,6 +21,8 @@ from ..navigation import exclude_window_from_capture
 from ..engine import Snapshot
 from .common import SnapshotBridge, level_color
 from .variable_tree import VariableTree
+from .analysis_panels import BehaviorPanel, CorrelationPanel, StatsPanel
+from ..analysis.statistics import projection
 
 MAX_PLOTS = 4
 
@@ -50,6 +53,15 @@ class TrendPanel(QWidget):
             w.showGrid(x=True, y=True, alpha=0.3)
             curve = w.plot(pen=pg.mkPen("#4fc3f7", width=2), name="medición")
             sp_curve = w.plot(pen=pg.mkPen("#1e88e5", width=2, style=Qt.DashLine), name="consigna")
+            proj = w.plot(pen=pg.mkPen("#ffb74d", width=2, style=Qt.DotLine), name="proyección")
+            proj_lo = pg.PlotDataItem(pen=pg.mkPen(None))
+            proj_hi = pg.PlotDataItem(pen=pg.mkPen(None))
+            band = pg.FillBetweenItem(proj_lo, proj_hi, brush=pg.mkBrush(255, 183, 77, 45))
+            w.addItem(proj_lo)
+            w.addItem(proj_hi)
+            w.addItem(band)
+            eta = pg.TextItem(color="#ffb74d", anchor=(1, 1))
+            w.addItem(eta)
             lines = {
                 "ref": pg.InfiniteLine(angle=0, pen=pg.mkPen("#9e9e9e", style=Qt.DashLine)),
                 "wl": pg.InfiniteLine(angle=0, pen=pg.mkPen("#f9a825")),
@@ -61,20 +73,35 @@ class TrendPanel(QWidget):
                 ln.setVisible(False)
                 w.addItem(ln)
             self.layout_.addWidget(w)
-            self.plots[vid] = {"widget": w, "curve": curve, "sp": sp_curve, "lines": lines}
+            self.plots[vid] = {"widget": w, "curve": curve, "sp": sp_curve, "lines": lines,
+                               "proj": proj, "proj_lo": proj_lo, "proj_hi": proj_hi, "eta": eta}
         self.placeholder.setVisible(not self.plots)
 
     def update_plot(self, vid: str, t, y, ref: Optional[float], warn: Optional[float],
-                    alarm: Optional[float], sp_series=None) -> None:
+                    alarm: Optional[float], sp_series=None, horizon_s: float = 0.0, fit_s: float = 0.0) -> None:
         p = self.plots.get(vid)
         if not p:
             return
         p["curve"].setData(t, y)
+        pr = projection(t, y, horizon_s, fit_s) if horizon_s > 0 else None
+        if pr is not None:
+            p["proj"].setData(pr["t"], pr["y"])
+            p["proj_lo"].setData(pr["t"], pr["lo"])
+            p["proj_hi"].setData(pr["t"], pr["hi"])
+            end = float(pr["y"][-1])
+            text = f"en {horizon_s / 60:.0f} min: {end:.4g}"
+            if ref is not None and alarm is not None and (end > ref + alarm or end < ref - alarm):
+                text += "  ⚠ fuera de alarma"
+            p["eta"].setText(text)
+            p["eta"].setPos(float(pr["t"][-1]), end)
+        else:
+            for k in ("proj", "proj_lo", "proj_hi"):
+                p[k].setData([], [])
+            p["eta"].setText("")
         if sp_series is not None and len(sp_series[0]):
             # La consigna es escalonada: se prolonga hasta el último instante de la medición.
             st, sy = sp_series
             if len(t) and t[-1] > st[-1]:
-                import numpy as np
                 st, sy = np.append(st, t[-1]), np.append(sy, sy[-1])
             p["sp"].setData(st, sy)
         lines = p["lines"]
@@ -128,6 +155,10 @@ class MainWindow(QMainWindow):
         act_recipes = QAction("📋 Recetas", self)
         act_recipes.triggered.connect(self.open_recipes)
         tb.addAction(act_recipes)
+        act_beh = QAction("🧠 Comportamiento", self)
+        act_beh.setToolTip("Entrenar el comportamiento normal (variación y correlación entre variables)")
+        act_beh.triggered.connect(self.open_behavior)
+        tb.addAction(act_beh)
         act_export = QAction("⤓ Exportar CSV", self)
         act_export.triggered.connect(self.export_csv)
         tb.addAction(act_export)
@@ -157,7 +188,17 @@ class MainWindow(QMainWindow):
         self.table.plotToggled.connect(self._plot_toggled)
         hsplit.addWidget(self.table)
         self.trends = TrendPanel()
-        hsplit.addWidget(self.trends)
+        self.analysis = QTabWidget()
+        self.analysis.addTab(self.trends, "📈 Tendencias")
+        self.stats_panel = StatsPanel(self.engine)
+        self.analysis.addTab(self.stats_panel, "📊 Estadística")
+        self.corr_panel = CorrelationPanel(self.engine)
+        self.analysis.addTab(self.corr_panel, "🔗 Correlación")
+        self.behavior_panel = BehaviorPanel(self.engine)
+        self.analysis.addTab(self.behavior_panel, "🧠 Comportamiento")
+        self.analysis.currentChanged.connect(lambda _: self._refresh_analysis(force=True))
+        self._analysis_at = 0.0
+        hsplit.addWidget(self.analysis)
         hsplit.setSizes([760, 640])
         vsplit.addWidget(hsplit)
 
@@ -199,6 +240,9 @@ class MainWindow(QMainWindow):
         self._plotted = [vid for vid in self._plotted if cfg.variable(vid)]
         self.table.rebuild(cfg, self._plotted)
         self._sync_plots()
+        self.stats_panel.set_variables(cfg)
+        self.corr_panel.set_variables(cfg, self._plotted)
+        self.behavior_panel.set_models()
 
     def _sync_plots(self) -> None:
         cfg = self.ctx.config
@@ -335,6 +379,7 @@ class MainWindow(QMainWindow):
             self.refresh_recipes()
         self._update_table(snap)
         self._update_plots(snap)
+        self._refresh_analysis()
         self._update_findings(snap)
         self._append_events(snap)
         counts = {lvl: sum(1 for f in snap.findings if f.level == lvl) for lvl in Level}
@@ -351,6 +396,21 @@ class MainWindow(QMainWindow):
         self.lbl_ocr.setText(f"OCR: {snap.ocr_engine} · lecturas {snap.read_ok}/{snap.read_total}")
         self.lbl_cycle.setText(f"Ciclo: {snap.cycle_ms:.0f} ms · {time.strftime('%H:%M:%S', time.localtime(snap.ts))}")
 
+    def open_behavior(self) -> None:
+        from .behavior_dialog import BehaviorDialog
+        BehaviorDialog(self.ctx, self, preselect=[v for v in self._plotted]).exec()
+        self.behavior_panel.set_models()
+
+    def _refresh_analysis(self, force: bool = False) -> None:
+        w = self.analysis.currentWidget()
+        if w is self.trends:
+            return
+        now = time.monotonic()
+        if not force and now - self._analysis_at < 2.0:
+            return  # estadística y correlación se recalculan cada 2 s como máximo
+        self._analysis_at = now
+        w.refresh(self.engine.last)
+
     def _update_table(self, snap: Snapshot) -> None:
         self.table.update_snapshot(snap)
 
@@ -362,14 +422,20 @@ class MainWindow(QMainWindow):
                 continue
             sp_id = self.table.setpoint_of(vid)
             sp_series = self.engine.series(sp_id) if sp_id else None
-            self.trends.update_plot(vid, t, y, st.reference, st.warn_band, st.alarm_band, sp_series)
+            g = self.ctx.config.general
+            self.trends.update_plot(vid, t, y, st.reference, st.warn_band, st.alarm_band, sp_series,
+                                    horizon_s=g.trend_horizon_min * 60,
+                                    fit_s=max(120.0, g.trend_window_min * 60 / 3))
 
     def _update_findings(self, snap: Snapshot) -> None:
         self.findings.setRowCount(len(snap.findings))
         for i, f in enumerate(snap.findings):
             var = self.ctx.config.variable(f.var_id)
-            vals = [time.strftime("%H:%M:%S", time.localtime(f.since)), f.level.label, f.rule,
-                    var.name if var else "", f.message]
+            name = var.name if var else ""
+            if f.var_id.startswith("@"):
+                model = self.engine.behaviors.store.get(f.var_id[1:])
+                name = model.name if model else ""
+            vals = [time.strftime("%H:%M:%S", time.localtime(f.since)), f.level.label, f.rule, name, f.message]
             for c, text in enumerate(vals):
                 it = QTableWidgetItem(text)
                 if c == 1:

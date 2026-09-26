@@ -68,6 +68,9 @@ BOX_W, BOX_H = 180, 36
 ROW_Y0, ROW_DY = 150, 42
 TITLE_RECT = Rect(x=40, y=20, w=420, h=44)
 RECIPE_RECT = Rect(x=880, y=24, w=360, h=36)
+# Indicador de estado (selector) en la pantalla principal.
+SELECTOR_RECT = Rect(x=900, y=150, w=150, h=44)
+SEL_ON, SEL_OFF = (40, 170, 70), (190, 40, 40)
 # Barra inferior de botones de navegación (como la de los HMI de línea).
 SIM_PAGES = [("principal", "PRINCIPAL"), ("ext1", "EXT1"), ("linea", "LINEA")]
 NAV_Y, NAV_W, NAV_H, NAV_X0, NAV_DX = 730, 170, 56, 30, 190
@@ -111,6 +114,10 @@ class Scenario:
 
     def apply(self, t: float, sp: dict[str, float], disturb: dict[str, float]) -> None:
         phase = t % self.period
+        # Oscilación normal del husillo; carga y presión la siguen (variables correlacionadas).
+        disturb["rpm"] = 0.9 * math.sin(t / 45.0)
+        # 540-580 s: el selector de inyección queda apagado.
+        disturb["_selector_off"] = 1.0 if 540 <= phase < 580 else 0.0
         # 60-180 s: operador ajusta Zona 3 fuera de receta.
         if 60 <= phase < 180:
             sp["z3"] = 188
@@ -136,6 +143,7 @@ class HmiSimulator:
         self.font = _font()
         self.title_font = _font(30)
         self.page = "principal"
+        self.selector = "ON"
         self.clicks: list[tuple[int, int]] = []
 
     def click(self, x: int, y: int) -> None:
@@ -157,8 +165,11 @@ class HmiSimulator:
             self.scenario.apply(t, sp, disturb)
         sp.update(self.overrides)
         self.sp = sp
+        self.selector = "OFF" if disturb.get("_selector_off") else "ON"
+        rpm_dev = self.act["rpm"] - sp["rpm"]
+        coupled = {"carga": 6.0 * rpm_dev, "presion": 12.0 * rpm_dev}
         for v in SIM_VARS:
-            target = sp[v.id] + disturb.get(v.id, 0.0)
+            target = sp[v.id] + disturb.get(v.id, 0.0) + coupled.get(v.id, 0.0)
             self.act[v.id] += (target - self.act[v.id]) * v.lag + self.rng.gauss(0, v.noise)
 
     def displayed(self, var_id: str, kind: str) -> str:
@@ -179,6 +190,9 @@ class HmiSimulator:
             d.rectangle(_xy(r), fill=NAV_ON if pid == self.page else NAV_OFF)
             tw = d.textlength(label, font=self.font)
             d.text((r.x + (r.w - tw) / 2, r.y + 15), label, font=self.font, fill=FG)
+        if self.page == "principal":
+            d.text((SELECTOR_RECT.x - 200, SELECTOR_RECT.y + 10), "Inyeccion gas", font=self.font, fill=FG)
+            self.draw_selector(d, self.selector)
         for i, v in enumerate(page_vars(self.page)):
             y = _row_y(i)
             d.text((COL_LABEL, y + 6), f"{v.name} [{v.unit}]", font=self.font, fill=FG)
@@ -186,6 +200,18 @@ class HmiSimulator:
                 self._value(d, _box(COL_SP, i), self.displayed(v.id, "sp"), SPC)
             self._value(d, _box(COL_ACT, i), self.displayed(v.id, "act"), VAL)
         return np.asarray(img)[:, :, ::-1].copy()
+
+    def draw_selector(self, d: ImageDraw.ImageDraw, state: str) -> None:
+        r = SELECTOR_RECT
+        d.rectangle(_xy(r), fill=SEL_ON if state == "ON" else SEL_OFF)
+        tw = d.textlength(state, font=self.font)
+        d.text((r.x + (r.w - tw) / 2, r.y + 10), state, font=self.font, fill=FG)
+
+    def selector_image(self, state: str) -> np.ndarray:
+        img = Image.new("RGB", (W, H), BG)
+        self.draw_selector(ImageDraw.Draw(img), state)
+        from .capture import crop
+        return crop(np.asarray(img)[:, :, ::-1].copy(), SELECTOR_RECT).copy()
 
     def _value(self, d: ImageDraw.ImageDraw, r: Rect, text: str, color) -> None:
         d.rectangle(_xy(r), fill=BOX_BG)
@@ -243,6 +269,8 @@ def demo_config() -> AppConfig:
     ocr = OcrOptions(invert="auto", scale=2.0)
     variables: list[Variable] = [
         Variable(id="receta_hmi", name="Receta en HMI", kind="text", region=RECIPE_RECT, ocr=ocr, trend=False),
+        Variable(id="inyeccion", name="Inyección gas", kind="selector", page="principal", region=SELECTOR_RECT,
+                 states=["ON", "OFF"], trend=False),
     ]
     for pid, _ in SIM_PAGES:
         for i, v in enumerate(page_vars(pid)):
@@ -302,6 +330,7 @@ def demo_recipe() -> Recipe:
         if v.has_sp:
             limits[f"{v.id}_sp"] = Limit(nominal=v.nominal, warn=v.sp_tol, alarm=v.sp_tol * 3)
         limits[v.id] = Limit(nominal=v.nominal, warn=v.warn, alarm=v.alarm)
+    limits["inyeccion"] = Limit(expected="ON")
     return Recipe(name=RECIPE_NAME, description="Cable THHN 12 AWG, aislamiento PVC negro",
                   meta={"calibre": "12 AWG", "material": "PVC"}, limits=limits)
 

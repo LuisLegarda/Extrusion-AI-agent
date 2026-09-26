@@ -71,7 +71,7 @@ class VariableTree(QTreeWidget):
             parent = page_item(v.page)
             it = QTreeWidgetItem([v.name])
             it.setData(C_NAME, ROLE, ("var", v.id))
-            if v.kind != "text":
+            if v.numeric:
                 it.setFlags(it.flags() | Qt.ItemIsUserCheckable)
                 it.setCheckState(C_NAME, Qt.Checked if v.id in plotted else Qt.Unchecked)
                 it.setToolTip(C_NAME, "Marca la casilla para graficar la tendencia")
@@ -130,7 +130,7 @@ class VariableTree(QTreeWidget):
 
     def _fill(self, it: QTreeWidgetItem, st: VarStatus, sp: Optional[VarStatus]) -> Optional[Level]:
         var, rd = st.var, st.reading
-        if var.kind == "text":
+        if var.kind in ("text", "selector"):
             cells = {C_PV: rd.text or ""}
         else:
             val = fmt(rd.value, var, rd.decimals) if rd.value is not None else ""
@@ -154,6 +154,8 @@ class VariableTree(QTreeWidget):
                    for x in (st, sp) if x is not None and not x.reading.ok and x.reading.reason]
         ref_dec = sp.reading.decimals if sp is not None and st.ref_source == "consigna" else rd.decimals
         ref = f"{fmt(st.reference, var, ref_dec)} ({st.ref_source})" if st.reference is not None else ""
+        if st.expected:
+            ref = f"esperado «{st.expected}»"
         if sp is not None and sp.reference is not None and st.ref_source != "receta":
             ref += f" · receta SP {fmt(sp.reference, sp.var)}"
         cells.update({

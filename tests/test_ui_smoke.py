@@ -109,3 +109,29 @@ def test_record_and_test_tour_in_demo(ctx, monkeypatch):
     assert "OK" in tab.lbl_status.text(), tab.lbl_status.text()
     dlg._save()
     assert len(list(ctx.workspace.clicks_dir.glob("*.png"))) == 3
+
+
+def test_analysis_tabs_and_behavior_dialog(ctx, monkeypatch):
+    from PySide6.QtWidgets import QApplication, QMessageBox
+
+    warnings = []
+    monkeypatch.setattr(QMessageBox, "warning", lambda *a, **k: warnings.append(a[2]))
+    monkeypatch.setattr(QMessageBox, "information", lambda *a, **k: warnings.append(a[2]))
+
+    from extrusion_monitor.ui.behavior_dialog import BehaviorDialog
+    from extrusion_monitor.ui.main_window import MainWindow
+
+    ctx.engine.sleep = lambda s: None
+    win = MainWindow(ctx)
+    for _ in range(12):
+        ctx.engine.step()
+    for i in range(win.analysis.count()):
+        win.analysis.setCurrentIndex(i)
+        win._refresh_analysis(force=True)
+    QApplication.processEvents()
+    assert "n =" in win.stats_panel.lbl.text()
+    dlg = BehaviorDialog(ctx, win, preselect=["rpm", "carga"])
+    dlg.rb_last.setChecked(True)
+    dlg._train()  # pocos datos: muestra aviso sin fallar
+    assert warnings and "muestras" in warnings[-1]
+    win.close()

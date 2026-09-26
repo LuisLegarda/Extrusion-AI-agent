@@ -105,3 +105,28 @@ def test_page_not_visible(tmp_path):
     snap = ctx.engine.step()
     assert snap.pages == set()
     assert not any(f.rule == R_TOL for f in snap.findings)
+
+
+def test_selector_state_against_recipe(tmp_path):
+    ctx, sim, snaps, _ = run(tmp_path, 600)
+    events = [e for s in snaps for e in s.events]
+    assert snaps[10].statuses["inyeccion"].reading.text == "ON"
+    raised = [e for e in events if e.kind == "raised" and e.rule == "SELECTOR"]
+    assert raised and "OFF" in raised[0].message and 540 <= raised[0].ts - 1000 < 560
+    assert any(e.kind == "cleared" and e.rule == "SELECTOR" for e in events)
+
+
+def test_behavior_model_detects_pressure_rise(tmp_path):
+    from extrusion_monitor.analysis.behavior import BehaviorModel, train
+    ctx, sim, snaps, ft = run(tmp_path, 400)
+    h = ctx.engine.historian
+    vids = ["rpm", "carga", "presion"]
+    series = {v: tuple(np.array(x) for x in zip(*h.samples(v, 0, ft.t))) for v in vids}
+    m = train(BehaviorModel(id="m1", name="Husillo", variables=vids), series, 1020, 1400, 5, 40)
+    ctx.engine.behaviors.store.upsert(m)
+    events = []
+    while ft.t < 1000 + 500:
+        events += ctx.engine.step().events
+        ft.t += 1
+    beh = [e for e in events if e.rule == "COMPORTAMIENTO" and e.kind in ("raised", "escalated")]
+    assert beh and "Presion" in beh[-1].message

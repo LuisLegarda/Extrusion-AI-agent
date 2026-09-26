@@ -17,10 +17,9 @@ import time
 from dataclasses import dataclass, field
 from typing import Callable, Optional, Protocol
 
-import cv2
 import numpy as np
 
-from .capture import FrameSource, crop, load_png
+from .capture import FrameSource, crop, load_png, similarity
 from .config import AppConfig, Click, Rect, Workspace
 from .pages import PageDetector
 
@@ -50,18 +49,7 @@ def patch_matches(frame: np.ndarray, c: Click, patch: Optional[np.ndarray]) -> f
     """Coincidencia 0..1 entre la zona actual del botón y la imagen grabada."""
     if patch is None:
         return 0.0
-    cur = crop(frame, click_rect(c))
-    if cur.shape != patch.shape:
-        return 0.0
-    mad = float(np.abs(cur.astype(np.float32) - patch.astype(np.float32)).mean())
-    color = max(0.0, 1.0 - mad / 80.0)
-    g1 = cv2.cvtColor(cur, cv2.COLOR_BGR2GRAY).astype(np.float32).ravel()
-    g2 = cv2.cvtColor(patch, cv2.COLOR_BGR2GRAY).astype(np.float32).ravel()
-    g1 -= g1.mean()
-    g2 -= g2.mean()
-    denom = float(np.linalg.norm(g1) * np.linalg.norm(g2))
-    shape = float(g1 @ g2) / denom if denom > 1e-6 else (1.0 if mad < 8 else 0.0)
-    return max(0.0, min(shape, color))
+    return similarity(crop(frame, click_rect(c)), patch)
 
 
 @dataclass

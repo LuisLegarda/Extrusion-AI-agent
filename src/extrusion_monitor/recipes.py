@@ -19,6 +19,8 @@ class Limit(BaseModel):
     mode: Literal["abs", "pct"] = "abs"
     # Para variables reales: comparar contra la receta o contra la consigna leída del HMI.
     reference: Literal["recipe", "setpoint"] = "recipe"
+    # Selectores: estado esperado (p. ej. «ON»).
+    expected: Optional[str] = None
 
     def band(self, reference: float) -> tuple[Optional[float], Optional[float]]:
         """Tolerancias absolutas (aviso, alarma) para un valor de referencia."""
@@ -39,7 +41,7 @@ class Recipe(BaseModel):
     limits: dict[str, Limit] = Field(default_factory=dict)
 
 
-CSV_FIELDS = ["variable", "nominal", "warn", "alarm", "mode", "reference"]
+CSV_FIELDS = ["variable", "nominal", "warn", "alarm", "mode", "reference", "expected"]
 
 
 def recipe_to_csv(recipe: Recipe) -> str:
@@ -72,6 +74,7 @@ def recipe_from_csv(name: str, text: str) -> Recipe:
             alarm=num("alarm"),
             mode=(row.get("mode") or "abs").strip() or "abs",
             reference=(row.get("reference") or "recipe").strip() or "recipe",
+            expected=(row.get("expected") or "").strip() or None,
         )
     return Recipe(name=name, limits=limits)
 

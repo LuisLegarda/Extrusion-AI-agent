@@ -7,11 +7,12 @@ from typing import Optional
 
 import numpy as np
 from PySide6.QtCore import Qt, QTimer
-from PySide6.QtGui import QBrush, QColor, QFont
+from PySide6.QtCore import QSize
+from PySide6.QtGui import QBrush, QColor, QFont, QIcon
 from PySide6.QtWidgets import (
     QAbstractItemView, QApplication, QCheckBox, QComboBox, QDialog, QDialogButtonBox, QDoubleSpinBox,
     QFileDialog, QFormLayout, QGroupBox, QHBoxLayout, QInputDialog, QLabel, QLineEdit, QMessageBox,
-    QPushButton, QScrollArea, QSpinBox, QSplitter, QStackedWidget, QTabWidget, QTreeWidget,
+    QListWidget, QListWidgetItem, QPushButton, QScrollArea, QSpinBox, QSplitter, QStackedWidget, QTabWidget, QTreeWidget,
     QTreeWidgetItem, QVBoxLayout, QWidget,
 )
 
@@ -23,11 +24,11 @@ from ..pages import PageDetector
 from .common import to_pixmap
 from .region_view import RegionView
 
-KIND_COLORS = {"actual": "#43a047", "setpoint": "#1e88e5", "text": "#8e24aa"}
+KIND_COLORS = {"actual": "#43a047", "setpoint": "#1e88e5", "text": "#8e24aa", "selector": "#00897b"}
 PAGE_COLOR = "#fb8c00"
 KINDS = [("actual", "Medición (valor real)"), ("setpoint", "Consigna (parámetro establecido)"),
-         ("text", "Texto (p. ej. nombre de receta)")]
-KIND_SHORT = {"actual": "medición", "setpoint": "consigna", "text": "texto"}
+         ("text", "Texto (p. ej. nombre de receta)"), ("selector", "Selector / indicador (estado por imagen)")]
+KIND_SHORT = {"actual": "medición", "setpoint": "consigna", "text": "texto", "selector": "selector"}
 ROLE = Qt.UserRole
 NO_PAGE = "__none__"
 
@@ -102,6 +103,11 @@ class SetupDialog(QDialog):
             if img is not None and p.anchor is not None:
                 self.anchors[p.id] = img
         self.removed_pages: set[str] = set()
+        self.selector_images: dict[str, dict[str, np.ndarray]] = {}
+        for v in self.config.variables:
+            if v.kind == "selector":
+                imgs = {st: load_png(ctx.workspace.selector_state_file(v.id, st)) for st in v.states}
+                self.selector_images[v.id] = {k: i for k, i in imgs.items() if i is not None}
         self._loading = False
         self._current_var: Optional[str] = None
         self._current_page: Optional[str] = None
@@ -201,14 +207,17 @@ class SetupDialog(QDialog):
                  "Marca primero la consigna y después el valor medido; quedan vinculados"),
                 ("+ Medición", lambda: self._new_var("actual"), "Variable medida sin consigna"),
                 ("+ Consigna", lambda: self._new_var("setpoint"), "Parámetro establecido sin medición"),
-                ("+ Texto", lambda: self._new_var("text"), "Texto, p. ej. el nombre de la receta")):
+                ("+ Texto", lambda: self._new_var("text"), "Texto, p. ej. el nombre de la receta"),
+                ("+ Selector", lambda: self._new_var("selector"),
+                 "Selector, interruptor o indicador: se reconoce su estado por imagen (ON/OFF, AUTO/MAN…)")):
             b = QPushButton(text)
             b.setToolTip(tip)
             b.clicked.connect(slot)
             r2.addWidget(b)
         lay.addLayout(r2)
         r3 = QHBoxLayout()
-        for text, slot in (("Crear serie…", self._series), ("Duplicar", self._duplicate), ("Eliminar", self._delete)):
+        for text, slot in (("Crear serie…", self._series), ("Duplicar", self._duplicate), ("Eliminar", self._delete),
+                           ("🧠 Entrenar comportamiento…", self._train_behavior)):
             b = QPushButton(text)
             b.clicked.connect(slot)
             r3.addWidget(b)
@@ -311,6 +320,29 @@ class SetupDialog(QDialog):
             wdg.valueChanged.connect(self._commit_var)
         for wdg in (self.chk_fixdec, self.chk_trend, self.chk_border):
             wdg.toggled.connect(self._commit_var)
+        self.sel_box = QGroupBox("Estados del selector")
+        sl = QVBoxLayout(self.sel_box)
+        sl.addWidget(QLabel("Pon el selector en cada estado en el HMI, captura la pantalla y pulsa "
+                            "«Capturar estado actual». Se reconoce por imagen: sirve para cualquier color o forma."))
+        self.lst_states = QListWidget()
+        self.lst_states.setMaximumHeight(110)
+        sl.addWidget(self.lst_states)
+        row = QHBoxLayout()
+        b = QPushButton("Capturar estado actual como…")
+        b.clicked.connect(self._capture_state)
+        row.addWidget(b)
+        b = QPushButton("Eliminar estado")
+        b.clicked.connect(self._delete_state)
+        row.addWidget(b)
+        sl.addLayout(row)
+        form2 = QFormLayout()
+        self.sp_state_thr = QDoubleSpinBox()
+        self.sp_state_thr.setRange(0.3, 1.0)
+        self.sp_state_thr.setSingleStep(0.05)
+        self.sp_state_thr.valueChanged.connect(self._commit_var)
+        form2.addRow("Coincidencia mínima", self.sp_state_thr)
+        sl.addLayout(form2)
+        f.addRow(self.sel_box)
         scroll = QScrollArea()
         scroll.setWidgetResizable(True)
         scroll.setWidget(box)
@@ -767,6 +799,8 @@ class SetupDialog(QDialog):
         self.sp_thr.setValue(-1 if v.ocr.threshold is None else v.ocr.threshold)
         self.chk_border.setChecked(v.ocr.clear_border)
         self.chk_trend.setChecked(v.trend)
+        self.sp_state_thr.setValue(v.state_threshold)
+        self._refresh_states(v)
         r = v.region
         self.lbl_region.setText(f"x={r.x} y={r.y} {r.w}×{r.h}")
         self._loading = False
@@ -797,7 +831,8 @@ class SetupDialog(QDialog):
                 ocr=OcrOptions(invert=self.cmb_invert.currentData(), scale=self.sp_scale.value(),
                                threshold=None if self.sp_thr.value() < 0 else self.sp_thr.value(),
                                clear_border=self.chk_border.isChecked()),
-                trend=self.chk_trend.isChecked())
+                trend=self.chk_trend.isChecked(), states=list(old.states),
+                state_threshold=self.sp_state_thr.value())
         except ValueError as exc:
             self.lbl_result.setText(f"<span style='color:#e53935'>Valor inválido: {exc}</span>")
             return
@@ -913,6 +948,8 @@ class SetupDialog(QDialog):
             existing.add(c.id)
             c.region = Rect(x=v.region.x + dx, y=v.region.y + dy, w=v.region.w, h=v.region.h)
             mapping[v.id] = c.id
+            if c.kind == "selector" and v.id in self.selector_images:
+                self.selector_images[c.id] = dict(self.selector_images[v.id])
             clones.append(c)
         for c in clones:
             if c.setpoint_var in mapping:
@@ -1019,11 +1056,72 @@ class SetupDialog(QDialog):
                     self._ocr_cache = self.ctx.template_ocr
         return self._ocr_cache
 
+    # --- selectores ------------------------------------------------------------------
+    def _refresh_states(self, v: Variable) -> None:
+        self.sel_box.setVisible(v.kind == "selector")
+        self.lst_states.clear()
+        for st in v.states:
+            it = QListWidgetItem(st)
+            img = self.selector_images.get(v.id, {}).get(st)
+            if img is not None:
+                it.setIcon(QIcon(to_pixmap(img)))
+            self.lst_states.addItem(it)
+        self.lst_states.setIconSize(QSize(96, 32))
+
+    def _capture_state(self) -> None:
+        v = self.config.variable(self._current_var) if self._current_var else None
+        if v is None or self.frame is None:
+            return
+        name, ok = QInputDialog.getText(self, "Estado del selector",
+                                        "Nombre del estado que se ve ahora (p. ej. ON, OFF, AUTO, MAN):")
+        name = name.strip()
+        if not ok or not name:
+            return
+        if name not in v.states:
+            v.states.append(name)
+        self.selector_images.setdefault(v.id, {})[name] = crop(self.frame, v.region).copy()
+        self._refresh_states(v)
+        self._test_ocr()
+
+    def _delete_state(self) -> None:
+        v = self.config.variable(self._current_var) if self._current_var else None
+        it = self.lst_states.currentItem()
+        if v is None or it is None:
+            return
+        v.states = [s for s in v.states if s != it.text()]
+        self.selector_images.get(v.id, {}).pop(it.text(), None)
+        self._refresh_states(v)
+
+    def _train_behavior(self) -> None:
+        from .behavior_dialog import BehaviorDialog
+        pre = [vid for vid in self._selected("var") if (v := self.config.variable(vid)) and v.numeric]
+        BehaviorDialog(self.ctx, self, preselect=pre, config=self.config).exec()
+
     def _test_ocr(self) -> None:
         v = self.config.variable(self._current_var) if self._current_var else None
         if v is None or self.frame is None:
             return
         img = crop(self.frame, v.region)
+        if v.kind == "selector":
+            from ..acquisition import match_state
+            self.lbl_crop.setPixmap(to_pixmap(img).scaledToHeight(min(80, max(20, img.shape[0] * 2))))
+            self.lbl_bin.clear()
+            states = self.selector_images.get(v.id, {})
+            if not states:
+                self.lbl_result.setText("Captura al menos un estado del selector.")
+                return
+            from ..capture import similarity
+            import cv2 as _cv2
+            scores = []
+            for name, ref in states.items():
+                cur = img if img.shape == ref.shape else _cv2.resize(img, (ref.shape[1], ref.shape[0]))
+                scores.append(f"{name}: {similarity(cur, ref):.2f}")
+            state, score = match_state(img, states)
+            ok = score >= v.state_threshold
+            color = "#43a047" if ok else "#e53935"
+            self.lbl_result.setText(f"Estado detectado: <b style='color:{color}'>{state if ok else 'no reconocido'}"
+                                    f"</b> · coincidencias: {', '.join(scores)}")
+            return
         self.lbl_crop.setPixmap(to_pixmap(img).scaledToHeight(min(80, max(20, img.shape[0] * 2))))
         binary = preprocess(img, v.ocr)
         self.lbl_bin.setPixmap(to_pixmap(binary).scaledToHeight(min(80, max(20, binary.shape[0]))))
@@ -1090,6 +1188,18 @@ class SetupDialog(QDialog):
                 f.unlink()
         for pid, img in self.anchors.items():
             save_png(ws.page_anchor_file(pid), img)
+        keep = set()
+        for v in self.config.variables:
+            if v.kind == "selector":
+                for st in v.states:
+                    img = self.selector_images.get(v.id, {}).get(st)
+                    if img is not None:
+                        f = ws.selector_state_file(v.id, st)
+                        save_png(f, img)
+                        keep.add(f.name)
+        for f in ws.selectors_dir.glob("*.png"):
+            if f.name not in keep:
+                f.unlink()
         used = {c.id for c in self.config.tour.all_clicks()}
         for cid, img in self.tour_tab.patches.items():
             if cid in used:

@@ -51,7 +51,7 @@ class Page(BaseModel):
     match_threshold: float = Field(0.85, ge=0.3, le=1.0)
 
 
-VariableKind = Literal["actual", "setpoint", "text"]
+VariableKind = Literal["actual", "setpoint", "text", "selector"]
 
 
 class Variable(BaseModel):
@@ -75,6 +75,13 @@ class Variable(BaseModel):
     max_step: Optional[float] = None
     ocr: OcrOptions = Field(default_factory=OcrOptions)
     trend: bool = True
+    # Selector: estados reconocidos por imagen (p. ej. «ON», «OFF»); las imágenes se guardan aparte.
+    states: list[str] = Field(default_factory=list)
+    state_threshold: float = Field(0.8, ge=0.3, le=1.0)
+
+    @property
+    def numeric(self) -> bool:
+        return self.kind in ("actual", "setpoint")
 
 
 OcrEngineName = Literal["windows", "template", "tesseract"]
@@ -301,6 +308,20 @@ class Workspace:
 
     def click_patch_file(self, click_id: str) -> Path:
         return self.clicks_dir / f"{click_id}.png"
+
+    @property
+    def selectors_dir(self) -> Path:
+        d = self.home / "selectors"
+        d.mkdir(exist_ok=True)
+        return d
+
+    def selector_state_file(self, var_id: str, state: str) -> Path:
+        safe = "".join(c if c.isalnum() or c in "-_" else "_" for c in state)
+        return self.selectors_dir / f"{var_id}__{safe}.png"
+
+    @property
+    def behaviors_file(self) -> Path:
+        return self.home / "behaviors.json"
 
     def load_config(self) -> AppConfig:
         if not self.config_file.exists():

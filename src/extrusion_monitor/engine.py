@@ -13,6 +13,8 @@ from .analysis.trends import TrendTracker
 from .capture import FrameSource
 from .config import AppConfig, Workspace
 from .ocr import OcrEngine
+from .analysis.behavior import BehaviorMonitor, BehaviorStore
+from .capture import load_png
 from .navigation import Clicker, TourResult, TourRunner, UnavailableClicker
 from .pages import PageDetector
 from .recipes import Recipe, RecipeStore
@@ -68,13 +70,14 @@ class MonitorEngine:
         self._lock = threading.RLock()  # un ciclo a la vez
         self._data_lock = threading.RLock()  # tendencias/estado, para que la UI no espere al recorrido
         self._pending_events: list[Event] = []
+        self.behaviors = BehaviorMonitor(BehaviorStore(workspace.behaviors_file))
         self._stored: dict[str, float] = {}
         self._build()
 
     def _build(self) -> None:
         g = self.config.general
         self.pages = PageDetector.from_workspace(self.config, self.workspace)
-        self.acquirer = Acquirer(self.config, self.ocr, self.pages)
+        self.acquirer = Acquirer(self.config, self.ocr, self.pages, self._selector_images())
         self.rules = RuleEngine(self.config)
         self.trends = TrendTracker(g.trend_window_min * 60, g.spc_subgroup_s)
         last = getattr(self, "tour", None)
@@ -82,6 +85,19 @@ class MonitorEngine:
                                clock=self.clock, sleep=self.sleep)
         if last is not None:
             self.tour.last_run, self.tour.last_result = last.last_run, last.last_result
+
+    def _selector_images(self) -> dict:
+        out = {}
+        for v in self.config.variables:
+            if v.kind == "selector":
+                imgs = {st: load_png(self.workspace.selector_state_file(v.id, st)) for st in v.states}
+                out[v.id] = {k: img for k, img in imgs.items() if img is not None}
+        return out
+
+    def reload_behaviors(self) -> None:
+        with self._data_lock:
+            self.behaviors.store.load()
+            self.behaviors.last.clear()
 
     def reconfigure(self, config: AppConfig, ocr: Optional[OcrEngine] = None) -> None:
         with self._lock:
@@ -156,7 +172,10 @@ class MonitorEngine:
                 error = f"Fallo de captura: {exc}"
             self._auto_select_recipe(readings)
             with self._data_lock:
-                statuses, events = self.rules.evaluate(now, readings, self.recipe, self.trends)
+                extra = self.behaviors.evaluate(
+                    now, self.rules.fresh_values(now, readings), self.state.recipe,
+                    lambda vid: self.config.var_label(self.config.variable(vid)) if self.config.variable(vid) else vid)
+                statuses, events = self.rules.evaluate(now, readings, self.recipe, self.trends, extra)
             events = self._pending_events + events
             self._pending_events = []
             findings = self.rules.active_findings()

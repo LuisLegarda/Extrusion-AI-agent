@@ -81,3 +81,18 @@ def load_png(path: Path) -> np.ndarray | None:
     if not Path(path).exists():
         return None
     return cv2.imdecode(np.fromfile(str(path), np.uint8), cv2.IMREAD_COLOR)
+
+
+def similarity(a: np.ndarray, b: np.ndarray) -> float:
+    """Coincidencia 0..1 entre dos imágenes del mismo tamaño (forma y color)."""
+    if a is None or b is None or a.shape != b.shape:
+        return 0.0
+    mad = float(np.abs(a.astype(np.float32) - b.astype(np.float32)).mean())
+    color = max(0.0, 1.0 - mad / 80.0)
+    g1 = cv2.cvtColor(a, cv2.COLOR_BGR2GRAY).astype(np.float32).ravel()
+    g2 = cv2.cvtColor(b, cv2.COLOR_BGR2GRAY).astype(np.float32).ravel()
+    g1 -= g1.mean()
+    g2 -= g2.mean()
+    denom = float(np.linalg.norm(g1) * np.linalg.norm(g2))
+    shape = float(g1 @ g2) / denom if denom > 1e-6 else (1.0 if mad < 8 else 0.0)
+    return max(0.0, min(shape, color))
