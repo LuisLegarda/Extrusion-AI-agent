@@ -19,7 +19,8 @@ from ..config import ReportDef, ReportTrigger, ReportVar
 if TYPE_CHECKING:
     from .setup_dialog import SetupDialog
 
-KINDS = [("cross", "Variable cruza un valor"), ("change", "Valor / texto cambia"),
+KINDS = [("cross", "Variable cruza un valor"), ("decrease", "Valor pasa a uno menor"),
+         ("change", "Valor / texto cambia"),
          ("selector", "Selector cambia de estado"), ("tour", "Se ejecuta un recorrido")]
 
 
@@ -278,7 +279,8 @@ class ReportTab(QWidget):
             target.setCurrentIndex(max(0, target.findData(tr.tour_id)))
             target.currentIndexChanged.connect(lambda _=0, tr=tr, w=target: self._set(tr, "tour_id", w.currentData()))
         else:
-            kinds = {"cross": ("actual", "setpoint", "formula"), "selector": ("selector", "text")}.get(tr.kind)
+            kinds = {"cross": ("actual", "setpoint", "formula"), "decrease": ("actual", "setpoint", "formula"),
+                     "selector": ("selector", "text")}.get(tr.kind)
             target = self._var_combo(kinds, tr.var_id)
             if tr.var_id is None and target.count():
                 tr.var_id = target.currentData()
@@ -293,7 +295,12 @@ class ReportTab(QWidget):
             self.tbl_trg.setCellWidget(i, 2, op)
         elif tr.kind == "change":
             self.tbl_trg.setCellWidget(i, 2, QLabel(" cambio mayor a"))
-        if tr.kind in ("cross", "change"):
+        elif tr.kind == "decrease":
+            lbl = QLabel(" baja más de")
+            lbl.setToolTip("Se dispara cuando el valor es menor que la lectura anterior por más de esta cantidad "
+                           "(0 = cualquier baja). Útil para contadores que se reinician, como la longitud del carrete.")
+            self.tbl_trg.setCellWidget(i, 2, lbl)
+        if tr.kind in ("cross", "change", "decrease"):
             sp = QDoubleSpinBox()
             sp.setRange(-1e9, 1e9)
             sp.setDecimals(3)
@@ -339,6 +346,7 @@ class ReportTab(QWidget):
         crit = QComboBox()
         crit.addItem("En especificación", "spec")
         crit.addItem("Cpk mínimo", "cpk")
+        crit.addItem("Spec + Cpk mínimo", "both")
         crit.setCurrentIndex(max(0, crit.findData(rv.criterion)))
         crit.currentIndexChanged.connect(lambda _=0, rv=rv, w=crit: self._set(rv, "criterion", w.currentData()))
         self.tbl_var.setCellWidget(i, 1, crit)

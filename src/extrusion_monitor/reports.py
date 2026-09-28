@@ -11,6 +11,8 @@ no se detiene; las gráficas se reducen a pocos cientos de puntos.
 from __future__ import annotations
 
 import json
+import math
+import os
 import logging
 import queue
 import re
@@ -156,6 +158,13 @@ class ReportManager:
             if prev is False and cond:
                 return f"{label} {tr.op} {tr.value:g} ({rd.value:g})"
             return ""
+        if tr.kind == "decrease":
+            if rd.value is None:
+                return ""
+            self._prev[key] = rd.value
+            if prev is not None and prev - rd.value > max(tr.value, 0.0) and rd.value != prev:
+                return f"{label} bajó de {prev:g} a {rd.value:g}"
+            return ""
         if tr.kind == "change":
             cur = rd.text if var.kind in ("text", "selector") else rd.value
             if cur is None:
@@ -273,7 +282,7 @@ def evaluate_var(job: ReportJob, rv, rows: list[tuple]) -> VarResult:
         elif texts:
             res.note = "estados: " + ", ".join(sorted(set(texts))[:6])
         return res
-    vals = [(r[0], r[1]) for r in rows if r[1] is not None]
+    vals = [(r[0], r[1]) for r in rows if r[1] is not None and math.isfinite(r[1])]
     if not vals:
         res.note = "sin datos en el periodo"
         return res
@@ -293,12 +302,20 @@ def evaluate_var(job: ReportJob, rv, rows: list[tuple]) -> VarResult:
         res.pct_in = 100.0 * float(inside.mean())
         cap = capability(y, lim.lsl, lim.usl)
         res.cpk = cap.cpk if cap else None
-    if rv.criterion == "cpk":
+    if res.cpk is None and has_spec and res.std == 0 and res.pct_in == 100.0:
+        res.cpk = 99.0  # sin variación y dentro de límites: capacidad sobrada
+    if rv.criterion in ("cpk", "both"):
         if res.cpk is None:
             res.note = "Cpk no calculable (faltan límites o datos)"
-        else:
+        elif rv.criterion == "cpk":
             res.ok = res.cpk >= rv.cpk_min
             res.note = f"Cpk mín. {rv.cpk_min:g}"
+        else:
+            in_spec = res.pct_in is not None and res.pct_in >= 99.999
+            res.ok = in_spec and res.cpk >= rv.cpk_min
+            fails = ([] if in_spec else ["lecturas fuera de spec"]) + \
+                ([] if res.cpk >= rv.cpk_min else [f"Cpk < {rv.cpk_min:g}"])
+            res.note = f"en spec y Cpk mín. {rv.cpk_min:g}" + (f" ({', '.join(fails)})" if fails else "")
     elif has_spec:
         res.ok = res.pct_in >= 99.999
         res.note = "todas las lecturas en especificación"
@@ -386,33 +403,58 @@ def _chart(t: np.ndarray, y: np.ndarray, width: float, height: float, lines: lis
     lp = LinePlot()
     lp.x, lp.y = 45, 22
     lp.width, lp.height = width - 60, height - 34
-    t, y = _downsample(t, y)
-    data = [list(zip(t.tolist(), y.tolist()))]
+    t, y = np.asarray(t, float), np.asarray(y, float)
+    ok = np.isfinite(t) & np.isfinite(y)
+    t, y = _downsample(t[ok], y[ok])
+    if until <= since:
+        until = since + 1.0
+    data = [[(round(float(a), 1), float(b)) for a, b in zip(t, y)]]
     vals = list(y)
     for val, _ in lines:
-        data.append([(since, val), (until, val)])
-        vals.append(val)
+        if val is not None and math.isfinite(val):
+            data.append([(since, float(val)), (until, float(val))])
+            vals.append(float(val))
     lp.data = data
     lp.lines[0].strokeColor = colors.HexColor("#1565c0")
     lp.lines[0].strokeWidth = 1.2
-    for i, (_, col) in enumerate(lines, 1):
+    for i, (_, col) in enumerate(lines[:len(data) - 1], 1):
         lp.lines[i].strokeColor = col
         lp.lines[i].strokeWidth = 0.9
         lp.lines[i].strokeDashArray = [4, 3]
     lo, hi = float(min(vals)), float(max(vals))
     pad = (hi - lo) * 0.08 or max(abs(hi) * 0.05, 1e-3)
-    lp.yValueAxis.valueMin, lp.yValueAxis.valueMax = lo - pad, hi + pad
+    lo, hi = lo - pad, hi + pad
+    # Marcas del eje fijas (5): evita que el visor calcule cientos de divisiones con rangos extraños.
+    lp.yValueAxis.valueMin, lp.yValueAxis.valueMax = lo, hi
+    lp.yValueAxis.valueSteps = [float(v) for v in np.linspace(lo, hi, 5)]
+    lp.yValueAxis.labelTextFormat = lambda v: _fmt(v, 3)
+    lp.yValueAxis.labels.fontName = "Helvetica"
     lp.yValueAxis.labels.fontSize = 6
     lp.xValueAxis.valueMin, lp.xValueAxis.valueMax = since, until
     span = until - since
     fmt = "%H:%M" if span <= 86400 else "%d/%m %H:%M"
     lp.xValueAxis.labelTextFormat = lambda v: time.strftime(fmt, time.localtime(v))
-    lp.xValueAxis.valueSteps = list(np.linspace(since, until, 6))
+    lp.xValueAxis.valueSteps = [float(v) for v in np.linspace(since, until, 6)]
+    lp.xValueAxis.labels.fontName = "Helvetica"
     lp.xValueAxis.labels.fontSize = 6
     d.add(lp)
     if y_label:
-        d.add(String(2, height - 9, y_label, fontSize=7, fillColor=colors.HexColor("#424242")))
+        d.add(String(2, height - 9, _latin(y_label), fontName="Helvetica", fontSize=7,
+                     fillColor=colors.HexColor("#424242")))
     return d
+
+
+def _esc(text) -> str:
+    """Texto seguro para Paragraph (que interpreta <, > y & como marcas)."""
+    from xml.sax.saxutils import escape
+    return escape(_latin(text))
+
+
+def _latin(text: str) -> str:
+    """Solo caracteres de las fuentes estándar del PDF (sin fuentes de símbolos sustitutas)."""
+    text = str(text).replace("→", "->").replace("›", ">").replace("σ", "desv.").replace("≤", "<=") \
+        .replace("≥", ">=").replace("²", "2").replace("Δ", "D")
+    return text.encode("cp1252", "replace").decode("cp1252")
 
 
 def _write_pdf(path: Path, job: ReportJob, results: list[VarResult], overall: Optional[bool], historian) -> None:
@@ -426,12 +468,13 @@ def _write_pdf(path: Path, job: ReportJob, results: list[VarResult], overall: Op
     styles = getSampleStyleSheet()
     small = styles["BodyText"].clone("small", fontSize=7, leading=8.5)
     page = landscape(A4)
-    doc = SimpleDocTemplate(str(path), pagesize=page, leftMargin=12 * mm, rightMargin=12 * mm,
+    tmp = path.with_name(path.stem + ".tmp.pdf")
+    doc = SimpleDocTemplate(str(tmp), pagesize=page, pageCompression=1, leftMargin=12 * mm, rightMargin=12 * mm,
                             topMargin=12 * mm, bottomMargin=12 * mm, title=rep.name, author="Extrusion Monitor")
     width = page[0] - 24 * mm
-    story = [Paragraph(f"{rep.name} — {cfg.machine_name}", styles["Title"])]
-    info = [["Periodo", f"{_ts(job.since)}  →  {_ts(job.until)}  ({(job.until - job.since) / 3600:.2f} h)"],
-            ["Receta", job.recipe or "—"], ["Motivo", job.reason], ["Generado", _ts(time.time())]]
+    story = [Paragraph(_esc(f"{rep.name} — {cfg.machine_name}"), styles["Title"])]
+    info = [["Periodo", f"{_ts(job.since)}  a  {_ts(job.until)}  ({(job.until - job.since) / 3600:.2f} h)"],
+            ["Receta", _latin(job.recipe or "—")], ["Motivo", _latin(job.reason)], ["Generado", _ts(time.time())]]
     t = Table(info, colWidths=[30 * mm, width - 30 * mm])
     t.setStyle(TableStyle([("FONTSIZE", (0, 0), (-1, -1), 8), ("TEXTCOLOR", (0, 0), (0, -1), colors.grey)]))
     story += [t, Spacer(1, 4 * mm)]
@@ -440,16 +483,16 @@ def _write_pdf(path: Path, job: ReportJob, results: list[VarResult], overall: Op
     story.append(Paragraph(f"<font color='{color}' size=16><b>Resultado: {text}</b></font>", styles["BodyText"]))
     story.append(Spacer(1, 4 * mm))
 
-    head = ["Variable", "Unidad", "n", "Media", "Mín", "Máx", "σ", "LIE", "LSE", "% en spec", "Cpk", "Criterio",
+    head = ["Variable", "Unidad", "n", "Media", "Mín", "Máx", "Desv.", "LIE", "LSE", "% en spec", "Cpk", "Criterio",
             "Resultado"]
     rows = [head]
     for r in results:
-        crit = "Cpk" if r.criterion == "cpk" else "Spec"
+        crit = {"cpk": "Cpk", "both": "Spec + Cpk"}.get(r.criterion, "Spec")
         verdict = {True: "OK", False: "NO", None: "—"}[r.ok]
-        rows.append([Paragraph(r.label, small), r.unit, str(r.n), _fmt(r.mean), _fmt(r.minimum), _fmt(r.maximum),
+        rows.append([Paragraph(_esc(r.label), small), _latin(r.unit), str(r.n), _fmt(r.mean), _fmt(r.minimum), _fmt(r.maximum),
                      _fmt(r.std), _fmt(r.limits.lsl), _fmt(r.limits.usl),
                      "—" if r.pct_in is None else f"{r.pct_in:.1f}", _fmt(r.cpk, 2),
-                     Paragraph(f"{crit}: {r.note}", small), verdict])
+                     Paragraph(_esc(f"{crit}: {r.note}"), small), verdict])
     col_w = [60 * mm, 14 * mm, 12 * mm] + [17 * mm] * 6 + [16 * mm, 13 * mm]
     col_w += [width - sum(col_w) - 17 * mm, 17 * mm]
     t = Table(rows, colWidths=col_w, repeatRows=1)
@@ -482,13 +525,13 @@ def _write_pdf(path: Path, job: ReportJob, results: list[VarResult], overall: Op
         story += [Table(grid, colWidths=[cw + 2 * mm] * 2), Spacer(1, 4 * mm)]
 
     if job.behavior_models:
-        story.append(Paragraph("Comportamiento (D² / umbral; > 1 = fuera de lo normal)", styles["Heading2"]))
+        story.append(Paragraph("Comportamiento (D2 / umbral; mayor que 1 = fuera de lo normal)", styles["Heading2"]))
         cells = []
         cw, ch = width / 2 - 2 * mm, 55 * mm
         for m in job.behavior_models:
             bt, br = behavior_series(m, historian, job.since, job.until)
             if len(bt) < 2:
-                story.append(Paragraph(f"«{m.name}»: sin datos suficientes en el periodo.", small))
+                story.append(Paragraph(_esc(f"«{m.name}»: sin datos suficientes en el periodo."), small))
                 continue
             out = float((br > 1).mean() * 100)
             cells.append(_chart(bt, br, cw, ch, [(1.0, colors.HexColor("#c62828"))], job.since, job.until,
@@ -507,8 +550,8 @@ def _write_pdf(path: Path, job: ReportJob, results: list[VarResult], overall: Op
             for e in evs[-MAX_EVENTS:]:
                 var = cfg.variable(e[4]) if e[4] else None
                 rows.append([_ts(e[0]), LEVEL_NAMES.get(e[2], str(e[2])),
-                             Paragraph(cfg.var_label(var) if var else (e[4] or ""), small),
-                             Paragraph(str(e[5]), small)])
+                             Paragraph(_esc(cfg.var_label(var) if var else (e[4] or "")), small),
+                             Paragraph(_esc(e[5] or ""), small)])
             t = Table(rows, colWidths=[32 * mm, 16 * mm, 60 * mm, width - 108 * mm], repeatRows=1)
             t.setStyle(TableStyle([("FONTSIZE", (0, 0), (-1, -1), 7), ("GRID", (0, 0), (-1, -1), 0.25, colors.grey),
                                    ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#263238")),
@@ -518,4 +561,10 @@ def _write_pdf(path: Path, job: ReportJob, results: list[VarResult], overall: Op
                 story.append(Paragraph(f"Se muestran los últimos {MAX_EVENTS} eventos.", small))
         else:
             story.append(Paragraph("Sin eventos en el periodo.", small))
-    doc.build(story)
+    try:
+        doc.build(story)
+        # Se escribe completo en un temporal y luego se renombra: nunca queda un PDF a medias.
+        os.replace(tmp, path)
+    finally:
+        if tmp.exists():
+            tmp.unlink()

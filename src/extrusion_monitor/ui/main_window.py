@@ -10,7 +10,7 @@ from PySide6.QtCore import Qt, QTimer
 from PySide6.QtGui import QAction, QBrush, QColor
 from PySide6.QtWidgets import (
     QApplication, QCheckBox, QComboBox, QFileDialog, QHeaderView, QLabel, QListWidget,
-    QListWidgetItem, QMainWindow, QMenu, QMessageBox, QSplitter, QTableWidget, QTableWidgetItem,
+    QHBoxLayout, QListWidgetItem, QMainWindow, QMenu, QMessageBox, QSplitter, QTableWidget, QTableWidgetItem,
     QTabWidget, QToolBar, QToolButton, QVBoxLayout, QWidget,
 )
 
@@ -28,6 +28,33 @@ from ..analysis.statistics import projection
 MAX_PLOTS = 4
 
 
+RANGES = [("5 min", 300), ("15 min", 900), ("30 min", 1800), ("1 h", 3600), ("4 h", 4 * 3600),
+          ("8 h", 8 * 3600), ("24 h", 86400), ("7 días", 7 * 86400)]
+
+
+def y_range(y, ref: Optional[float], warn: Optional[float], alarm: Optional[float]) -> Optional[tuple[float, float]]:
+    """Escala Y: los límites de la variable (con margen) más los datos visibles.
+
+    Un pico amplía la escala solo mientras está dentro del rango de tiempo mostrado; al salir,
+    la escala vuelve a los límites.
+    """
+    y = np.asarray(y, float)
+    y = y[np.isfinite(y)]
+    band = alarm if alarm is not None else warn
+    lo = hi = None
+    if ref is not None and band is not None:
+        lo, hi = ref - band, ref + band
+    if len(y):
+        dlo, dhi = float(y.min()), float(y.max())
+        lo = dlo if lo is None else min(lo, dlo)
+        hi = dhi if hi is None else max(hi, dhi)
+    if lo is None:
+        return None
+    span = hi - lo
+    pad = span * 0.1 if span > 0 else max(abs(hi) * 0.05, 1.0)
+    return lo - pad, hi + pad
+
+
 class TrendPanel(QWidget):
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -35,6 +62,23 @@ class TrendPanel(QWidget):
         self.layout_ = QVBoxLayout(self)
         self.layout_.setContentsMargins(0, 0, 0, 0)
         self.plots: dict[str, dict] = {}
+        bar = QHBoxLayout()
+        bar.setContentsMargins(4, 2, 4, 0)
+        bar.addWidget(QLabel("Rango:"))
+        self.cmb_range = QComboBox()
+        for label, secs in RANGES:
+            self.cmb_range.addItem(label, secs)
+        self.cmb_range.setCurrentIndex(1)
+        self.cmb_range.setToolTip("Tiempo mostrado. Más allá de la ventana en memoria se lee del historial.")
+        bar.addWidget(self.cmb_range)
+        self.chk_auto_y = QCheckBox("Escala Y automática (según límites)")
+        self.chk_auto_y.setChecked(True)
+        self.chk_auto_y.setToolTip("La escala se ajusta a los límites de la variable y a los datos visibles; "
+                                   "un pico solo la amplía mientras está en pantalla. "
+                                   "Desmárcala para hacer zoom manual con el mouse.")
+        bar.addWidget(self.chk_auto_y)
+        bar.addStretch(1)
+        self.layout_.addLayout(bar)
         self.placeholder = QLabel("Marca la casilla de una variable para graficar su tendencia.")
         self.placeholder.setAlignment(Qt.AlignCenter)
         self.layout_.addWidget(self.placeholder)
@@ -51,6 +95,8 @@ class TrendPanel(QWidget):
                 continue
             w = pg.PlotWidget(axisItems={"bottom": pg.DateAxisItem()})
             w.setTitle(title)
+            w.setClipToView(True)
+            w.setDownsampling(auto=True, mode="peak")
             w.showGrid(x=True, y=True, alpha=0.3)
             curve = w.plot(pen=pg.mkPen("#4fc3f7", width=2), name="medición")
             sp_curve = w.plot(pen=pg.mkPen("#1e88e5", width=2, style=Qt.DashLine), name="consigna")
@@ -77,6 +123,21 @@ class TrendPanel(QWidget):
             self.plots[vid] = {"widget": w, "curve": curve, "sp": sp_curve, "lines": lines,
                                "proj": proj, "proj_lo": proj_lo, "proj_hi": proj_hi, "eta": eta}
         self.placeholder.setVisible(not self.plots)
+
+    @property
+    def range_s(self) -> float:
+        return float(self.cmb_range.currentData())
+
+    def _fit_view(self, w, t, y, ref, warn, alarm, pr) -> None:
+        if not len(t):
+            return
+        now = float(t[-1])
+        end = float(pr["t"][-1]) if pr is not None else now
+        w.setXRange(now - self.range_s, max(end, now), padding=0.01)
+        if self.chk_auto_y.isChecked():
+            yr = y_range(np.asarray(y)[np.asarray(t) >= now - self.range_s], ref, warn, alarm)
+            if yr is not None:
+                w.setYRange(*yr, padding=0)
 
     def update_plot(self, vid: str, t, y, ref: Optional[float], warn: Optional[float],
                     alarm: Optional[float], sp_series=None, horizon_s: float = 0.0, fit_s: float = 0.0) -> None:
@@ -105,6 +166,7 @@ class TrendPanel(QWidget):
             if len(t) and t[-1] > st[-1]:
                 st, sy = np.append(st, t[-1]), np.append(sy, sy[-1])
             p["sp"].setData(st, sy)
+        self._fit_view(p["widget"], t, y, ref, warn, alarm, pr)
         lines = p["lines"]
         for key, val in (("ref", ref),
                          ("wl", ref - warn if ref is not None and warn is not None else None),
@@ -123,6 +185,7 @@ class MainWindow(QMainWindow):
         self.engine = ctx.engine
         self._config_version = ctx.engine.config_version
         self._prompts: dict = {}
+        self._hist_cache: dict = {}
         self.bridge = SnapshotBridge()
         self.bridge.snapshot.connect(self.on_snapshot, Qt.QueuedConnection)
         self.engine.listeners.append(self.bridge.snapshot.emit)
@@ -206,6 +269,8 @@ class MainWindow(QMainWindow):
         self.table.plotToggled.connect(self._plot_toggled)
         hsplit.addWidget(self.table)
         self.trends = TrendPanel()
+        self.trends.cmb_range.currentIndexChanged.connect(self._replot)
+        self.trends.chk_auto_y.toggled.connect(self._replot)
         self.analysis = QTabWidget()
         self.analysis.addTab(self.trends, "📈 Tendencias")
         self.stats_panel = StatsPanel(self.engine)
@@ -492,14 +557,39 @@ class MainWindow(QMainWindow):
     def _update_table(self, snap: Snapshot) -> None:
         self.table.update_snapshot(snap)
 
+    def _replot(self, *_):
+        if self.engine.last is not None:
+            self._update_plots(self.engine.last)
+
+    def _plot_series(self, vid: str):
+        """Serie para el rango elegido: memoria (ventana de tendencia) o historial (rangos largos)."""
+        rng = self.trends.range_s
+        t, y = self.engine.series(vid)
+        window = self.ctx.config.general.trend_window_min * 60
+        if rng <= window or self.engine.historian is None:
+            return t, y
+        now = time.time()
+        cached = self._hist_cache.get(vid)
+        # El historial se consulta como máximo cada 15 s por variable (no carga la PC).
+        if cached is None or cached[0] != rng or now - cached[1] > 15:
+            rows = [r for r in self.engine.historian.samples(vid, now - rng, now + 60) if r[1] is not None]
+            arr = np.asarray(rows, float) if rows else np.empty((0, 2))
+            cached = (rng, now, arr[:, 0] if len(arr) else np.empty(0), arr[:, 1] if len(arr) else np.empty(0))
+            self._hist_cache[vid] = cached
+        ht, hy = cached[2], cached[3]
+        if len(t):
+            keep = ht < t[0]
+            ht, hy = np.concatenate([ht[keep], t]), np.concatenate([hy[keep], y])
+        return ht, hy
+
     def _update_plots(self, snap: Snapshot) -> None:
         for vid in self._plotted:
-            t, y = self.engine.series(vid)
+            t, y = self._plot_series(vid)
             st = snap.statuses.get(vid)
             if st is None:
                 continue
             sp_id = self.table.setpoint_of(vid)
-            sp_series = self.engine.series(sp_id) if sp_id else None
+            sp_series = self._plot_series(sp_id) if sp_id else None
             g = self.ctx.config.general
             self.trends.update_plot(vid, t, y, st.reference, st.warn_band, st.alarm_band, sp_series,
                                     horizon_s=g.trend_horizon_min * 60,

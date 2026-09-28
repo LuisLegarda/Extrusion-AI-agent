@@ -60,9 +60,15 @@ def save_profile(ws: Workspace, recipe_name: str, config: Optional[AppConfig] = 
         _replace_dir(ws.home / d, tmp / d)
     (tmp / "profile.json").write_text(json.dumps({"recipe": recipe_name, "saved_at": time.time()}),
                                       encoding="utf-8")
+    # Reemplazo en dos pasos: en Windows no se puede renombrar sobre una carpeta existente y
+    # borrarla puede fallar si algún archivo está abierto; el perfil nuevo queda siempre en su lugar.
+    old = dest.with_name(dest.name + ".old")
+    if old.exists():
+        shutil.rmtree(old, ignore_errors=True)
     if dest.exists():
-        shutil.rmtree(dest)
+        dest.rename(old)
     tmp.rename(dest)
+    shutil.rmtree(old, ignore_errors=True)
     return dest
 
 

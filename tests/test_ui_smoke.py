@@ -214,3 +214,27 @@ def test_report_tab_and_tour_prompt(ctx, monkeypatch, tmp_path):
     QApplication.processEvents()
     win._fill_report_menu()
     win.close()
+
+
+def test_trend_range_and_auto_y(ctx):
+    import numpy as np
+    from PySide6.QtWidgets import QApplication
+
+    from extrusion_monitor.ui.main_window import MainWindow, y_range
+    # Límites 100 ± 5: con un pico en pantalla la escala lo incluye; sin él vuelve a los límites.
+    lo, hi = y_range(np.array([100.0, 101, 99]), 100, 2, 5)
+    assert 93 < lo < 95 and 105 < hi < 107
+    lo, hi = y_range(np.array([100.0, 160, 99]), 100, 2, 5)
+    assert hi > 160
+    ctx.engine.sleep = lambda s: None
+    win = MainWindow(ctx)
+    for _ in range(4):
+        ctx.engine.step()
+    win._plot_toggled("diam", True)
+    win.trends.cmb_range.setCurrentIndex(win.trends.cmb_range.findData(4 * 3600))  # desde el historial
+    win._replot()
+    QApplication.processEvents()
+    (x0, x1), (y0, y1) = win.trends.plots["diam"]["widget"].viewRange()
+    assert x1 - x0 > 3 * 3600
+    assert y0 < 3.15 and y1 > 3.25  # límites de alarma 3.20 ± 0.05 visibles
+    win.close()

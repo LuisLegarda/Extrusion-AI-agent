@@ -146,10 +146,21 @@ class MonitorEngine:
                 self.state.auto_recipe = auto
             if name == self.state.recipe:
                 return
+            prev = self.state.recipe
             self.state.recipe = name
             self.rules.reset()
             msg = f"Receta activa: {name or 'ninguna'}"
-            if name and load_profile and has_profile(self.workspace, name):
+            pending = self.workspace.unassigned_config_flag
+            if name and prev is None and pending.exists():
+                # La configuración se editó sin receta activa: se asigna a esta receta en vez de
+                # reemplazarla por el perfil anterior (así no se pierden recorridos ni ajustes).
+                try:
+                    save_profile(self.workspace, name, self.config)
+                    pending.unlink()
+                    msg += " (se le asignó la configuración actual)"
+                except OSError:
+                    log.exception("No se pudo asignar la configuración a %s", name)
+            elif name and load_profile and has_profile(self.workspace, name):
                 # La receta es un perfil completo: variables, pantallas, recorridos, OEE, reportes…
                 try:
                     config = apply_profile(self.workspace, name)
@@ -167,7 +178,19 @@ class MonitorEngine:
     def save_profile(self) -> None:
         """Guarda la configuración activa en el perfil de la receta activa."""
         if self.state.recipe:
-            save_profile(self.workspace, self.state.recipe, self.config)
+            try:
+                save_profile(self.workspace, self.state.recipe, self.config)
+            except OSError as exc:
+                log.exception("No se pudo guardar el perfil")
+                self._pending_events.append(Event(
+                    self.clock(), "profile", Level.WARN, "RECETA", "",
+                    f"No se pudo guardar la configuración en la receta «{self.state.recipe}»: {exc}"))
+        else:
+            # Sin receta activa: la próxima receta que se active tomará esta configuración.
+            try:
+                self.workspace.unassigned_config_flag.touch()
+            except OSError:
+                log.exception("No se pudo marcar la configuración")
 
     def _auto_select_recipe(self, readings) -> None:
         var_id = self.config.general.recipe_name_var

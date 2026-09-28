@@ -87,3 +87,40 @@ def test_report_after_tour_in_demo(tmp_path):
     ctx.engine.step()
     assert any(e.kind == "report" for e in ctx.engine.last.events) or \
         any("Reporte" in (e[5] or "") for e in ctx.engine.historian.events(0))
+
+
+def test_decrease_trigger_and_both_criterion(tmp_path):
+    import numpy as np
+    ws = Workspace(tmp_path)
+    cfg = AppConfig(variables=[Variable(id="len", name="Longitud", kind="actual", region=Rect(x=0, y=0, w=5, h=5))],
+                    reports=[ReportDef(id="r", min_interval_s=0,
+                                       triggers=[ReportTrigger(kind="decrease", var_id="len", value=10)])])
+    m = ReportManager(ws, lambda: 0.0)
+    fired = [bool(m.check(cfg, {"len": Reading("len", value=v, ok=True)}, [])) for v in (100, 900, 2500, 2495, 3)]
+    assert fired == [False, False, False, False, True]  # solo el reinicio del carrete, no el ruido
+
+    job = ReportJob(ReportDef(id="r"), cfg, 0, 100, "", None, {"len": VarLimits(lsl=9, usl=11)})
+    rng = np.random.default_rng(2)
+    rows = [(i, 10 + rng.normal(0, 0.1), None) for i in range(50)]
+    assert evaluate_var(job, ReportVar(var_id="len", criterion="both", cpk_min=1.0), rows).ok
+    rows.append((60, 11.5, None))  # una lectura fuera de spec: falla aunque el Cpk alcance
+    r = evaluate_var(job, ReportVar(var_id="len", criterion="both", cpk_min=0.1), rows)
+    assert r.ok is False and "fuera de spec" in r.note
+
+
+def test_pdf_is_complete_with_special_text(tmp_path):
+    from extrusion_monitor.reports import generate
+    from extrusion_monitor.storage import Historian
+    h = Historian(tmp_path / "h.sqlite")
+    h.write_samples([(1000.0 + i, "v", float("nan") if i == 5 else 10.0 + (i % 3) * 0.1, None) for i in range(50)])
+    h.write_events([(1010.0, "raised", 2, "R", "v", "valor < 5 & otro > 7 → Δ σ ≤", None)])
+    cfg = AppConfig(variables=[Variable(id="v", name="Zona › 1", unit="°C", kind="actual",
+                                        region=Rect(x=0, y=0, w=5, h=5))])
+    rep = ReportDef(id="r", name="R & <prueba>", variables=[ReportVar(var_id="v", criterion="both")])
+    job = ReportJob(rep, cfg, 1000, 1060, "len < 5", "Receta → 1", {"v": VarLimits(lsl=9, usl=11, target=10)},
+                    base_name="x", out_dir=tmp_path / "out")
+    out = generate(job, h)
+    data = out.pdf.read_bytes()
+    assert data.startswith(b"%PDF") and data.rstrip().endswith(b"%%EOF")
+    assert not list((tmp_path / "out").glob("*.tmp.pdf"))
+    assert b"/Symbol" not in data

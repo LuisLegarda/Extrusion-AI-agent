@@ -225,18 +225,19 @@ class OeeSettings(BaseModel):
 class ReportTrigger(BaseModel):
     """Evento que genera el reporte."""
 
-    kind: Literal["cross", "change", "selector", "tour"] = "cross"
+    # cross: cruza un umbral · decrease: pasa a un valor menor (p. ej. contador de longitud que se reinicia)
+    kind: Literal["cross", "decrease", "change", "selector", "tour"] = "cross"
     var_id: Optional[str] = None  # cross / change / selector
     op: Literal[">", ">=", "<", "<="] = ">"  # cross: la condición pasa de falsa a verdadera
-    value: float = 0.0  # cross: umbral; change: cambio mínimo (0 = cualquier cambio)
+    value: float = 0.0  # cross: umbral; change / decrease: cambio mínimo (0 = cualquier cambio)
     state: Optional[str] = None  # selector: solo al cambiar a este estado (None = cualquiera)
     tour_id: Optional[str] = None  # tour: recorrido ejecutado (None = cualquiera)
 
 
 class ReportVar(BaseModel):
     var_id: str
-    # Evaluación: dentro de especificación (todas las lecturas) o Cpk mínimo.
-    criterion: Literal["spec", "cpk"] = "spec"
+    # Evaluación: dentro de especificación (todas las lecturas), Cpk mínimo o ambos.
+    criterion: Literal["spec", "cpk", "both"] = "spec"
     cpk_min: float = Field(1.33, ge=0, le=10)
     chart: bool = True  # gráfica de tendencia con límites
     events: bool = True  # lista de eventos de la variable
@@ -394,7 +395,7 @@ class AppConfig(BaseModel):
         for r in self.reports:
             name = f"Reporte «{r.name}»"
             for tr in r.triggers:
-                if tr.kind in ("cross", "change", "selector") and (not tr.var_id or self.variable(tr.var_id) is None):
+                if tr.kind in ("cross", "decrease", "change", "selector") and (not tr.var_id or self.variable(tr.var_id) is None):
                     problems.append(f"{name}: el disparador necesita una variable existente")
                 if tr.kind == "tour" and tr.tour_id and self.get_tour(tr.tour_id) is None:
                     problems.append(f"{name}: el recorrido '{tr.tour_id}' no existe")
@@ -491,6 +492,11 @@ class Workspace:
     def selector_state_file(self, var_id: str, state: str) -> Path:
         safe = "".join(c if c.isalnum() or c in "-_" else "_" for c in state)
         return self.selectors_dir / f"{var_id}__{safe}.png"
+
+    @property
+    def unassigned_config_flag(self) -> Path:
+        """Existe si la configuración se guardó sin receta activa (aún no pertenece a ninguna)."""
+        return self.home / "config_sin_receta.flag"
 
     @property
     def reports_state_file(self) -> Path:

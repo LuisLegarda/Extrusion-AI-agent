@@ -54,3 +54,23 @@ def test_auto_recipe_missing_is_notified_and_kept(tmp_path):
     assert eng.state.recipe == current
     missing = [e for e in events if e.kind == "recipe_missing"]
     assert len(missing) == 1 and "NOEXISTE-99" in missing[0].message
+
+
+def test_config_saved_without_recipe_is_assigned_not_overwritten(tmp_path):
+    """Configurar sin receta activa y luego activar una receta no debe perder los cambios."""
+    from extrusion_monitor.bootstrap import build
+    from extrusion_monitor.config import TourDef, TourStep
+    ctx = build(tmp_path, demo=True)
+    eng = ctx.engine
+    assert eng.state.recipe is None
+    cfg = ctx.config.model_copy(deep=True)
+    cfg.tours.append(TourDef(id="nuevo", name="Nuevo", steps=[TourStep(id="s", page="linea")]))
+    ctx.workspace.save_config(cfg)
+    eng.reconfigure(cfg)
+    eng.save_profile()  # sin receta: se marca como pendiente de asignar
+    eng.step()  # la receta del HMI se activa sola
+    assert eng.state.recipe is not None
+    assert eng.config.get_tour("nuevo") is not None
+    eng.set_recipe(None)
+    eng.set_recipe(ctx.recipes.names()[0])  # al recargarla, el perfil ya tiene el recorrido
+    assert eng.config.get_tour("nuevo") is not None
