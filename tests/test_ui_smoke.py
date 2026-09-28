@@ -135,3 +135,21 @@ def test_analysis_tabs_and_behavior_dialog(ctx, monkeypatch):
     dlg._train()  # pocos datos: muestra aviso sin fallar
     assert warnings and "muestras" in warnings[-1]
     win.close()
+
+
+def test_kpi_dashboard(ctx):
+    from PySide6.QtWidgets import QApplication
+
+    from extrusion_monitor.ui.main_window import MainWindow
+
+    ctx.engine.sleep = lambda s: None
+    win = MainWindow(ctx)
+    win.show()
+    for _ in range(20):
+        ctx.engine.step()
+    win.main_tabs.setCurrentIndex(1)
+    QApplication.processEvents()
+    win.kpi.refresh()
+    assert win.kpi.result is not None and win.kpi.result.run_s > 0
+    assert win.kpi.tbl_other.rowCount() > 5
+    win.close()

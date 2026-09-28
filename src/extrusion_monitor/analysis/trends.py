@@ -21,6 +21,7 @@ class TrendStats:
     maximum: float
     slope_per_min: float  # unidades por minuto
     slope_significant: bool
+    r2: float = 0.0  # proporción de la variación explicada por la tendencia lineal
     eta_to_alarm_min: Optional[float] = None  # minutos estimados hasta el límite de alarma
     cpk: Optional[float] = None
     nelson: list[str] = field(default_factory=list)
@@ -59,9 +60,13 @@ class TrendTracker:
             return None
         mean, std = float(y.mean()), float(y.std(ddof=1))
         slope_s, significant = _slope(t, y)
+        tc = t - t.mean()
+        resid = y - (y.mean() + slope_s * tc)
+        ss_tot = float(((y - y.mean()) ** 2).sum())
+        r2 = 1 - float((resid ** 2).sum()) / ss_tot if ss_tot > 0 else 0.0
         slope_min = slope_s * 60.0
         st = TrendStats(n=len(y), span_s=float(t[-1] - t[0]), mean=mean, std=std, minimum=float(y.min()), maximum=float(y.max()),
-                        slope_per_min=slope_min, slope_significant=significant)
+                        slope_per_min=slope_min, slope_significant=significant, r2=r2)
 
         if significant and slope_s != 0:
             last = float(y[-3:].mean())

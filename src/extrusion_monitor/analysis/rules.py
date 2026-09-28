@@ -41,6 +41,8 @@ SLOW_CLEAR_FACTOR = 3
 # Histéresis: un hallazgo de tolerancia activo se mantiene hasta volver por debajo del 90 % de la banda.
 HYSTERESIS = 0.9
 MIN_TREND_SPAN_S = 60.0
+# La deriva debe explicar buena parte de la variación (no una oscilación normal del proceso).
+MIN_DRIFT_R2 = 0.5
 
 
 @dataclass
@@ -155,8 +157,10 @@ class RuleEngine:
             age = rd.age(now)
             st.fresh = age is not None and age <= (tour_stale if var.page in toured else g.stale_after_s)
 
-            if rd.visible:
+            if rd.visible or st.fresh:
+                # Con dato vigente se evalúa aunque su pestaña no esté en pantalla (recorrido).
                 evaluated.add(var.id)
+            if rd.visible:
                 if rd.fail_count >= g.read_fail_samples or (not st.fresh and rd.ts is not None):
                     conds[(R_READ, var.id)] = _Condition(
                         Level.WARN, f"No se puede leer «{self.config.var_label(var)}» ({rd.reason or 'sin datos recientes'})")
@@ -237,7 +241,7 @@ class RuleEngine:
                 enough = ts is not None and ts.span_s >= max(MIN_TREND_SPAN_S, g.trend_window_min * 15)
                 if enough and level < Level.ALARM:
                     if (ts.eta_to_alarm_min is not None and ts.eta_to_alarm_min <= g.trend_horizon_min
-                            and dev >= 0.25 * effect):
+                            and dev >= 0.25 * effect and ts.r2 >= MIN_DRIFT_R2):
                         conds[(R_DRIFT, var.id)] = _Condition(
                             Level.WARN,
                             f"«{self.config.var_label(var)}» tiende a salir de tolerancia en ~{ts.eta_to_alarm_min:.1f} min "

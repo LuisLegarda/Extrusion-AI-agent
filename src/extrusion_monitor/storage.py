@@ -14,6 +14,9 @@ CREATE INDEX IF NOT EXISTS ix_samples_var_ts ON samples(var, ts);
 CREATE TABLE IF NOT EXISTS events (
     ts REAL NOT NULL, kind TEXT, level INTEGER, rule TEXT, var TEXT, message TEXT, recipe TEXT);
 CREATE INDEX IF NOT EXISTS ix_events_ts ON events(ts);
+CREATE TABLE IF NOT EXISTS oee (
+    ts REAL NOT NULL, dt REAL, state TEXT, speed REAL, nominal REAL, good INTEGER, overall INTEGER);
+CREATE INDEX IF NOT EXISTS ix_oee_ts ON oee(ts);
 """
 
 
@@ -41,6 +44,22 @@ class Historian:
             return
         with self._lock, self._conn:
             self._conn.executemany("INSERT INTO events VALUES (?,?,?,?,?,?,?)", rows)
+
+    def write_oee(self, row: tuple) -> None:
+        with self._lock, self._conn:
+            self._conn.execute("INSERT INTO oee VALUES (?,?,?,?,?,?,?)", row)
+
+    def oee_samples(self, since: float, until: float | None = None) -> list[tuple]:
+        until = until or time.time()
+        with self._lock:
+            return self._conn.execute(
+                "SELECT ts, dt, state, speed, nominal, good, overall FROM oee WHERE ts BETWEEN ? AND ? ORDER BY ts",
+                (since, until)).fetchall()
+
+    def events_between(self, since: float, until: float) -> list[tuple]:
+        with self._lock:
+            return self._conn.execute(
+                "SELECT * FROM events WHERE ts BETWEEN ? AND ? ORDER BY ts", (since, until)).fetchall()
 
     def samples(self, var_id: str, since: float, until: float | None = None) -> list[tuple[float, float]]:
         until = until or time.time()
@@ -84,6 +103,7 @@ class Historian:
         with self._lock, self._conn:
             self._conn.execute("DELETE FROM samples WHERE ts < ?", (cutoff,))
             self._conn.execute("DELETE FROM events WHERE ts < ?", (cutoff,))
+            self._conn.execute("DELETE FROM oee WHERE ts < ?", (cutoff,))
 
     def close(self) -> None:
         with self._lock:

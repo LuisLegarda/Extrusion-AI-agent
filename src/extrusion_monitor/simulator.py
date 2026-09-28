@@ -14,7 +14,7 @@ from typing import Callable, Optional
 import numpy as np
 from PIL import Image, ImageDraw, ImageFont
 
-from .config import AppConfig, Click, GeneralSettings, OcrOptions, Page, Rect, TourSettings, TourStep, Variable
+from .config import AppConfig, Click, GeneralSettings, OeeSettings, OcrOptions, Page, Rect, TourSettings, TourStep, Variable
 from .recipes import Limit, Recipe
 
 W, H = 1280, 800
@@ -55,7 +55,7 @@ SIM_VARS = [
     SimVar("cabezal", "Cabezal", "°C", 205, 0, 0.3, warn=3, alarm=6, sp_tol=1),
     SimVar("dado", "Dado", "°C", 210, 0, 0.3, warn=3, alarm=6, sp_tol=1),
     SimVar("rpm", "Husillo", "rpm", 45.0, 1, 0.15, warn=1.5, alarm=3, sp_tol=0.5, lag=0.3),
-    SimVar("vel", "Velocidad linea", "m/min", 350.0, 1, 0.8, warn=5, alarm=10, sp_tol=2, lag=0.3, page="linea"),
+    SimVar("vel", "Velocidad linea", "m/min", 350.0, 1, 0.8, warn=5, alarm=10, sp_tol=2, lag=0.3, page="principal"),
     SimVar("presion", "Presion fundido", "bar", 250, 0, 2.0, has_sp=False, warn=20, alarm=35),
     SimVar("carga", "Carga motor", "%", 65, 0, 0.8, has_sp=False, warn=10, alarm=15),
     SimVar("diam", "Diametro ext.", "mm", 3.20, 2, 0.004, has_sp=False, warn=0.03, alarm=0.05, page="principal"),
@@ -116,6 +116,11 @@ class Scenario:
         phase = t % self.period
         # Oscilación normal del husillo; carga y presión la siguen (variables correlacionadas).
         disturb["rpm"] = 0.9 * math.sin(t / 45.0)
+        # Velocidad de línea (OEE): microparo 150-175 s, paro 300-380 s, marcha lenta 470-520 s.
+        if 150 <= phase < 175 or 300 <= phase < 380:
+            disturb["vel"] = -sp["vel"]
+        elif 470 <= phase < 520:
+            disturb["vel"] = -50.0
         # 540-580 s: el selector de inyección queda apagado.
         disturb["_selector_off"] = 1.0 if 540 <= phase < 580 else 0.0
         # 60-180 s: operador ajusta Zona 3 fuera de receta.
@@ -171,6 +176,8 @@ class HmiSimulator:
         for v in SIM_VARS:
             target = sp[v.id] + disturb.get(v.id, 0.0) + coupled.get(v.id, 0.0)
             self.act[v.id] += (target - self.act[v.id]) * v.lag + self.rng.gauss(0, v.noise)
+            if v.id == "vel" and target == 0:
+                self.act[v.id] = self.act[v.id] * 0.5 if self.act[v.id] > 2 else 0.0  # frena hasta 0
 
     def displayed(self, var_id: str, kind: str) -> str:
         v = next(x for x in SIM_VARS if x.id == var_id)
@@ -303,6 +310,8 @@ def demo_config() -> AppConfig:
                for pid, label in SIM_PAGES],
         variables=variables,
         tour=tour,
+        oee=OeeSettings(enabled=True, speed_var="vel", nominal_source="recipe", microstop_s=60,
+                        quality_mode="both", quality_selector="inyeccion", quality_good_state="ON"),
     )
 
 

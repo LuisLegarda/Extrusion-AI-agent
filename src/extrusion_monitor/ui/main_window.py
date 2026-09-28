@@ -21,6 +21,7 @@ from ..navigation import exclude_window_from_capture
 from ..engine import Snapshot
 from .common import SnapshotBridge, level_color
 from .variable_tree import VariableTree
+from .kpi_dashboard import KpiDashboard
 from .analysis_panels import BehaviorPanel, CorrelationPanel, StatsPanel
 from ..analysis.statistics import projection
 
@@ -215,7 +216,11 @@ class MainWindow(QMainWindow):
         self.tabs = tabs
         vsplit.addWidget(tabs)
         vsplit.setSizes([600, 260])
-        lay.addWidget(vsplit)
+        self.main_tabs = QTabWidget()
+        self.main_tabs.addTab(vsplit, "📟 Monitoreo")
+        self.kpi = KpiDashboard(self.engine)
+        self.main_tabs.addTab(self.kpi, "🏭 KPI / OEE")
+        lay.addWidget(self.main_tabs)
         self.setCentralWidget(central)
 
         self.lbl_tour = QLabel()

@@ -14,6 +14,7 @@ from .capture import FrameSource
 from .config import AppConfig, Workspace
 from .ocr import OcrEngine
 from .analysis.behavior import BehaviorMonitor, BehaviorStore
+from .analysis.oee import OeeSample, classify
 from .capture import load_png
 from .navigation import Clicker, TourResult, TourRunner, UnavailableClicker
 from .pages import PageDetector
@@ -72,6 +73,7 @@ class MonitorEngine:
         self._pending_events: list[Event] = []
         self.behaviors = BehaviorMonitor(BehaviorStore(workspace.behaviors_file))
         self._stored: dict[str, float] = {}
+        self._oee_last_ts: Optional[float] = None
         self._build()
 
     def _build(self) -> None:
@@ -186,6 +188,7 @@ class MonitorEngine:
                 findings=findings, events=events, recipe=self.state.recipe, ocr_engine=self.ocr.name,
                 error=error, overall=overall, read_ok=sum(r.ok for r in visible), read_total=len(visible),
                 tour=tour_result)
+            self._record_oee(snap)
             self._store(snap)
             self.last = snap
         for cb in list(self.listeners):
@@ -194,6 +197,20 @@ class MonitorEngine:
             except Exception:
                 log.exception("Error en listener")
         return snap
+
+    def _record_oee(self, snap: Snapshot) -> None:
+        o = self.config.oee
+        if not (o.enabled and o.speed_var and self.historian):
+            return
+        sample = oee_sample(self.config, snap, self.recipe, self._oee_last_ts)
+        self._oee_last_ts = snap.ts
+        if sample is None:
+            return
+        try:
+            self.historian.write_oee((sample.ts, sample.dt, sample.state, sample.speed, sample.nominal,
+                                      None if sample.good is None else int(sample.good), sample.overall))
+        except Exception:
+            log.exception("No se pudo guardar la muestra OEE")
 
     def _tour_events(self, res: TourResult) -> None:
         if res.skipped:
@@ -251,3 +268,51 @@ class MonitorEngine:
                 log.exception("Error en ciclo de monitoreo")
             wait = self.config.general.sample_interval_s - (time.monotonic() - t0)
             self._stop.wait(max(0.05, wait))
+
+
+# Calidad: mediciones reales fuera de tolerancia y selectores en estado incorrecto
+# (un ajuste distinto de receta se reporta aparte; afecta la calidad cuando saca las mediciones).
+QUALITY_RULES = {"TOLERANCIA", "SELECTOR"}
+
+
+def oee_sample(config: AppConfig, snap: Snapshot, recipe: Optional[Recipe],
+               last_ts: Optional[float]) -> Optional[OeeSample]:
+    """Clasifica el ciclo actual para el OEE (estado, velocidad, nominal y conformidad)."""
+    o = config.oee
+    g = config.general
+    # Muestras separadas por más que esto (app cerrada, pausa) no cuentan como tiempo observado.
+    max_dt = max(3 * g.sample_interval_s, 10.0)
+    if last_ts is None:
+        dt = g.sample_interval_s
+    else:
+        dt = snap.ts - last_ts
+        if dt <= 0:
+            return None
+        dt = min(dt, max_dt)
+    st = snap.statuses.get(o.speed_var)
+    speed = st.reading.value if st is not None and st.fresh else None
+    nominal = None
+    var = config.variable(o.speed_var)
+    if o.nominal_source == "fixed":
+        nominal = o.nominal_value
+    elif o.nominal_source == "setpoint" and var and var.setpoint_var:
+        sp = snap.statuses.get(var.setpoint_var)
+        if sp is not None and sp.fresh:
+            nominal = sp.reading.value
+    if nominal is None and recipe is not None and var is not None:
+        for vid in (var.id, var.setpoint_var):
+            lim = recipe.limits.get(vid) if vid else None
+            if lim is not None and lim.nominal is not None:
+                nominal = lim.nominal
+                break
+    state = classify(speed, nominal, o.stop_threshold, o.slow_pct)
+    min_level = Level.WARN if o.strict_quality else Level.ALARM
+    good: Optional[bool] = None
+    if o.quality_mode in ("spec", "both"):
+        good = not any(f.rule in QUALITY_RULES and f.level >= min_level and f.var_id != o.speed_var
+                       for f in snap.findings)
+    if o.quality_mode in ("selector", "both") and o.quality_selector:
+        sel = snap.statuses.get(o.quality_selector)
+        ok = bool(sel and sel.fresh and sel.reading.text == o.quality_good_state)
+        good = ok if good is None else (good and ok)
+    return OeeSample(snap.ts, dt, state, speed, nominal, good, int(snap.overall))

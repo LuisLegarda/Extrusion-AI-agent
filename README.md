@@ -23,6 +23,8 @@ Por eso sirve para cualquier línea de extrusión.
 | Selectores | Variable tipo selector o indicador: se capturan imágenes de cada estado (ON/OFF, AUTO/MAN…) y se reconoce el estado actual por imagen, sin importar color o forma. La receta define el estado esperado. |
 | Comportamiento aprendido | Se entrena con un periodo del historial. Aprende la variación normal de cada variable y la correlación entre varias, y en vivo avisa cuando una variable o una relación se sale de lo normal (distancia de Mahalanobis), aunque siga dentro de tolerancia. |
 | Análisis en pantalla | Pestañas **Tendencias**: curva de consigna y proyección con banda. **Estadística**: histograma, Cp/Cpk/Pp/Ppk y carta X̄. **Correlación**: matriz y dispersión con regresión. **Comportamiento**: D²/umbral en el tiempo y contribución por variable. |
+| Dashboard KPI / OEE | **Disponibilidad**: velocidad de línea ≤ umbral = detenida; los paros cortos son microparos. **Rendimiento**: velocidad real promedio / nominal (de la receta, de la consigna o fija). **Calidad**: metros conformes / metros producidos, con conformidad por variables en especificación y/o un indicador visual. Muestra OEE, TEEP, MTBF, MTTR, paros, metros, línea de tiempo del estado de la máquina con distribución y comparación con el periodo anterior (turno actual, 1 h, 8 h, 24 h, 7 días). |
+| Industria 5.0 | **Factor humano**: carga de alarmas por hora (ISA-18.2) e intervenciones del operador. **Resiliencia**: tiempo en condición normal y recuperación media. **Sostenibilidad**: material conforme y tiempo sin producir. **Índice 5.0**: combina los tres. |
 | Tendencias / SPC | Pendiente con prueba de significancia, tiempo estimado hasta el límite de alarma, reglas de Nelson sobre subgrupos y Cpk. |
 | Anti-falsas alarmas | Confirmación durante N ciclos, histéresis del 10 %, efecto mínimo relativo a la tolerancia y hallazgos que se mantienen mientras la página no está visible. |
 | Historial | SQLite propio (`history.sqlite`) con retención de 90 días. Exporta a CSV con una columna por variable. |
@@ -66,9 +68,10 @@ Configuración inicial en el HMI:
      - Mientras está abierto el configurador, el monitoreo se detiene.
    - En la barra: *⏸ Pausar recorrido* y *⟳ Recorrer ahora*.
    - La ventana del monitor se excluye de las capturas de pantalla (Windows 10 2004+).
-5. **📋 Recetas:** crea la receta con el mismo nombre que muestra el HMI y llena nominales y tolerancias,
+5. **KPI / OEE** (pestaña del configurador): elige la variable de velocidad de línea, el umbral de paro, la velocidad nominal, el tiempo de microparo, cómo se mide la calidad y los horarios de turno.
+6. **📋 Recetas:** crea la receta con el mismo nombre que muestra el HMI y llena nominales y tolerancias,
    o pulsa *Tomar valores actuales del HMI como nominales* con la máquina en un buen setup.
-6. **▶ Iniciar.**
+7. **▶ Iniciar.**
 
 Los datos se guardan en `%LOCALAPPDATA%\ExtrusionMonitor`. Para usar el modo portátil, crea una carpeta `data` junto al `.exe`.
 

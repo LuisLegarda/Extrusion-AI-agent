@@ -144,6 +144,28 @@ class TourSettings(BaseModel):
         return [c for s in self.steps for c in s.clicks] + list(self.home_clicks)
 
 
+class OeeSettings(BaseModel):
+    """Cálculo de OEE a partir de la velocidad de línea y de la conformidad del proceso."""
+
+    enabled: bool = False
+    speed_var: Optional[str] = None  # variable (medición) de velocidad de línea
+    stop_threshold: float = Field(0.5, ge=0)  # velocidad ≤ umbral = línea detenida
+    # Velocidad nominal: de la receta, de la consigna leída del HMI o un valor fijo.
+    nominal_source: Literal["recipe", "setpoint", "fixed"] = "recipe"
+    nominal_value: Optional[float] = None
+    slow_pct: float = Field(90.0, ge=10, le=100)  # en marcha por debajo de este % = lento
+    microstop_s: float = Field(120.0, ge=0)
+    # Calidad: variables en especificación, indicador visual (selector) o ambos.
+    quality_mode: Literal["spec", "selector", "both"] = "spec"
+    quality_selector: Optional[str] = None
+    quality_good_state: Optional[str] = None
+    strict_quality: bool = False  # también los avisos (no solo alarmas) cuentan como no conforme
+    length_factor: float = Field(1.0, gt=0)  # velocidad × factor = longitud por minuto (m/min → 1)
+    length_unit: str = "m"
+    shift_starts: list[str] = Field(default_factory=lambda: ["06:00", "14:00", "22:00"])
+    target_oee: float = Field(85.0, ge=0, le=100)
+
+
 class AppConfig(BaseModel):
     version: int = CONFIG_VERSION
     machine_name: str = "Línea de extrusión"
@@ -151,6 +173,7 @@ class AppConfig(BaseModel):
     pages: list[Page] = Field(default_factory=list)
     variables: list[Variable] = Field(default_factory=list)
     tour: TourSettings = Field(default_factory=TourSettings)
+    oee: OeeSettings = Field(default_factory=OeeSettings)
 
     def toured_pages(self) -> set[str]:
         """Páginas que se visitan en el recorrido (con sus ancestros)."""

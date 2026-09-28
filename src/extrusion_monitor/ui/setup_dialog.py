@@ -154,6 +154,9 @@ class SetupDialog(QDialog):
         from .tour_tab import TourTab
         self.tour_tab = TourTab(self)
         self.tabs.addTab(self.tour_tab, "Recorrido automático")
+        from .oee_tab import OeeTab
+        self.oee_tab = OeeTab(self)
+        self.tabs.addTab(self.oee_tab, "KPI / OEE")
         self.tabs.addTab(self._build_general_tab(), "General")
         self.tabs.currentChanged.connect(self._tab_changed)
         split.addWidget(self.tabs)
@@ -170,6 +173,9 @@ class SetupDialog(QDialog):
     def _tab_changed(self, index: int) -> None:
         if self.tabs.widget(index) is self.tour_tab:
             self.tour_tab.refresh()
+        elif self.tabs.widget(index) is getattr(self, "oee_tab", None):
+            self.oee_tab.commit()
+            self.oee_tab.load()
         else:
             if self.tour_tab.recording is not None:
                 self.tour_tab.stop_recording()
@@ -1171,7 +1177,7 @@ class SetupDialog(QDialog):
     # --- guardar -------------------------------------------------------------------------
     def _save(self) -> None:
         self._commit_general()
-        problems = self.config.validate_references()
+        problems = self.config.validate_references() + self.oee_tab.commit()
         missing = [p.name for p in self.config.pages if p.anchor is not None and p.id not in self.anchors]
         if missing:
             problems.append(f"Pestañas sin imagen ancla: {', '.join(missing)}")

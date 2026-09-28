@@ -130,3 +130,15 @@ def test_behavior_model_detects_pressure_rise(tmp_path):
         ft.t += 1
     beh = [e for e in events if e.rule == "COMPORTAMIENTO" and e.kind in ("raised", "escalated")]
     assert beh and "Presion" in beh[-1].message
+
+
+def test_oee_from_line_speed(tmp_path):
+    from extrusion_monitor.analysis.oee import OeeSample, compute
+    ctx, sim, snaps, ft = run(tmp_path, 600)
+    rows = [OeeSample(*r[:5], None if r[5] is None else bool(r[5]), r[6])
+            for r in ctx.engine.historian.oee_samples(0, ft.t)]
+    r = compute(rows, 1000, ft.t, ctx.config.oee.microstop_s)
+    assert r.n_stops == 1 and r.n_microstops == 1  # paro 300-380 s y microparo 150-175 s
+    assert 0.8 < r.availability < 0.92
+    assert 0.85 < r.performance < 0.98
+    assert r.quality is not None and 0 < r.quality < 1
