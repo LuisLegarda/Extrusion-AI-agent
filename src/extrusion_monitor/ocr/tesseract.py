@@ -39,7 +39,9 @@ class TesseractOcr:
             self._startupinfo = si
 
     def read(self, image: np.ndarray, numeric: bool, opts: OcrOptions | None = None) -> OcrResult:
-        binary = preprocess(image, opts or OcrOptions())
+        return self.read_binary(preprocess(image, opts or OcrOptions()), numeric)
+
+    def read_binary(self, binary: np.ndarray, numeric: bool) -> OcrResult:
         binary = cv2.copyMakeBorder(binary, 10, 10, 10, 10, cv2.BORDER_CONSTANT, value=255)
         ok, png = cv2.imencode(".png", binary)
         if not ok:

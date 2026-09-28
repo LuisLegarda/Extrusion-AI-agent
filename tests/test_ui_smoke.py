@@ -32,8 +32,8 @@ def test_main_window_and_dialogs(ctx, monkeypatch):
     assert row.text(1) == "160" and row.text(2) != ""  # consigna y medición en la misma fila
 
     dlg = SetupDialog(ctx, win)
-    dlg._select_key(("var", "z1"))
-    assert "→" in dlg.lbl_result.text()
+    dlg._select_key(("var", "diam"))
+    assert "variantes coinciden" in dlg.lbl_result.text(), dlg.lbl_result.text()
     monkeypatch.setattr(QMessageBox, "question", lambda *a, **k: QMessageBox.No)
     dlg._save()
     rd = RecipeDialog(ctx, win)
@@ -153,3 +153,10 @@ def test_kpi_dashboard(ctx):
     assert win.kpi.result is not None and win.kpi.result.run_s > 0
     assert win.kpi.tbl_other.rowCount() > 5
     win.close()
+
+
+def test_ocr_diagnosis_dialog(ctx):
+    from extrusion_monitor.ui.ocr_diagnosis import DiagnosisDialog
+    frame = ctx.engine.grab_frame()
+    dlg = DiagnosisDialog(ctx.config, frame, ctx.template_ocr, {"principal"})
+    assert "OK" in dlg.summary.text()

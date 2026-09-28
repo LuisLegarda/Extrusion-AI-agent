@@ -47,8 +47,10 @@ class WindowsOcr:
         return loop
 
     def read(self, image: np.ndarray, numeric: bool, opts: OcrOptions | None = None) -> OcrResult:
-        opts = opts or OcrOptions()
-        binary = preprocess(image, opts)
+        return self.read_binary(preprocess(image, opts or OcrOptions()), numeric)
+
+    def read_binary(self, binary: np.ndarray, numeric: bool) -> OcrResult:
+        """Lee una imagen en escala de grises ya preparada (texto oscuro sobre fondo claro)."""
         if binary.shape[0] < MIN_TEXT_HEIGHT:
             f = MIN_TEXT_HEIGHT / binary.shape[0]
             binary = cv2.resize(binary, None, fx=f, fy=f, interpolation=cv2.INTER_CUBIC)

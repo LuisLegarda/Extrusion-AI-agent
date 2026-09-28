@@ -186,6 +186,7 @@ class MainWindow(QMainWindow):
         vsplit = QSplitter(Qt.Vertical)
         hsplit = QSplitter(Qt.Horizontal)
         self.table = VariableTree()
+        self.table.quality_fn = lambda vid: self.engine.acquirer.quality(vid)
         self.table.plotToggled.connect(self._plot_toggled)
         hsplit.addWidget(self.table)
         self.trends = TrendPanel()

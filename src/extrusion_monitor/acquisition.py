@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass, field
-from typing import Optional
+from typing import Callable, Optional
 
 import numpy as np
 
@@ -12,6 +12,7 @@ import cv2
 from .capture import crop, similarity
 from .config import AppConfig, Variable
 from .ocr import OcrEngine, parse_number
+from .ocr.robust import RobustReader
 from .pages import PageDetector
 
 
@@ -46,7 +47,10 @@ class Acquirer:
         self.ocr = ocr
         self.pages = pages
         self.selector_images = selector_images or {}
+        self.robust = RobustReader(ocr)
         self.readings: dict[str, Reading] = {v.id: Reading(v.id) for v in config.variables}
+        # Validación opcional de textos (p. ej. que el nombre leído sea una receta conocida).
+        self.text_accept: dict[str, Callable[[str], bool]] = {}
 
     def read(self, frame: np.ndarray, now: float) -> tuple[set[str], dict[str, Reading]]:
         visible = self.pages.visible_pages(frame) if self.pages and self.config.pages else set()
@@ -63,6 +67,9 @@ class Acquirer:
         img = crop(frame, var.region)
         if var.kind == "selector":
             self._read_selector(var, rd, img, now)
+            return
+        if var.ocr.auto:
+            self._read_robust(var, rd, img, now)
             return
         numeric = var.kind != "text"
         try:
@@ -102,6 +109,53 @@ class Acquirer:
         rd.value, rd.ts, rd.ok, rd.reason, rd.fail_count = value, now, True, "", 0
         m = re.search(r"\d[.,](\d+)", res.text)
         rd.decimals = len(m.group(1)) if m else 0
+
+    def _read_robust(self, var: Variable, rd: Reading, img: np.ndarray, now: float) -> None:
+        try:
+            if var.kind == "text":
+                res = self.robust.read_text(img, var, self.text_accept.get(var.id))
+                rd.raw, rd.confidence = res.text, res.confidence
+                if res.text:
+                    rd.text, rd.ts, rd.ok, rd.reason, rd.fail_count = res.text, now, True, "", 0
+                else:
+                    self._fail(rd, "texto ilegible")
+                return
+
+            def plausible(v: float) -> bool:
+                return not ((var.valid_min is not None and v < var.valid_min) or
+                            (var.valid_max is not None and v > var.valid_max))
+
+            # Los decimales aprendidos solo se usan cuando ya hay varias lecturas coherentes.
+            learned = rd.decimals if rd.value is not None and self._stable(var.id) else None
+            res = self.robust.read_number(img, var, rd.value, plausible, decimals=learned)
+        except Exception as exc:  # un fallo de OCR no debe detener el monitoreo
+            self._fail(rd, f"error OCR: {exc}")
+            return
+        rd.raw, rd.confidence = res.text, res.confidence
+        if res.value is None:
+            reason = "variantes en desacuerdo" if res.candidates else "sin lectura válida"
+            self._fail(rd, f"{reason} ({res.tried} intentos)")
+            return
+        self._accept(var, rd, res.value, res.text, now)
+
+    def _accept(self, var: Variable, rd: Reading, value: float, text: str, now: float) -> None:
+        if var.max_step is not None and rd.value is not None and abs(value - rd.value) > var.max_step:
+            # Un salto grande se acepta solo si se repite en la siguiente lectura.
+            if rd._pending is None or abs(value - rd._pending) > var.max_step * 0.1:
+                rd._pending = value
+                self._fail(rd, "salto sin confirmar")
+                return
+        rd._pending = None
+        rd.value, rd.ts, rd.ok, rd.reason, rd.fail_count = value, now, True, "", 0
+        m = re.search(r"\d[.,](\d+)", text)
+        rd.decimals = len(m.group(1)) if m else 0
+
+    def _stable(self, var_id: str) -> bool:
+        h = self.robust.history.get(var_id)
+        return bool(h) and len(h) >= 5 and sum(list(h)[-5:]) >= 4
+
+    def quality(self, var_id: str) -> Optional[float]:
+        return self.robust.quality(var_id)
 
     def _read_selector(self, var: Variable, rd: Reading, img: np.ndarray, now: float) -> None:
         state, score = match_state(img, self.selector_images.get(var.id, {}))

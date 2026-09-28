@@ -16,6 +16,7 @@ Por eso sirve para cualquier línea de extrusión.
 | Lectura en vivo | Captura la pantalla del HMI y lee con OCR las regiones configuradas. Se puede usar el OCR integrado de Windows, plantillas enseñadas o Tesseract. |
 | Pestañas del HMI | Árbol libre de componente → pestaña → sub-pestaña. Una imagen ancla (forma y color) identifica cada pestaña, y sus variables se leen cuando está visible. |
 | Recorrido automático | Macro grabada en vivo que navega por las pestañas con clics verificados, lee cada pantalla y regresa a la principal. |
+| Lectura robusta (automática) | Cada lectura prueba varias variantes de preprocesado: gris por luminancia, mínimo o máximo de color; binarización Otsu, adaptativa o sin binarizar; con y sin suavizado; polaridad por el fondo; recorte al texto. Un valor nuevo se acepta solo si dos variantes distintas coinciden; si no, se conserva el anterior. Recuerda la variante que funciona para cada variable, así en operación normal hace una sola lectura por campo. No requiere umbral manual. |
 | Filtros de lectura | Rango válido, salto máximo confirmado en 2 lecturas, confianza mínima, coma o punto decimal y corrección de confusiones típicas del OCR (O→0, l→1…). |
 | Recetas | Nominal, tolerancia de aviso y tolerancia de alarma (absoluta o en %) por variable. Cada variable se compara contra la receta o contra la consigna leída del HMI. Las recetas se importan y exportan en CSV (compatible con Excel), y los valores actuales del HMI se pueden tomar como nominales. |
 | Selección automática de receta | Si configuras una variable de texto con el nombre de la receta que muestra el HMI, la receta activa se elige sola y se avisa si no coincide. |
@@ -53,7 +54,8 @@ Configuración inicial en el HMI:
    - *+ Selector*: marca el recuadro del selector. Luego, con el HMI en cada estado, pulsa *Capturar estado actual como…* (por ejemplo ON y después OFF).
    - *🧠 Entrenar comportamiento…* (también en la barra principal): elige las variables de referencia y el periodo del historial en que el proceso estuvo bien.
    - *Crear serie…* replica las variables seleccionadas con un desplazamiento, por ejemplo Cylinder 1 → Cylinder 2…5 o Head 1 → Head 8. Si antes marcas la posición del segundo elemento, el desplazamiento se calcula solo.
-   - *Probar OCR* comprueba la lectura. *Quitar marco del campo* elimina el recuadro de los campos del HMI.
+   - *Probar OCR* comprueba la lectura. Con la **lectura automática** (activa por defecto) muestra cuántas variantes coinciden.
+   - *🩺 Diagnóstico de lectura* prueba todas las variables visibles y marca las débiles. En la ventana principal, la columna *Lectura* muestra el % de lecturas exitosas de cada variable. *Quitar marco del campo* elimina el recuadro de los campos del HMI.
    - Si usas el motor de plantillas, *Enseñar caracteres…* le enseña la fuente del HMI.
    - Marca solo el número. Si la unidad está dentro del recuadro (`300 °C`), se ignora, pero es mejor dejarla fuera.
 4. **Recorrido automático (macro):** la app cambia de pestaña en el HMI con clics, lee cada pantalla y regresa a la principal.

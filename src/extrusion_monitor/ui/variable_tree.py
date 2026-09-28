@@ -102,6 +102,8 @@ class VariableTree(QTreeWidget):
             self.plotToggled.emit(key[1], item.checkState(C_NAME) == Qt.Checked)
 
     # --- actualización -----------------------------------------------------------
+    quality_fn = None  # var_id -> % de lecturas exitosas recientes
+
     def update_snapshot(self, snap: Snapshot) -> None:
         page_levels: dict[Optional[str], Optional[Level]] = {}
         for vid, it in self._rows.items():
@@ -165,7 +167,7 @@ class VariableTree(QTreeWidget):
             C_STATE: state,
             C_TREND: trend,
             C_CPK: f"{st.trend.cpk:.2f}" if st.trend and st.trend.cpk is not None else "",
-            C_READ: "ok" if not reasons else "; ".join(reasons),
+            C_READ: ("ok" if not reasons else "; ".join(reasons)) + self._quality_text(var.id),
         })
         for c, text in cells.items():
             if it.text(c) != text:
@@ -180,6 +182,10 @@ class VariableTree(QTreeWidget):
         if var.kind == "setpoint" and st.level is not None and st.level >= Level.WARN and st.fresh:
             it.setForeground(C_SP, QBrush(level_color(st.level)))
         return level
+
+    def _quality_text(self, var_id: str) -> str:
+        q = self.quality_fn(var_id) if self.quality_fn else None
+        return "" if q is None else f" · {q:.0f} %"
 
     def setpoint_of(self, var_id: str) -> Optional[str]:
         return self._pair_sp.get(var_id)

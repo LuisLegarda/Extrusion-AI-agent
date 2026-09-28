@@ -143,8 +143,11 @@ class TemplateOcr:
             self.save()
 
     def read(self, image: np.ndarray, numeric: bool, opts: OcrOptions | None = None) -> OcrResult:
-        opts = opts or OcrOptions()
-        glyphs = extract_glyphs(preprocess(image, opts))
+        return self.read_binary(preprocess(image, opts or OcrOptions()), numeric)
+
+    def read_binary(self, binary: np.ndarray, numeric: bool) -> OcrResult:
+        """Lee una imagen ya binarizada (texto negro sobre blanco)."""
+        glyphs = extract_glyphs(binary)
         if not glyphs or not self._glyphs:
             return OcrResult("", 0.0)
         text, confs = [], []

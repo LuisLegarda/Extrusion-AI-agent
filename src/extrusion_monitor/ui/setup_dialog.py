@@ -223,7 +223,8 @@ class SetupDialog(QDialog):
         lay.addLayout(r2)
         r3 = QHBoxLayout()
         for text, slot in (("Crear serie…", self._series), ("Duplicar", self._duplicate), ("Eliminar", self._delete),
-                           ("🧠 Entrenar comportamiento…", self._train_behavior)):
+                           ("🧠 Entrenar comportamiento…", self._train_behavior),
+                           ("🩺 Diagnóstico de lectura", self._diagnose)):
             b = QPushButton(text)
             b.clicked.connect(slot)
             r3.addWidget(b)
@@ -307,6 +308,9 @@ class SetupDialog(QDialog):
         self.sp_thr.setRange(-1, 255)
         self.sp_thr.setSpecialValueText("auto")
         self.chk_border = QCheckBox("Quitar marco del campo")
+        self.chk_auto = QCheckBox("Lectura automática robusta (recomendado: sin umbral manual)")
+        self.chk_auto.setToolTip("Prueba varias formas de preparar la imagen y acepta el valor cuando coinciden. "
+                                 "Recuerda la que funciona para esta variable.")
         self.chk_trend = QCheckBox("Analizar tendencia")
         self.lbl_region = QLabel()
         for label, wdg in (("ID", self.ed_id), ("Nombre", self.ed_name), ("Unidad", self.ed_unit),
@@ -315,7 +319,8 @@ class SetupDialog(QDialog):
                            ("Separador decimal", self.cmb_sep), ("", self.chk_fixdec),
                            ("Valor mínimo válido", self.ed_vmin), ("Valor máximo válido", self.ed_vmax),
                            ("Salto máx. entre lecturas", self.ed_step), ("Contraste", self.cmb_invert),
-                           ("Escala OCR", self.sp_scale), ("Umbral binario", self.sp_thr), ("", self.chk_border),
+                           ("", self.chk_auto), ("Escala OCR", self.sp_scale), ("Umbral binario", self.sp_thr),
+                           ("", self.chk_border),
                            ("", self.chk_trend), ("Región", self.lbl_region)):
             f.addRow(label, wdg)
         for wdg in (self.ed_id, self.ed_name, self.ed_unit, self.ed_vmin, self.ed_vmax, self.ed_step):
@@ -324,7 +329,7 @@ class SetupDialog(QDialog):
             wdg.currentIndexChanged.connect(self._commit_var)
         for wdg in (self.sp_dec, self.sp_scale, self.sp_thr):
             wdg.valueChanged.connect(self._commit_var)
-        for wdg in (self.chk_fixdec, self.chk_trend, self.chk_border):
+        for wdg in (self.chk_fixdec, self.chk_trend, self.chk_border, self.chk_auto):
             wdg.toggled.connect(self._commit_var)
         self.sel_box = QGroupBox("Estados del selector")
         sl = QVBoxLayout(self.sel_box)
@@ -804,6 +809,8 @@ class SetupDialog(QDialog):
         self.sp_scale.setValue(v.ocr.scale)
         self.sp_thr.setValue(-1 if v.ocr.threshold is None else v.ocr.threshold)
         self.chk_border.setChecked(v.ocr.clear_border)
+        self.chk_auto.setChecked(v.ocr.auto)
+        self._auto_widgets(v.ocr.auto)
         self.chk_trend.setChecked(v.trend)
         self.sp_state_thr.setValue(v.state_threshold)
         self._refresh_states(v)
@@ -836,7 +843,7 @@ class SetupDialog(QDialog):
                 max_step=_opt_float(self.ed_step.text()),
                 ocr=OcrOptions(invert=self.cmb_invert.currentData(), scale=self.sp_scale.value(),
                                threshold=None if self.sp_thr.value() < 0 else self.sp_thr.value(),
-                               clear_border=self.chk_border.isChecked()),
+                               clear_border=self.chk_border.isChecked(), auto=self.chk_auto.isChecked()),
                 trend=self.chk_trend.isChecked(), states=list(old.states),
                 state_threshold=self.sp_state_thr.value())
         except ValueError as exc:
@@ -862,6 +869,7 @@ class SetupDialog(QDialog):
                     item.setText(c, fresh.text(c))
             self._redraw()
         self.cmb_sp.setEnabled(kind == "actual")
+        self._auto_widgets(self.chk_auto.isChecked())
 
     def _rename_refs(self, old: str, new: str) -> None:
         for v in self.config.variables:
@@ -1129,6 +1137,9 @@ class SetupDialog(QDialog):
                                     f"</b> · coincidencias: {', '.join(scores)}")
             return
         self.lbl_crop.setPixmap(to_pixmap(img).scaledToHeight(min(80, max(20, img.shape[0] * 2))))
+        if v.ocr.auto:
+            self._test_robust(v, img)
+            return
         binary = preprocess(img, v.ocr)
         self.lbl_bin.setPixmap(to_pixmap(binary).scaledToHeight(min(80, max(20, binary.shape[0]))))
         engine = self._ocr()
@@ -1153,6 +1164,51 @@ class SetupDialog(QDialog):
         self.lbl_result.setText(
             f"Motor {engine.name}{note}: texto «{res.text}» → <b style='color:{color}'>"
             f"{'no numérico' if value is None else f'{value:g}'}</b> · confianza {res.confidence:.2f}{extra}")
+
+    def _auto_widgets(self, auto: bool) -> None:
+        for w in (self.cmb_invert, self.sp_scale, self.sp_thr):
+            w.setEnabled(not auto)
+
+    def _test_robust(self, v: Variable, img: np.ndarray) -> None:
+        from ..ocr.robust import RobustReader, prepare
+        engine = self._ocr()
+        reader = RobustReader(engine)
+        try:
+            if v.kind == "text":
+                res = reader.read_text(img, v)
+            else:
+                res = reader.read_number(img, v, None, lambda _: True, exhaustive=True)
+        except Exception as exc:
+            self.lbl_result.setText(f"<span style='color:#e53935'>Error OCR: {exc}</span>")
+            return
+        if res.variant is not None:
+            prep = prepare(img, res.variant[0], res.variant[1], clear=v.ocr.clear_border, smooth=res.variant[2])
+            if prep is not None:
+                self.lbl_bin.setPixmap(to_pixmap(prep).scaledToHeight(min(80, max(20, prep.shape[0]))))
+        if v.kind == "text":
+            self.lbl_result.setText(f"Motor {engine.name} (automático): texto «{res.text}»")
+            return
+        if res.value is None:
+            self.lbl_result.setText(f"<b style='color:#e53935'>Sin lectura válida</b> en {res.tried} variantes. "
+                                    "Ajusta la región para que cubra solo el número.")
+            return
+        total = sum(res.candidates.values())
+        agree = res.candidates.get(res.value, 0)
+        pct = 100 * agree / max(total, 1)
+        color = "#43a047" if pct >= 60 else ("#f9a825" if pct >= 35 else "#e53935")
+        others = ", ".join(f"{k:g}×{n}" for k, n in res.candidates.items() if k != res.value)
+        self.lbl_result.setText(
+            f"Motor {engine.name} (automático): <b style='color:{color}'>{res.value:g}</b> · "
+            f"{agree} de {res.tried} variantes coinciden ({pct:.0f} %)"
+            + (f" · otras lecturas: {others}" if others else "")
+            + ("" if pct >= 35 else "<br>Lectura débil: ajusta la región (solo el número, sin la unidad)."))
+
+    def _diagnose(self) -> None:
+        from .ocr_diagnosis import DiagnosisDialog
+        if self.frame is None:
+            QMessageBox.information(self, "Captura", "Primero captura la pantalla del HMI.")
+            return
+        DiagnosisDialog(self.config, self.frame, self._ocr(), self._visible_pages(), self).exec()
 
     def _teach(self) -> None:
         v = self.config.variable(self._current_var) if self._current_var else None
