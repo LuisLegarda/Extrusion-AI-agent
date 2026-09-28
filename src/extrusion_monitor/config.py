@@ -222,6 +222,45 @@ class OeeSettings(BaseModel):
     target_oee: float = Field(85.0, ge=0, le=100)
 
 
+class ReportTrigger(BaseModel):
+    """Evento que genera el reporte."""
+
+    kind: Literal["cross", "change", "selector", "tour"] = "cross"
+    var_id: Optional[str] = None  # cross / change / selector
+    op: Literal[">", ">=", "<", "<="] = ">"  # cross: la condición pasa de falsa a verdadera
+    value: float = 0.0  # cross: umbral; change: cambio mínimo (0 = cualquier cambio)
+    state: Optional[str] = None  # selector: solo al cambiar a este estado (None = cualquiera)
+    tour_id: Optional[str] = None  # tour: recorrido ejecutado (None = cualquiera)
+
+
+class ReportVar(BaseModel):
+    var_id: str
+    # Evaluación: dentro de especificación (todas las lecturas) o Cpk mínimo.
+    criterion: Literal["spec", "cpk"] = "spec"
+    cpk_min: float = Field(1.33, ge=0, le=10)
+    chart: bool = True  # gráfica de tendencia con límites
+    events: bool = True  # lista de eventos de la variable
+    csv: bool = True  # datos en el CSV
+
+
+class ReportDef(BaseModel):
+    """Reporte PDF automático: abarca desde el fin del reporte anterior hasta el momento del disparo."""
+
+    id: str
+    name: str = "Reporte"
+    enabled: bool = True
+    triggers: list[ReportTrigger] = Field(default_factory=list)
+    variables: list[ReportVar] = Field(default_factory=list)
+    behavior_models: list[str] = Field(default_factory=list)  # gráfica de comportamiento (D²/umbral)
+    include_general_events: bool = False  # también eventos sin variable (recetas, recorridos)
+    export_csv: bool = True
+    name_var: Optional[str] = None  # nombre del archivo: valor de esta variable (None = fecha y hora)
+    output_dir: Optional[str] = None  # None = <carpeta del programa>/data/reports
+    reset_analysis: bool = False  # reiniciar tendencias, estadística y comportamiento al generarlo
+    min_interval_s: float = Field(60.0, ge=0)  # tiempo mínimo entre dos reportes
+    max_period_h: float = Field(24.0, gt=0, le=24 * 31)  # primer reporte / periodo máximo
+
+
 class AppConfig(BaseModel):
     version: int = CONFIG_VERSION
     machine_name: str = "Línea de extrusión"
@@ -232,6 +271,7 @@ class AppConfig(BaseModel):
     tours: list[TourDef] = Field(default_factory=list)
     tours_paused: bool = False
     oee: OeeSettings = Field(default_factory=OeeSettings)
+    reports: list[ReportDef] = Field(default_factory=list)
 
     @model_validator(mode="after")
     def _migrate_tour(self) -> "AppConfig":
@@ -351,6 +391,18 @@ class AppConfig(BaseModel):
             for vid in (t.selector_var, t.zero_var):
                 if vid and self.variable(vid) is None:
                     problems.append(f"{name}: la variable '{vid}' no existe")
+        for r in self.reports:
+            name = f"Reporte «{r.name}»"
+            for tr in r.triggers:
+                if tr.kind in ("cross", "change", "selector") and (not tr.var_id or self.variable(tr.var_id) is None):
+                    problems.append(f"{name}: el disparador necesita una variable existente")
+                if tr.kind == "tour" and tr.tour_id and self.get_tour(tr.tour_id) is None:
+                    problems.append(f"{name}: el recorrido '{tr.tour_id}' no existe")
+            for rv in r.variables:
+                if self.variable(rv.var_id) is None:
+                    problems.append(f"{name}: la variable '{rv.var_id}' no existe")
+            if r.name_var and self.variable(r.name_var) is None:
+                problems.append(f"{name}: la variable del nombre de archivo no existe")
         formulas = {}
         from .analysis.formula import FormulaError, compile_formula, evaluation_order
         known = {v.id for v in self.variables}
@@ -439,6 +491,21 @@ class Workspace:
     def selector_state_file(self, var_id: str, state: str) -> Path:
         safe = "".join(c if c.isalnum() or c in "-_" else "_" for c in state)
         return self.selectors_dir / f"{var_id}__{safe}.png"
+
+    @property
+    def reports_state_file(self) -> Path:
+        return self.home / "reports_state.json"
+
+    def default_reports_dir(self) -> Path:
+        """<carpeta del programa>/data/reports (o la carpeta de datos si no es posible escribir ahí)."""
+        if getattr(sys, "frozen", False):
+            d = Path(sys.executable).parent / "data" / "reports"
+            try:
+                d.mkdir(parents=True, exist_ok=True)
+                return d
+            except OSError:
+                pass
+        return self.home / "reports"
 
     @property
     def behaviors_file(self) -> Path:

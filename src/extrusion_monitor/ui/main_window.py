@@ -179,6 +179,14 @@ class MainWindow(QMainWindow):
         self._tour_menu.aboutToShow.connect(self._fill_tour_menu)
         self.btn_tour_now.setMenu(self._tour_menu)
         tb.addWidget(self.btn_tour_now)
+        self.btn_report = QToolButton()
+        self.btn_report.setText("📄 Reporte")
+        self.btn_report.setToolTip("Generar ahora un reporte PDF configurado")
+        self.btn_report.setPopupMode(QToolButton.InstantPopup)
+        self._report_menu = QMenu(self)
+        self._report_menu.aboutToShow.connect(self._fill_report_menu)
+        self.btn_report.setMenu(self._report_menu)
+        tb.addWidget(self.btn_report)
         tb.addSeparator()
         self.act_top = QAction("📌 Siempre visible", self, checkable=True)
         self.act_top.toggled.connect(self._always_on_top)
@@ -371,6 +379,27 @@ class MainWindow(QMainWindow):
         for t in self.ctx.config.tours:
             act = self._tour_menu.addAction(t.name + ("" if t.enabled else "  (desactivado)"))
             act.triggered.connect(lambda _=False, tid=t.id: self.engine.run_tour_now(tid))
+
+    def _fill_report_menu(self) -> None:
+        self._report_menu.clear()
+        reps = self.ctx.config.reports
+        if not reps:
+            self._report_menu.addAction("Sin reportes: créalos en ⚙ Configurar → Reportes").setEnabled(False)
+        for r in reps:
+            act = self._report_menu.addAction(r.name)
+            act.triggered.connect(lambda _=False, rid=r.id: self.engine.generate_report(rid))
+        self._report_menu.addSeparator()
+        self._report_menu.addAction("Abrir carpeta de reportes").triggered.connect(self._open_reports_dir)
+
+    def _open_reports_dir(self) -> None:
+        from pathlib import Path
+
+        from PySide6.QtCore import QUrl
+        from PySide6.QtGui import QDesktopServices
+        reps = self.ctx.config.reports
+        d = Path(reps[0].output_dir) if reps and reps[0].output_dir else self.ctx.workspace.default_reports_dir()
+        d.mkdir(parents=True, exist_ok=True)
+        QDesktopServices.openUrl(QUrl.fromLocalFile(str(d)))
 
     def _update_prompts(self, snap: Snapshot) -> None:
         from .tour_prompt import TourPrompt

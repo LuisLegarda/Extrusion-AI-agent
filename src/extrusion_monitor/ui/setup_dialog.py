@@ -160,6 +160,9 @@ class SetupDialog(QDialog):
         from .oee_tab import OeeTab
         self.oee_tab = OeeTab(self)
         self.tabs.addTab(self.oee_tab, "KPI / OEE")
+        from .report_tab import ReportTab
+        self.report_tab = ReportTab(self)
+        self.tabs.addTab(self.report_tab, "Reportes")
         self.tabs.addTab(self._build_general_tab(), "General")
         self.tabs.currentChanged.connect(self._tab_changed)
         split.addWidget(self.tabs)
@@ -179,6 +182,8 @@ class SetupDialog(QDialog):
         elif self.tabs.widget(index) is getattr(self, "oee_tab", None):
             self.oee_tab.commit()
             self.oee_tab.load()
+        elif self.tabs.widget(index) is getattr(self, "report_tab", None):
+            self.report_tab.refresh()  # variables y recorridos nuevos
         else:
             if self.tour_tab.recording is not None:
                 self.tour_tab.stop_recording()
@@ -1290,7 +1295,7 @@ class SetupDialog(QDialog):
     # --- guardar -------------------------------------------------------------------------
     def _save(self) -> None:
         self._commit_general()
-        problems = self.tour_tab.commit() + self.oee_tab.commit()
+        problems = self.tour_tab.commit() + self.oee_tab.commit() + self.report_tab.commit()
         problems = self.config.validate_references() + problems
         missing = [p.name for p in self.config.pages if p.anchor is not None and p.id not in self.anchors]
         if missing:

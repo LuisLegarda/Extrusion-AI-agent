@@ -14,7 +14,7 @@ from typing import Callable, Optional
 import numpy as np
 from PIL import Image, ImageDraw, ImageFont
 
-from .config import AppConfig, Click, GeneralSettings, OeeSettings, OcrOptions, Page, Rect, TourDef, TourStep, Variable
+from .config import AppConfig, Click, GeneralSettings, OeeSettings, OcrOptions, Page, Rect, ReportDef, ReportTrigger, ReportVar, TourDef, TourStep, Variable
 from .recipes import Limit, Recipe
 
 W, H = 1280, 800
@@ -315,6 +315,12 @@ def demo_config() -> AppConfig:
                for pid, label in SIM_PAGES],
         variables=variables,
         tours=[tour],
+        reports=[ReportDef(
+            id="demo", name="Reporte de producción", min_interval_s=600, name_var="receta_hmi",
+            triggers=[ReportTrigger(kind="selector", var_id="inyeccion", state="OFF"),
+                      ReportTrigger(kind="cross", var_id="vel", op="<", value=1)],
+            variables=[ReportVar(var_id="diam"), ReportVar(var_id="exc", criterion="cpk", cpk_min=1.0),
+                       ReportVar(var_id="vel"), ReportVar(var_id="z3"), ReportVar(var_id="inyeccion", chart=False)])],
         oee=OeeSettings(enabled=True, speed_var="vel", nominal_source="recipe", microstop_s=60,
                         quality_mode="both", quality_selector="inyeccion", quality_good_state="ON"),
     )

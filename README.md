@@ -15,20 +15,23 @@ Por eso sirve para cualquier línea de extrusión.
 |---|---|
 | Lectura en vivo | Captura la pantalla del HMI y lee con OCR las regiones configuradas. Se puede usar el OCR integrado de Windows, plantillas enseñadas o Tesseract. |
 | Pestañas del HMI | Árbol libre de componente → pestaña → sub-pestaña. Una imagen ancla (forma y color) identifica cada pestaña, y sus variables se leen cuando está visible. |
-| Recorrido automático | Macro grabada en vivo que navega por las pestañas con clics verificados, lee cada pantalla y regresa a la principal. |
+| Recorridos | Macros de uno o varios pasos grabadas en vivo, con clics verificados. Pueden leer cada pantalla y regresar. Se disparan cada X tiempo, si el HMI queda X tiempo fuera de una pantalla, si un selector cambia de estado o si un valor baja a cero. Opcionalmente muestran un aviso con cuenta regresiva: el operador puede posponer (vuelve a avisar tras X tiempo), y si lo ignora o acepta, se ejecuta. |
+| Variables con fórmula | Variables calculadas a partir de otras: `vel / rpm`, `{zona_1} - {zona_1_sp}`, `max(z1, z2, z3) - min(z1, z2, z3)`, `si(rpm > 0, vel / rpm, 0)`. Se tratan como una medición más: receta, tolerancias, tendencias, reportes. |
+| Reportes PDF | Se generan solos cuando una variable cruza un valor, cambia un valor o texto, un selector cambia de estado o se ejecuta un recorrido. Abarcan desde el fin del reporte anterior. Evalúan cada variable por especificación o Cpk mínimo, con resultado general. Pueden incluir gráficas, comportamiento, eventos y un CSV con los datos. El archivo se nombra con la fecha y hora o con el valor de una variable. Se guardan en `data\reports` junto al programa (configurable). Opción de reiniciar tendencias, estadística y comportamiento al generarlos. |
 | Lectura robusta (automática) | Cada lectura prueba varias variantes de preprocesado: gris por luminancia, mínimo o máximo de color; binarización Otsu, adaptativa o sin binarizar; con y sin suavizado; polaridad por el fondo; recorte al texto. Un valor nuevo se acepta solo si dos variantes distintas coinciden; si no, se conserva el anterior. Recuerda la variante que funciona para cada variable, así en operación normal hace una sola lectura por campo. No requiere umbral manual. |
 | Filtros de lectura | Rango válido, salto máximo confirmado en 2 lecturas, confianza mínima, coma o punto decimal y corrección de confusiones típicas del OCR (O→0, l→1…). |
+| Recetas = perfil completo | Cada receta guarda toda la configuración: variables, regiones, pantallas y anclas, clics, recorridos, comportamientos entrenados, OEE y reportes. Al cargar la receta se reemplaza todo. |
 | Recetas | Nominal, tolerancia de aviso y tolerancia de alarma (absoluta o en %) por variable. Cada variable se compara contra la receta o contra la consigna leída del HMI. Las recetas se importan y exportan en CSV (compatible con Excel), y los valores actuales del HMI se pueden tomar como nominales. |
-| Selección automática de receta | Si configuras una variable de texto con el nombre de la receta que muestra el HMI, la receta activa se elige sola y se avisa si no coincide. |
+| Selección automática de receta | Con una variable de texto que lee el nombre de la receta del HMI. En modo *Auto desde HMI*, se carga la receta del programa con el mismo nombre; si no existe, avisa y mantiene la actual. En modo manual, solo avisa. |
 | Detección de errores | **Ajuste erróneo**: la consigna difiere de la receta. **Fuera de tolerancia**: el valor real se sale de su tolerancia. **Cambio de ajuste**: registra el valor anterior y el nuevo, e indica si se aleja de la receta. **Fallo de lectura**: la variable no se pudo leer o el dato es viejo. |
 | Selectores | Variable tipo selector o indicador: se capturan imágenes de cada estado (ON/OFF, AUTO/MAN…) y se reconoce el estado actual por imagen, sin importar color o forma. La receta define el estado esperado. |
 | Comportamiento aprendido | Se entrena con un periodo del historial. Aprende la variación normal de cada variable y la correlación entre varias, y en vivo avisa cuando una variable o una relación se sale de lo normal (distancia de Mahalanobis), aunque siga dentro de tolerancia. |
 | Análisis en pantalla | Pestañas **Tendencias**: curva de consigna y proyección con banda. **Estadística**: histograma, Cp/Cpk/Pp/Ppk y carta X̄. **Correlación**: matriz y dispersión con regresión. **Comportamiento**: D²/umbral en el tiempo y contribución por variable. |
-| Dashboard KPI / OEE | **Disponibilidad**: velocidad de línea ≤ umbral = detenida; los paros cortos son microparos. **Rendimiento**: velocidad real promedio / nominal (de la receta, de la consigna o fija). **Calidad**: metros conformes / metros producidos, con conformidad por variables en especificación y/o un indicador visual. Muestra OEE, TEEP, MTBF, MTTR, paros, metros, línea de tiempo del estado de la máquina con distribución y comparación con el periodo anterior (turno actual, 1 h, 8 h, 24 h, 7 días). |
+| Dashboard KPI / OEE | **Disponibilidad**: velocidad de línea ≤ umbral = detenida; los paros cortos son microparos. Un hueco sin datos (app cerrada o en pausa) cuenta como productivo si, al volver, la línea marcha y todo está en parámetros (hasta un límite configurable, por defecto 30 min). **Rendimiento**: velocidad real promedio / nominal (de la receta, de la consigna o fija). **Calidad**: metros conformes / metros producidos, con conformidad por variables en especificación y/o un indicador visual. Muestra OEE, TEEP, MTBF, MTTR, paros, metros, línea de tiempo del estado de la máquina con distribución y comparación con el periodo anterior (turno actual, 1 h, 8 h, 24 h, 7 días). |
 | Industria 5.0 | **Factor humano**: carga de alarmas por hora (ISA-18.2) e intervenciones del operador. **Resiliencia**: tiempo en condición normal y recuperación media. **Sostenibilidad**: material conforme y tiempo sin producir. **Índice 5.0**: combina los tres. |
 | Tendencias / SPC | Pendiente con prueba de significancia, tiempo estimado hasta el límite de alarma, reglas de Nelson sobre subgrupos y Cpk. |
 | Anti-falsas alarmas | Confirmación durante N ciclos, histéresis del 10 %, efecto mínimo relativo a la tolerancia y hallazgos que se mantienen mientras la página no está visible. |
-| Historial | SQLite propio (`history.sqlite`) con retención de 90 días. Exporta a CSV con una columna por variable. |
+| Historial | SQLite propio (`history.sqlite`) con retención de 90 días. Guarda cada valor cuando cambia o cada 20 s, para que no crezca sin medida. Exporta a CSV con una columna por variable. |
 
 ## Uso
 
@@ -58,22 +61,25 @@ Configuración inicial en el HMI:
    - *🩺 Diagnóstico de lectura* prueba todas las variables visibles y marca las débiles. En la ventana principal, la columna *Lectura* muestra el % de lecturas exitosas de cada variable. *Quitar marco del campo* elimina el recuadro de los campos del HMI.
    - Si usas el motor de plantillas, *Enseñar caracteres…* le enseña la fuente del HMI.
    - Marca solo el número. Si la unidad está dentro del recuadro (`300 °C`), se ignora, pero es mejor dejarla fuera.
-4. **Recorrido automático (macro):** la app cambia de pestaña en el HMI con clics, lee cada pantalla y regresa a la principal.
-   - Elige la *pantalla principal*. Debe tener ancla, por ejemplo el botón de la barra inferior resaltado.
-   - Agrega un paso por pestaña. En cada paso, *● Grabar clics (en vivo)*: haz clic en la captura sobre el botón. El clic se ejecuta en el HMI y la captura se actualiza.
-   - Graba también los clics de *⌂ Regreso a la principal* y comprueba todo con *▶ Probar recorrido completo*.
+4. **Recorridos (macros):** la app cambia de pestaña en el HMI con clics, puede leer cada pantalla y regresa.
+   - *+ Nuevo* crea un recorrido. Agrega un paso por pantalla. En cada paso, pulsa *● Grabar clics (en vivo)* y haz clic en la captura sobre el botón: el clic se ejecuta en el HMI y la captura se actualiza.
+   - Graba también los clics de *⌂ Regreso* y comprueba el recorrido con *▶ Probar este recorrido*.
+   - **Disparadores** (cualquiera lo activa): cada X segundos, fuera de una pantalla durante X segundos, cambio de un selector (a un estado o a cualquiera), o un valor que baja a ≤ umbral.
+   - **Cuenta regresiva** (opcional): aparece un aviso siempre visible. *Posponer* lo vuelve a mostrar tras X tiempo. *Ejecutar ahora*, o dejar que la cuenta termine, lo ejecuta.
    - **Seguridad:**
      - Solo hace clic en los puntos grabados, y solo si el botón se ve igual que al grabarlo.
-     - Solo inicia desde la pantalla principal y verifica que llegó a cada pantalla.
-     - Se pospone si el operador usó el mouse o el teclado en los últimos N segundos, y se interrumpe sin más clics si el operador lo toca a mitad del recorrido.
+     - Puede exigir una pantalla de inicio, y verifica que llegó a cada pantalla.
+     - Sin cuenta regresiva, se pospone si el operador usó el mouse o el teclado en los últimos N segundos. Se interrumpe sin más clics si el operador toca el HMI a mitad del recorrido.
      - No hace clic si la ventana del monitor tapa el botón.
      - Mientras está abierto el configurador, el monitoreo se detiene.
-   - En la barra: *⏸ Pausar recorrido* y *⟳ Recorrer ahora*.
+   - En la barra: *⏸ Pausar recorrido* y *⟳ Recorrer ahora* (la flecha permite elegir el recorrido).
    - La ventana del monitor se excluye de las capturas de pantalla (Windows 10 2004+).
 5. **KPI / OEE** (pestaña del configurador): elige la variable de velocidad de línea, el umbral de paro, la velocidad nominal, el tiempo de microparo, cómo se mide la calidad y los horarios de turno.
-6. **📋 Recetas:** crea la receta con el mismo nombre que muestra el HMI y llena nominales y tolerancias,
+6. **Reportes** (pestaña del configurador): crea el reporte, agrega disparadores y variables y elige para cada una *En especificación* o *Cpk mínimo*, y si lleva gráfica, eventos y CSV. Elige los modelos de comportamiento a graficar, el nombre del archivo y la carpeta. *📄 Generar vista previa ahora* lo prueba. En la ventana principal, *📄 Reporte* lo genera a mano.
+7. **📋 Recetas:** crea la receta con el mismo nombre que muestra el HMI y llena nominales y tolerancias,
    o pulsa *Tomar valores actuales del HMI como nominales* con la máquina en un buen setup.
-7. **▶ Iniciar.**
+   *📦 Guardar la configuración actual en esta receta* copia todo el setup (variables, recorridos, comportamiento, OEE, reportes) en la receta. Al guardar el configurador o entrenar un comportamiento, se actualiza la receta activa.
+8. **▶ Iniciar.**
 
 Los datos se guardan en `%LOCALAPPDATA%\ExtrusionMonitor`. Para usar el modo portátil, crea una carpeta `data` junto al `.exe`.
 
@@ -97,6 +103,10 @@ Estructura (`src/extrusion_monitor/`):
 - `pages.py`: detección de la pantalla del HMI.
 - `acquisition.py`: lectura y filtros de plausibilidad.
 - `analysis/rules.py` y `analysis/trends.py`: verificación, tendencias y SPC.
+- `analysis/formula.py`: fórmulas seguras (sin `eval`).
+- `scheduling.py` y `navigation.py`: disparadores y ejecución de recorridos.
+- `reports.py`: reportes PDF/CSV en un hilo aparte.
+- `profiles.py`: recetas como perfil completo.
 - `engine.py`: ciclo de monitoreo en un hilo propio.
 - `storage.py`: historial.
 - `recipes.py`: recetas.

@@ -19,6 +19,7 @@ from .capture import load_png
 from .navigation import Clicker, TourResult, TourRunner, UnavailableClicker
 from .pages import PageDetector
 from .profiles import apply_profile, has_profile, save_profile
+from .reports import ReportJob, ReportManager, ReportOutput, VarLimits
 from .scheduling import TourJob, TourScheduler
 from .recipes import Recipe, RecipeStore
 from .storage import Historian
@@ -84,6 +85,9 @@ class MonitorEngine:
         self._skip_msgs: dict[str, str] = {}
         self.last_tour_result: Optional[TourResult] = None
         self.scheduler = TourScheduler(config, clock)
+        self.reports = ReportManager(workspace, clock)
+        self._report_events: list[Event] = []
+        self._manual_reports: list[str] = []
         self._build()
 
     def _build(self) -> None:
@@ -273,7 +277,10 @@ class MonitorEngine:
                     now, self.rules.fresh_values(now, readings), self.state.recipe,
                     lambda vid: self.config.var_label(self.config.variable(vid)) if self.config.variable(vid) else vid)
                 statuses, events = self.rules.evaluate(now, readings, self.recipe, self.trends, extra)
-            events = self._pending_events + events
+            report_events = []
+            while self._report_events:
+                report_events.append(self._report_events.pop(0))
+            events = self._pending_events + report_events + events
             self._pending_events = []
             findings = self.rules.active_findings()
             overall = max((f.level for f in findings), default=Level.OK)
@@ -286,12 +293,75 @@ class MonitorEngine:
             self._record_oee(snap)
             self._store(snap)
             self.last = snap
+            self._check_reports(snap, readings)
         for cb in list(self.listeners):
             try:
                 cb(snap)
             except Exception:
                 log.exception("Error en listener")
         return snap
+
+    # --- reportes ------------------------------------------------------------------------
+    def generate_report(self, report_id: str) -> None:
+        """Genera el reporte en el siguiente ciclo (o de inmediato si el monitoreo está detenido)."""
+        self._manual_reports.append(report_id)
+        if not self.running and self.last is not None:
+            with self._lock:
+                self._check_reports(self.last, self.acquirer.readings)
+
+    def reset_analysis(self) -> None:
+        """Reinicia tendencias, estadística y comportamiento (la ventana empieza de nuevo)."""
+        with self._data_lock:
+            self.trends.clear()
+            self.behaviors.history.clear()
+            self.behaviors.last.clear()
+
+    def _check_reports(self, snap: Snapshot, readings) -> None:
+        cfg = self.config
+        if not cfg.reports:
+            return
+        fired = self.reports.check(cfg, readings, snap.events)
+        manual = [r for rid in self._manual_reports if (r := next((x for x in cfg.reports if x.id == rid), None))]
+        self._manual_reports = []
+        fired += [(r, "manual") for r in manual if all(r is not f[0] for f in fired)]
+        if not fired:
+            return
+        limits = self._report_limits(snap)
+        reset = False
+        for rep, reason in fired:
+            models = [m.model_copy(deep=True) for mid in rep.behavior_models
+                      if (m := self.behaviors.store.get(mid)) is not None and m.trained]
+            name_text = None
+            if rep.name_var:
+                rd = readings.get(rep.name_var)
+                if rd is not None:
+                    name_text = rd.text if rd.text else (f"{rd.value:g}" if rd.value is not None else None)
+            job = self.reports.make_job(rep, cfg, reason, self.state.recipe, limits, models, name_text)
+            if self.historian is not None:
+                self.reports.submit(job, self.historian, self._report_done)
+            reset |= rep.reset_analysis
+        if reset:
+            self.reset_analysis()
+
+    def _report_limits(self, snap: Snapshot) -> dict[str, VarLimits]:
+        out = {}
+        for vid, st in snap.statuses.items():
+            lim = VarLimits(target=st.reference, expected=st.expected)
+            if st.reference is not None and st.alarm_band is not None:
+                lim.lsl, lim.usl = st.reference - st.alarm_band, st.reference + st.alarm_band
+            out[vid] = lim
+        return out
+
+    def _report_done(self, job: ReportJob, out: ReportOutput) -> None:
+        # Hilo de reportes: el evento se entrega en el siguiente ciclo.
+        if out.error:
+            ev = Event(self.clock(), "report", Level.WARN, "REPORTE", "",
+                       f"Reporte «{job.report.name}» falló: {out.error}")
+        else:
+            verdict = {True: "CONFORME", False: "NO CONFORME", None: "sin evaluación"}[out.ok]
+            ev = Event(self.clock(), "report", Level.INFO, "REPORTE", "",
+                       f"Reporte «{job.report.name}» ({verdict}): {out.pdf}")
+        self._report_events.append(ev)
 
     def _record_oee(self, snap: Snapshot) -> None:
         o = self.config.oee

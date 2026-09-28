@@ -160,3 +160,57 @@ def test_ocr_diagnosis_dialog(ctx):
     frame = ctx.engine.grab_frame()
     dlg = DiagnosisDialog(ctx.config, frame, ctx.template_ocr, {"principal"})
     assert "OK" in dlg.summary.text()
+
+
+def test_report_tab_and_tour_prompt(ctx, monkeypatch, tmp_path):
+    from PySide6.QtGui import QDesktopServices
+    from PySide6.QtWidgets import QApplication, QMessageBox
+
+    from extrusion_monitor.ui.main_window import MainWindow
+    from extrusion_monitor.ui.setup_dialog import SetupDialog
+
+    opened = []
+    monkeypatch.setattr(QDesktopServices, "openUrl", lambda url: opened.append(url))
+    monkeypatch.setattr(QMessageBox, "warning", lambda *a, **k: pytest.fail(str(a[2])))
+    monkeypatch.setattr(QMessageBox, "question", lambda *a, **k: QMessageBox.Yes)
+    ctx.engine.sleep = lambda s: None
+    for _ in range(5):
+        ctx.engine.step()
+    dlg = SetupDialog(ctx)
+    tab = dlg.report_tab
+    tab._new()
+    tab._add_trigger()
+    tab.cmb_add_var.setCurrentIndex(tab.cmb_add_var.findData("diam"))
+    tab._add_var()
+    tab.ed_dir.setText(str(tmp_path / "rep"))
+    tab._commit()
+    kind = tab.tbl_trg.cellWidget(0, 0)
+    kind.setCurrentIndex(kind.findData("cross"))  # cambia el tipo: se reconstruye la fila
+    assert tab.report.triggers[0].kind == "cross" and tab.report.triggers[0].var_id
+    tab._preview()
+    assert opened and list((tmp_path / "rep").glob("*.pdf"))
+
+    tours = dlg.tour_tab
+    tours._new_tour()
+    tours.chk_confirm.setChecked(True)
+    tours.cmb_off.setCurrentIndex(tours.cmb_off.findData("linea"))
+    assert tours.tour.confirm and tours.tour.off_page == "linea"
+    tours._del_tour()
+    dlg._save()
+
+    win = MainWindow(ctx)
+    t = ctx.config.tours[0]
+    t.confirm = True
+    ctx.engine.scheduler.reconfigure(ctx.config)
+    ctx.engine.scheduler.rt(t.id).last_run = None
+    snap = ctx.engine.step()  # dispara por intervalo: aviso con cuenta regresiva
+    assert t.id in snap.prompts
+    win.on_snapshot(snap)
+    assert t.id in win._prompts
+    win._prompts[t.id]._snooze()
+    assert not ctx.engine.pending_prompts()
+    win.on_snapshot(ctx.engine.step())
+    assert not win._prompts
+    QApplication.processEvents()
+    win._fill_report_menu()
+    win.close()

@@ -76,3 +76,18 @@ def test_selector_change_to_state_and_zero_edge():
     assert s.pop() is not None
     s.update(3, set(), {"vel": rd("vel", 0.1)})
     assert s.pop() is None
+
+
+def test_old_single_tour_config_is_migrated():
+    from extrusion_monitor.config import Click, TourSettings
+    old = AppConfig(pages=[Page(id="main", name="Main"), Page(id="p2", name="P2")],
+                    tour=TourSettings(enabled=True, home_page="main", interval_s=90,
+                                      home_clicks=[Click(id="h", x=1, y=1)],
+                                      steps=[TourStep(id="s", page="p2", clicks=[Click(id="c", x=2, y=2)])]))
+    data = old.model_dump_json()
+    cfg = AppConfig.model_validate_json(data)
+    assert len(cfg.tours) == 1
+    t = cfg.tours[0]
+    assert t.start_page == "main" and t.return_page == "main" and t.interval_s == 90 and t.read_data
+    assert [c.id for c in cfg.all_tour_clicks()] == ["c", "h"]
+    assert cfg.tour_stale_s() == 225

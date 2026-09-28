@@ -70,26 +70,40 @@ class Historian:
                 (var_id, since, until))
             return cur.fetchall()
 
+    def samples_full(self, var_id: str, since: float, until: float) -> list[tuple]:
+        """(ts, valor, texto) de una variable en el periodo."""
+        with self._lock:
+            return self._conn.execute(
+                "SELECT ts, value, text FROM samples WHERE var=? AND ts BETWEEN ? AND ? ORDER BY ts",
+                (var_id, since, until)).fetchall()
+
     def events(self, since: float, limit: int = 500) -> list[tuple]:
         with self._lock:
             cur = self._conn.execute(
                 "SELECT * FROM events WHERE ts>=? ORDER BY ts DESC LIMIT ?", (since, limit))
             return cur.fetchall()
 
-    def export_csv(self, path: Path | str, since: float, until: float | None = None) -> int:
+    def export_csv(self, path: Path | str, since: float, until: float | None = None,
+                   variables: Optional[list[str]] = None, headers: Optional[dict[str, str]] = None) -> int:
         """Exporta muestras en formato ancho: una columna por variable."""
         until = until or time.time()
+        sql = "SELECT ts, var, COALESCE(value, text) FROM samples WHERE ts BETWEEN ? AND ?"
+        args: list = [since, until]
+        if variables is not None:
+            if not variables:
+                return 0
+            sql += f" AND var IN ({','.join('?' * len(variables))})"
+            args += list(variables)
         with self._lock:
-            rows = self._conn.execute(
-                "SELECT ts, var, COALESCE(value, text) FROM samples WHERE ts BETWEEN ? AND ? ORDER BY ts",
-                (since, until)).fetchall()
-        variables = sorted({r[1] for r in rows})
+            rows = self._conn.execute(sql + " ORDER BY ts", args).fetchall()
+        if variables is None:
+            variables = sorted({r[1] for r in rows})
         by_ts: dict[float, dict[str, object]] = {}
         for ts, var, val in rows:
             by_ts.setdefault(ts, {})[var] = val
         with open(path, "w", newline="", encoding="utf-8-sig") as f:
             w = csv.writer(f, delimiter=";")
-            w.writerow(["fecha_hora", *variables])
+            w.writerow(["fecha_hora", *[(headers or {}).get(v, v) for v in variables]])
             for ts in sorted(by_ts):
                 stamp = time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(ts))
                 w.writerow([stamp, *[by_ts[ts].get(v, "") for v in variables]])
