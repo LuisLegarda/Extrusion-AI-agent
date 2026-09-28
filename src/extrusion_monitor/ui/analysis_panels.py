@@ -63,7 +63,7 @@ class StatsPanel(QWidget):
         self.cmb.blockSignals(True)
         self.cmb.clear()
         for v in config.variables:
-            if v.kind == "actual":
+            if v.measured:
                 self.cmb.addItem(config.var_label(v) + (f" [{v.unit}]" if v.unit else ""), v.id)
         self.cmb.setCurrentIndex(max(0, self.cmb.findData(cur)))
         self.cmb.blockSignals(False)

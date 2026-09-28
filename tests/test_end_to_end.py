@@ -54,8 +54,9 @@ def test_detects_wrong_setpoint_and_drift(tmp_path):
     assert any(r == R_TOL and v == "diam" for r, v in raised)
     early = [e for s in snaps[:50] for e in s.events if e.level >= Level.WARN]
     assert not early, early
-    assert len(ctx.engine.historian.samples("diam", 0)) > 300  # pantalla principal: cada ciclo
-    assert 15 < len(ctx.engine.historian.samples("z1", 0)) < 60  # pestaña del recorrido
+    # Banda muerta: se guarda al cambiar el valor o cada 20 s, no en cada ciclo.
+    assert 50 < len(ctx.engine.historian.samples("diam", 0)) < 430  # pantalla principal
+    assert 5 < len(ctx.engine.historian.samples("z1", 0)) < 60  # pestaña del recorrido
 
 
 def test_tour_postponed_when_operator_active(tmp_path):
@@ -94,7 +95,7 @@ def test_tour_not_started_outside_home(tmp_path):
     ctx.engine.run_tour_now()
     n = len(sim.clicks)
     snap = ctx.engine.step()
-    assert snap.tour.skipped and "principal" in snap.tour.message
+    assert snap.tour.skipped and "principal" in snap.tour.message.lower()
     assert len(sim.clicks) == n
 
 

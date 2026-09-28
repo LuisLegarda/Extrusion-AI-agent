@@ -14,12 +14,12 @@ from PySide6.QtWidgets import (
     QTableWidgetItem, QVBoxLayout, QWidget,
 )
 
-from ..analysis.oee import (MICROSTOP, RUNNING, SLOW, STATE_LABELS, STATE_ORDER, STOPPED, UNKNOWN, OeeResult,
+from ..analysis.oee import (ASSUMED, MICROSTOP, RUNNING, SLOW, STATE_LABELS, STATE_ORDER, STOPPED, UNKNOWN, OeeResult,
                             OeeSample, compute, human_factors, sparkline)
 from ..engine import MonitorEngine
 
-STATE_COLORS = {RUNNING: "#43a047", SLOW: "#fbc02d", MICROSTOP: "#fb8c00", STOPPED: "#e53935",
-                UNKNOWN: "#9e9e9e"}
+STATE_COLORS = {RUNNING: "#43a047", ASSUMED: "#a5d6a7", SLOW: "#fbc02d", MICROSTOP: "#fb8c00",
+                STOPPED: "#e53935", UNKNOWN: "#9e9e9e"}
 RED, YELLOW, GREEN = QColor("#e53935"), QColor("#fbc02d"), QColor("#43a047")
 
 PERIODS = [("shift", "Turno actual"), (3600, "Última hora"), (8 * 3600, "Últimas 8 h"),

@@ -27,6 +27,7 @@ class Historian:
         self._lock = threading.Lock()
         self._conn = sqlite3.connect(self.path, check_same_thread=False)
         self._conn.execute("PRAGMA journal_mode=WAL")
+        self._conn.execute("PRAGMA synchronous=NORMAL")  # seguro con WAL y mucho más rápido
         self._conn.executescript(SCHEMA)
         self._last_purge = 0.0
 

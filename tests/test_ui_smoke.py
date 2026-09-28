@@ -90,7 +90,7 @@ def test_record_and_test_tour_in_demo(ctx, monkeypatch):
     dlg = SetupDialog(ctx)
     tab = dlg.tour_tab
     tab.tour.steps.clear()
-    tab.tour.home_clicks.clear()
+    tab.tour.return_clicks.clear()
     tab.patches.clear()
     tab.refresh()
     for page in ("ext1", "linea"):

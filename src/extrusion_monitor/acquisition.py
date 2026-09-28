@@ -51,17 +51,57 @@ class Acquirer:
         self.readings: dict[str, Reading] = {v.id: Reading(v.id) for v in config.variables}
         # Validación opcional de textos (p. ej. que el nombre leído sea una receta conocida).
         self.text_accept: dict[str, Callable[[str], bool]] = {}
+        self._compile_formulas()
 
     def read(self, frame: np.ndarray, now: float) -> tuple[set[str], dict[str, Reading]]:
         visible = self.pages.visible_pages(frame) if self.pages and self.config.pages else set()
         for var in self.config.variables:
+            if var.kind == "formula":
+                continue
             rd = self.readings.setdefault(var.id, Reading(var.id))
             rd.visible = var.page is None or var.page in visible
             if not rd.visible:
                 rd.ok, rd.raw, rd.reason = False, "", "página no visible"
                 continue
             self._read_var(var, rd, frame, now)
+        self._eval_formulas()
         return visible, self.readings
+
+    def _compile_formulas(self) -> None:
+        from .analysis.formula import FormulaError, compile_formula, evaluation_order
+        known = {v.id for v in self.config.variables}
+        self._formulas = {}
+        for v in self.config.variables:
+            if v.kind == "formula":
+                try:
+                    self._formulas[v.id] = compile_formula(v.formula, known - {v.id})
+                except FormulaError:
+                    pass
+        try:
+            self._formula_order = evaluation_order(self._formulas)
+        except FormulaError:
+            self._formula_order = []
+
+    def _eval_formulas(self) -> None:
+        """Calcula las fórmulas; su instante es el del dato más viejo que usan (propaga lo «viejo»)."""
+        for vid in self._formula_order:
+            f = self._formulas[vid]
+            rd = self.readings.setdefault(vid, Reading(vid))
+            rd.visible = True
+            inputs = [self.readings.get(d) for d in f.deps]
+            if any(r is None or r.value is None or r.ts is None for r in inputs):
+                self._fail(rd, "faltan datos de entrada")
+                continue
+            ts = min(r.ts for r in inputs) if inputs else None
+            if rd.ts is not None and ts is not None and ts <= rd.ts and rd.value is not None:
+                rd.ok = True
+                continue  # sin datos nuevos
+            value = f.evaluate({d: self.readings[d].value for d in f.deps})
+            if value is None:
+                self._fail(rd, "resultado no válido (p. ej. división entre 0)")
+                continue
+            rd.value, rd.ts, rd.ok, rd.reason, rd.fail_count = value, ts, True, "", 0
+            rd.raw = f"{value:.6g}"
 
     def _read_var(self, var: Variable, rd: Reading, frame: np.ndarray, now: float) -> None:
         img = crop(frame, var.region)

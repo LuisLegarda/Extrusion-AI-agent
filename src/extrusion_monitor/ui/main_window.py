@@ -10,8 +10,8 @@ from PySide6.QtCore import Qt, QTimer
 from PySide6.QtGui import QAction, QBrush, QColor
 from PySide6.QtWidgets import (
     QApplication, QCheckBox, QComboBox, QFileDialog, QHeaderView, QLabel, QListWidget,
-    QListWidgetItem, QMainWindow, QMessageBox, QSplitter, QTableWidget, QTableWidgetItem,
-    QTabWidget, QToolBar, QVBoxLayout, QWidget,
+    QListWidgetItem, QMainWindow, QMenu, QMessageBox, QSplitter, QTableWidget, QTableWidgetItem,
+    QTabWidget, QToolBar, QToolButton, QVBoxLayout, QWidget,
 )
 
 from ..analysis.rules import Level
@@ -121,6 +121,8 @@ class MainWindow(QMainWindow):
         super().__init__()
         self.ctx = ctx
         self.engine = ctx.engine
+        self._config_version = ctx.engine.config_version
+        self._prompts: dict = {}
         self.bridge = SnapshotBridge()
         self.bridge.snapshot.connect(self.on_snapshot, Qt.QueuedConnection)
         self.engine.listeners.append(self.bridge.snapshot.emit)
@@ -168,9 +170,15 @@ class MainWindow(QMainWindow):
         self.act_tour_pause.setToolTip("Detiene los clics automáticos en el HMI (se siguen leyendo los datos visibles)")
         self.act_tour_pause.toggled.connect(self._tour_pause)
         tb.addAction(self.act_tour_pause)
-        act = QAction("⟳ Recorrer ahora", self)
-        act.triggered.connect(self.engine.run_tour_now)
-        tb.addAction(act)
+        self.btn_tour_now = QToolButton()
+        self.btn_tour_now.setText("⟳ Recorrer ahora")
+        self.btn_tour_now.setToolTip("Ejecuta el recorrido de lectura; la flecha permite elegir otro recorrido")
+        self.btn_tour_now.setPopupMode(QToolButton.MenuButtonPopup)
+        self.btn_tour_now.clicked.connect(lambda: self.engine.run_tour_now())
+        self._tour_menu = QMenu(self)
+        self._tour_menu.aboutToShow.connect(self._fill_tour_menu)
+        self.btn_tour_now.setMenu(self._tour_menu)
+        tb.addWidget(self.btn_tour_now)
         tb.addSeparator()
         self.act_top = QAction("📌 Siempre visible", self, checkable=True)
         self.act_top.toggled.connect(self._always_on_top)
@@ -242,7 +250,7 @@ class MainWindow(QMainWindow):
     def rebuild_table(self) -> None:
         cfg = self.ctx.config
         if not self._plotted:
-            self._plotted = [v.id for v in cfg.variables if v.kind == "actual" and v.trend][:3]
+            self._plotted = [v.id for v in cfg.variables if v.measured and v.trend][:3]
         self._plotted = [vid for vid in self._plotted if cfg.variable(vid)]
         self.table.rebuild(cfg, self._plotted)
         self._sync_plots()
@@ -324,6 +332,7 @@ class MainWindow(QMainWindow):
                 self.engine.clicker = make_clicker(self.engine.source)
             self.ctx.config = dlg.config
             self.engine.reconfigure(dlg.config, make_ocr(self.ctx))
+            self.engine.save_profile()  # la receta activa guarda la configuración completa
             self.rebuild_table()
             self._update_title()
         if was_running:
@@ -357,23 +366,48 @@ class MainWindow(QMainWindow):
         # La ventana del monitor no debe aparecer en las capturas del HMI (Windows 10 2004+).
         exclude_window_from_capture(int(self.winId()))
 
+    def _fill_tour_menu(self) -> None:
+        self._tour_menu.clear()
+        for t in self.ctx.config.tours:
+            act = self._tour_menu.addAction(t.name + ("" if t.enabled else "  (desactivado)"))
+            act.triggered.connect(lambda _=False, tid=t.id: self.engine.run_tour_now(tid))
+
+    def _update_prompts(self, snap: Snapshot) -> None:
+        from .tour_prompt import TourPrompt
+        for tid in [k for k in self._prompts if k not in snap.prompts]:
+            self._prompts.pop(tid).dismiss()
+        for tid, (deadline, reason) in snap.prompts.items():
+            dlg = self._prompts.get(tid)
+            if dlg is not None and not dlg._done:
+                dlg.deadline = deadline
+                continue
+            t = self.ctx.config.get_tour(tid)
+            dlg = TourPrompt(t.name if t else tid, reason, deadline, self.engine.clock,
+                             lambda tid=tid: self.engine.confirm_tour(tid),
+                             lambda tid=tid: self.engine.snooze_tour(tid), self)
+            self._prompts[tid] = dlg
+            dlg.show()
+            dlg.raise_()
+
     def _update_tour_label(self) -> None:
-        t = self.ctx.config.tour
-        if not t.enabled or not t.steps:
+        tours = [t for t in self.ctx.config.tours if t.enabled and t.steps]
+        if not tours:
             self.lbl_tour.setText("Recorrido: desactivado")
             return
         if self.engine.tour_paused:
             self.lbl_tour.setText("Recorrido: EN PAUSA")
             return
-        res = self.engine.tour.last_result
+        res = self.engine.last_tour_result
         if res is None:
-            self.lbl_tour.setText("Recorrido: pendiente")
+            self.lbl_tour.setText(f"Recorridos: {len(tours)} activos, pendiente")
             return
         when = time.strftime("%H:%M:%S", time.localtime(res.started))
         state = "OK" if res.ok else ("pospuesto" if res.skipped else "FALLÓ")
         color = "#2e7d32" if res.ok else ("#9e9e9e" if res.skipped else "#c62828")
         detail = res.message.replace("pospuesto: ", "") if res.skipped else res.message
-        self.lbl_tour.setText(f"<span style='color:{color}'>Recorrido {when}: {state}</span> · {detail}")
+        t = self.ctx.config.get_tour(res.tour_id)
+        name = f"«{t.name}» " if t and len(tours) > 1 else ""
+        self.lbl_tour.setText(f"<span style='color:{color}'>Recorrido {name}{when}: {state}</span> · {detail}")
 
     def _always_on_top(self, on: bool) -> None:
         self.setWindowFlag(Qt.WindowStaysOnTopHint, on)
@@ -381,8 +415,16 @@ class MainWindow(QMainWindow):
 
     # --- actualización -----------------------------------------------------------
     def on_snapshot(self, snap: Snapshot) -> None:
+        if self.engine.config_version != self._config_version:
+            # Se cargó el perfil de otra receta: la configuración completa cambió.
+            self._config_version = self.engine.config_version
+            self.ctx.config = self.engine.config
+            self._plotted = []
+            self.rebuild_table()
+            self._update_title()
         if snap.recipe != self.cmb_recipe.currentData():
             self.refresh_recipes()
+        self._update_prompts(snap)
         self._update_table(snap)
         self._update_plots(snap)
         self._refresh_analysis()
@@ -405,6 +447,7 @@ class MainWindow(QMainWindow):
     def open_behavior(self) -> None:
         from .behavior_dialog import BehaviorDialog
         BehaviorDialog(self.ctx, self, preselect=[v for v in self._plotted]).exec()
+        self.engine.save_profile()
         self.behavior_panel.set_models()
 
     def _refresh_analysis(self, force: bool = False) -> None:

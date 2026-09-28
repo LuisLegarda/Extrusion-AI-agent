@@ -7,7 +7,7 @@ import sys
 from pathlib import Path
 from typing import Literal, Optional
 
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
 
 APP_NAME = "ExtrusionMonitor"
 CONFIG_VERSION = 1
@@ -53,7 +53,7 @@ class Page(BaseModel):
     match_threshold: float = Field(0.85, ge=0.3, le=1.0)
 
 
-VariableKind = Literal["actual", "setpoint", "text", "selector"]
+VariableKind = Literal["actual", "setpoint", "text", "selector", "formula"]
 
 
 class Variable(BaseModel):
@@ -81,9 +81,22 @@ class Variable(BaseModel):
     states: list[str] = Field(default_factory=list)
     state_threshold: float = Field(0.8, ge=0.3, le=1.0)
 
+    # Fórmula: variable calculada a partir de otras (p. ej. «vel / rpm»).
+    formula: str = ""
+
     @property
     def numeric(self) -> bool:
-        return self.kind in ("actual", "setpoint")
+        return self.kind in ("actual", "setpoint", "formula")
+
+    @property
+    def measured(self) -> bool:
+        """Valor de proceso (medición o calculado): tendencias, estadística y comportamiento."""
+        return self.kind in ("actual", "formula")
+
+    @property
+    def screen(self) -> bool:
+        """Se lee de la pantalla (las fórmulas no)."""
+        return self.kind != "formula"
 
 
 OcrEngineName = Literal["windows", "template", "tesseract"]
@@ -146,6 +159,43 @@ class TourSettings(BaseModel):
         return [c for s in self.steps for c in s.clicks] + list(self.home_clicks)
 
 
+class TourDef(BaseModel):
+    """Recorrido definido por el usuario: uno o varios pasos de clics verificados y sus disparadores."""
+
+    id: str
+    name: str = "Recorrido"
+    enabled: bool = True
+    steps: list[TourStep] = Field(default_factory=list)
+    # Pantalla en la que debe estar el HMI para empezar (None = cualquiera; los clics siguen verificados).
+    start_page: Optional[str] = None
+    # Regreso al terminar (p. ej. a la pantalla principal). Sin clics = no regresa.
+    return_clicks: list[Click] = Field(default_factory=list)
+    return_page: Optional[str] = None
+    return_settle_s: float = Field(1.5, ge=0.1, le=30)
+    read_data: bool = True  # leer las variables de cada pantalla visitada
+    # --- disparadores ---
+    interval_s: Optional[float] = Field(None, ge=5)  # cada X segundos
+    off_page: Optional[str] = None  # si esta pantalla deja de verse…
+    off_page_s: float = Field(120.0, ge=5)  # …durante X segundos
+    selector_var: Optional[str] = None  # si el selector cambia de estado…
+    selector_state: Optional[str] = None  # …(a este estado; None = cualquier cambio)
+    zero_var: Optional[str] = None  # si el valor baja a ≤ umbral
+    zero_threshold: float = 0.0
+    # --- confirmación ---
+    confirm: bool = False  # aviso con cuenta regresiva; si se ignora o se acepta, se ejecuta
+    countdown_s: float = Field(15.0, ge=3, le=600)
+    snooze_s: float = Field(300.0, ge=10, le=86400)  # «Posponer»: vuelve a aparecer tras este tiempo
+    idle_required_s: float = Field(20.0, ge=0, le=3600)
+    page_retries: int = Field(2, ge=0, le=10)
+
+    def all_clicks(self) -> list[Click]:
+        return [c for s in self.steps for c in s.clicks] + list(self.return_clicks)
+
+    @property
+    def has_trigger(self) -> bool:
+        return bool(self.interval_s or self.off_page or self.selector_var or self.zero_var)
+
+
 class OeeSettings(BaseModel):
     """Cálculo de OEE a partir de la velocidad de línea y de la conformidad del proceso."""
 
@@ -165,6 +215,10 @@ class OeeSettings(BaseModel):
     length_factor: float = Field(1.0, gt=0)  # velocidad × factor = longitud por minuto (m/min → 1)
     length_unit: str = "m"
     shift_starts: list[str] = Field(default_factory=lambda: ["06:00", "14:00", "22:00"])
+    # Hueco sin datos (app cerrada, pausa): si al volver la línea marcha y todo está en parámetros,
+    # se cuenta como productivo hasta este límite; más largo queda como «Sin datos».
+    gap_productive: bool = True
+    gap_productive_max_s: float = Field(1800.0, ge=0)
     target_oee: float = Field(85.0, ge=0, le=100)
 
 
@@ -174,17 +228,42 @@ class AppConfig(BaseModel):
     general: GeneralSettings = Field(default_factory=GeneralSettings)
     pages: list[Page] = Field(default_factory=list)
     variables: list[Variable] = Field(default_factory=list)
-    tour: TourSettings = Field(default_factory=TourSettings)
+    tour: TourSettings = Field(default_factory=TourSettings)  # formato anterior (se migra a `tours`)
+    tours: list[TourDef] = Field(default_factory=list)
+    tours_paused: bool = False
     oee: OeeSettings = Field(default_factory=OeeSettings)
 
+    @model_validator(mode="after")
+    def _migrate_tour(self) -> "AppConfig":
+        t = self.tour
+        if t.steps and not self.tours:
+            self.tours = [TourDef(
+                id="lectura", name="Lectura de pestañas", enabled=t.enabled, steps=list(t.steps),
+                start_page=t.home_page, return_clicks=list(t.home_clicks), return_page=t.home_page,
+                return_settle_s=t.home_settle_s, read_data=True, interval_s=t.interval_s,
+                idle_required_s=t.idle_required_s, page_retries=t.page_retries)]
+            self.tour = TourSettings()
+        return self
+
+    def get_tour(self, tour_id: str) -> Optional[TourDef]:
+        return next((t for t in self.tours if t.id == tour_id), None)
+
+    def all_tour_clicks(self) -> list[Click]:
+        return [c for t in self.tours for c in t.all_clicks()]
+
     def toured_pages(self) -> set[str]:
-        """Páginas que se visitan en el recorrido (con sus ancestros)."""
+        """Páginas que se leen durante recorridos (con sus ancestros): su dato vale hasta el siguiente."""
         out: set[str] = set()
-        if not self.tour.enabled:
-            return out
-        for step in self.tour.steps:
-            out |= {p.id for p in self.page_path(step.page)}
+        for t in self.tours:
+            if t.enabled and t.read_data:
+                for step in t.steps:
+                    out |= {p.id for p in self.page_path(step.page)}
         return out
+
+    def tour_stale_s(self) -> float:
+        """Vigencia de los datos leídos en recorridos: 2.5 × el intervalo más largo entre lecturas."""
+        ints = [t.interval_s for t in self.tours if t.enabled and t.read_data and t.interval_s]
+        return 2.5 * max(ints) if ints else 3600.0
 
     def variable(self, var_id: str) -> Optional[Variable]:
         return next((v for v in self.variables if v.id == var_id), None)
@@ -252,22 +331,39 @@ class AppConfig(BaseModel):
                     problems.append(f"{v.id}: la consigna '{v.setpoint_var}' no existe")
                 elif sp.kind != "setpoint":
                     problems.append(f"{v.id}: '{v.setpoint_var}' no es de tipo consigna")
-        t = self.tour
-        if t.enabled:
-            if not t.home_page or self.page(t.home_page) is None:
-                problems.append("Recorrido: define la pantalla principal (con ancla)")
-            elif self.page(t.home_page).anchor is None:
-                problems.append("Recorrido: la pantalla principal necesita un ancla para verificarla")
+        for t in self.tours:
+            name = f"Recorrido «{t.name}»"
+            for pid in (t.start_page, t.return_page, t.off_page):
+                if pid and self.page(pid) is None:
+                    problems.append(f"{name}: la pestaña '{pid}' no existe")
+            if t.enabled and not t.steps:
+                problems.append(f"{name}: no tiene pasos")
             for i, st in enumerate(t.steps, 1):
                 page = self.page(st.page)
                 if page is None:
-                    problems.append(f"Recorrido paso {i}: la pestaña '{st.page}' no existe")
+                    problems.append(f"{name} paso {i}: la pestaña '{st.page}' no existe")
                 elif not any(p.anchor for p in self.page_path(st.page)):
-                    problems.append(f"Recorrido paso {i}: «{page.name}» necesita un ancla para verificar la llegada")
+                    problems.append(f"{name} paso {i}: «{page.name}» necesita un ancla para verificar la llegada")
                 if not st.clicks:
-                    problems.append(f"Recorrido paso {i}: no tiene clics grabados")
-            if t.steps and not t.home_clicks:
-                problems.append("Recorrido: graba los clics para volver a la pantalla principal")
+                    problems.append(f"{name} paso {i}: no tiene clics grabados")
+            if t.return_page and not t.return_clicks:
+                problems.append(f"{name}: graba los clics de regreso")
+            for vid in (t.selector_var, t.zero_var):
+                if vid and self.variable(vid) is None:
+                    problems.append(f"{name}: la variable '{vid}' no existe")
+        formulas = {}
+        from .analysis.formula import FormulaError, compile_formula, evaluation_order
+        known = {v.id for v in self.variables}
+        for v in self.variables:
+            if v.kind == "formula":
+                try:
+                    formulas[v.id] = compile_formula(v.formula, known - {v.id})
+                except FormulaError as exc:
+                    problems.append(f"Fórmula «{v.name}»: {exc}")
+        try:
+            evaluation_order(formulas)
+        except FormulaError as exc:
+            problems.append(str(exc))
         rn = self.general.recipe_name_var
         if rn:
             var = self.variable(rn)

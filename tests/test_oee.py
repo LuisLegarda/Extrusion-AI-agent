@@ -52,3 +52,35 @@ def test_human_factors():
     hf = human_factors(events, r)
     assert hf.alarms_per_hour == pytest.approx(1) and hf.mean_recovery_s == pytest.approx(60)
     assert hf.human_score == 100 and hf.index is not None
+
+
+def test_assumed_gap_counts_as_run():
+    from extrusion_monitor.analysis.oee import ASSUMED
+    s = series([(100, RUNNING, 100, True)])
+    s.append(OeeSample(1100.0, 1000.0, ASSUMED, 100.0, 100.0, True, 0))
+    s += [OeeSample(1100.0 + i, 1.0, RUNNING, 100.0, 100.0, True, 0) for i in range(1, 101)]
+    r = compute(s, 0, 1200, 60)
+    assert r.run_s == pytest.approx(1200) and r.availability == pytest.approx(1.0)
+    assert r.distribution[ASSUMED][0] == pytest.approx(1000)
+
+
+def test_engine_fills_gap_only_if_in_spec(tmp_path):
+    from extrusion_monitor.bootstrap import build
+    from extrusion_monitor.simulator import HmiSimulator, Scenario, SimulatorSource
+    t = [1000.0]
+    clk = lambda: t[0]  # noqa: E731
+    sim = HmiSimulator(scenario=Scenario(period=1e6), clock=clk)
+    ctx = build(tmp_path, demo=True, source=SimulatorSource(sim), clock=clk, sleep=lambda s: None)
+    for _ in range(40):
+        ctx.engine.step()
+        t[0] += 1
+    t[0] += 600  # 10 min sin datos (app cerrada)
+    for _ in range(3):
+        ctx.engine.step()
+        t[0] += 1
+    rows = ctx.engine.historian.oee_samples(0, t[0])
+    assumed = [r for r in rows if r[2] == "assumed"]
+    assert len(assumed) == 1 and assumed[0][1] == pytest.approx(600, abs=12)  # + dt de la muestra
+    t[0] += 5000  # hueco mayor al límite (30 min): queda sin datos
+    ctx.engine.step()
+    assert len([r for r in ctx.engine.historian.oee_samples(0, t[0]) if r[2] == "assumed"]) == 1

@@ -117,7 +117,7 @@ class RuleEngine:
     def stale_limit(self, var: Variable) -> float:
         g = self.config.general
         if var.page in self.config.toured_pages():
-            return max(g.stale_after_s, self.config.tour.interval_s * 2.5)
+            return max(g.stale_after_s, self.config.tour_stale_s())
         return g.stale_after_s
 
     def fresh_values(self, now: float, readings: dict[str, Reading]) -> dict[str, float]:
@@ -145,7 +145,7 @@ class RuleEngine:
         statuses: dict[str, VarStatus] = {}
         # Las pestañas del recorrido se leen una vez por recorrido: su dato vale hasta el siguiente.
         toured = self.config.toured_pages()
-        tour_stale = max(g.stale_after_s, self.config.tour.interval_s * 2.5)
+        tour_stale = max(g.stale_after_s, self.config.tour_stale_s())
 
         if recipe is None:
             conds[(R_NO_RECIPE, "")] = _Condition(Level.INFO, "No hay receta activa: solo se registran valores")
@@ -232,7 +232,7 @@ class RuleEngine:
                            f"{fmt(ref, var)} (Δ {st.deviation:+.4g}, tolerancia ±{band:.4g})")
                     conds[(R_TOL, var.id)] = _Condition(level, msg)
 
-            if var.trend and var.kind == "actual":
+            if var.trend and var.measured:
                 lo = ref - alarm if alarm is not None else None
                 hi = ref + alarm if alarm is not None else None
                 effect = warn if warn is not None else (alarm / 2 if alarm is not None else 0.0)

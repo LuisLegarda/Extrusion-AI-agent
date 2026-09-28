@@ -4,7 +4,7 @@ from __future__ import annotations
 import logging
 import threading
 import time
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Callable, Optional
 
 from .acquisition import Acquirer
@@ -14,10 +14,12 @@ from .capture import FrameSource
 from .config import AppConfig, Workspace
 from .ocr import OcrEngine
 from .analysis.behavior import BehaviorMonitor, BehaviorStore
-from .analysis.oee import OeeSample, classify
+from .analysis.oee import ASSUMED, RUNNING, SLOW, OeeSample, classify
 from .capture import load_png
 from .navigation import Clicker, TourResult, TourRunner, UnavailableClicker
 from .pages import PageDetector
+from .profiles import apply_profile, has_profile, save_profile
+from .scheduling import TourJob, TourScheduler
 from .recipes import Recipe, RecipeStore
 from .storage import Historian
 
@@ -39,6 +41,8 @@ class Snapshot:
     read_ok: int = 0
     read_total: int = 0
     tour: Optional[TourResult] = None  # recorrido ejecutado en este ciclo
+    # Recorridos anunciados con cuenta regresiva: id -> (hora límite, motivo)
+    prompts: dict = field(default_factory=dict)
 
 
 @dataclass
@@ -62,7 +66,6 @@ class MonitorEngine:
         self.clicker = clicker or UnavailableClicker()
         self.sleep = sleep
         self.tour_paused = False
-        self._last_skip = ""
         self.state = EngineState()
         self.listeners: list[Callable[[Snapshot], None]] = []
         self.last: Optional[Snapshot] = None
@@ -71,22 +74,42 @@ class MonitorEngine:
         self._lock = threading.RLock()  # un ciclo a la vez
         self._data_lock = threading.RLock()  # tendencias/estado, para que la UI no espere al recorrido
         self._pending_events: list[Event] = []
+        self.config_version = 0  # cambia al cargar el perfil de una receta (la interfaz se reconstruye)
+        self._missing_recipe: Optional[str] = None
         self.behaviors = BehaviorMonitor(BehaviorStore(workspace.behaviors_file))
         self._stored: dict[str, float] = {}
+        self._stored_val: dict[str, tuple] = {}
         self._oee_last_ts: Optional[float] = None
+        self._last_pages: set[str] = set()
+        self._skip_msgs: dict[str, str] = {}
+        self.last_tour_result: Optional[TourResult] = None
+        self.scheduler = TourScheduler(config, clock)
         self._build()
 
     def _build(self) -> None:
         g = self.config.general
+        old_acq = getattr(self, "acquirer", None)
+        old_trends = getattr(self, "trends", None)
         self.pages = PageDetector.from_workspace(self.config, self.workspace)
         self.acquirer = Acquirer(self.config, self.ocr, self.pages, self._selector_images())
+        if old_acq is not None:
+            # Al cambiar de receta/perfil se conservan las lecturas de las variables que no cambiaron
+            # (p. ej. las leídas en el recorrido) y la variante de OCR aprendida.
+            for v in self.config.variables:
+                ov = old_acq.config.variable(v.id)
+                if ov is not None and ov == v and v.id in old_acq.readings:
+                    self.acquirer.readings[v.id] = old_acq.readings[v.id]
+            if old_acq.ocr is self.ocr:
+                self.acquirer.robust = old_acq.robust
         self.rules = RuleEngine(self.config)
-        self.trends = TrendTracker(g.trend_window_min * 60, g.spc_subgroup_s)
-        last = getattr(self, "tour", None)
-        self.tour = TourRunner(self.config, self.workspace, self.source, self.clicker, self.pages,
-                               clock=self.clock, sleep=self.sleep)
-        if last is not None:
-            self.tour.last_run, self.tour.last_result = last.last_run, last.last_result
+        if old_trends is not None and (old_trends.window_s, old_trends.subgroup_s) == \
+                (g.trend_window_min * 60, g.spc_subgroup_s):
+            self.trends = old_trends
+        else:
+            self.trends = TrendTracker(g.trend_window_min * 60, g.spc_subgroup_s)
+        self.tour_runner = TourRunner(self.config, self.workspace, self.source, self.clicker, self.pages,
+                                      clock=self.clock, sleep=self.sleep)
+        self.scheduler.reconfigure(self.config)
 
     def _selector_images(self) -> dict:
         out = {}
@@ -113,25 +136,61 @@ class MonitorEngine:
     def recipe(self) -> Optional[Recipe]:
         return self.recipes.get(self.state.recipe) if self.state.recipe else None
 
-    def set_recipe(self, name: Optional[str], auto: Optional[bool] = None) -> None:
+    def set_recipe(self, name: Optional[str], auto: Optional[bool] = None, load_profile: bool = True) -> None:
         with self._lock:
             if auto is not None:
                 self.state.auto_recipe = auto
-            if name != self.state.recipe:
-                self.state.recipe = name
-                self.rules.reset()
-                self._pending_events.append(Event(self.clock(), "recipe_change", Level.INFO, "RECETA", "",
-                                                  f"Receta activa: {name or 'ninguna'}"))
+            if name == self.state.recipe:
+                return
+            self.state.recipe = name
+            self.rules.reset()
+            msg = f"Receta activa: {name or 'ninguna'}"
+            if name and load_profile and has_profile(self.workspace, name):
+                # La receta es un perfil completo: variables, pantallas, recorridos, OEE, reportes…
+                try:
+                    config = apply_profile(self.workspace, name)
+                except Exception:
+                    log.exception("No se pudo cargar el perfil de %s", name)
+                    config = None
+                if config is not None:
+                    self.reconfigure(config)
+                    self.behaviors.store.load()
+                    self.behaviors.last.clear()
+                    self.config_version += 1
+                    msg += " (configuración completa de la receta cargada)"
+            self._pending_events.append(Event(self.clock(), "recipe_change", Level.INFO, "RECETA", "", msg))
+
+    def save_profile(self) -> None:
+        """Guarda la configuración activa en el perfil de la receta activa."""
+        if self.state.recipe:
+            save_profile(self.workspace, self.state.recipe, self.config)
 
     def _auto_select_recipe(self, readings) -> None:
         var_id = self.config.general.recipe_name_var
-        if not (self.state.auto_recipe and var_id):
+        if not var_id:
             return
         rd = readings.get(var_id)
         if rd is None or not rd.ok or not rd.text:
             return
         match = self.recipes.find_by_display_name(rd.text)
-        if match and match.name != self.state.recipe:
+        if not self.state.auto_recipe:
+            # Modo manual: solo se avisa (una vez) que el HMI muestra otra receta.
+            if match is not None and match.name != self.state.recipe and rd.text != self._missing_recipe:
+                self._missing_recipe = rd.text
+                self._pending_events.append(Event(
+                    self.clock(), "recipe_hint", Level.INFO, "RECETA_HMI", var_id,
+                    f"El HMI muestra la receta «{rd.text}»; cárgala manualmente (modo manual)"))
+            return
+        if match is None:
+            if rd.text != self._missing_recipe:
+                self._missing_recipe = rd.text
+                self._pending_events.append(Event(
+                    self.clock(), "recipe_missing", Level.WARN, "RECETA_HMI", var_id,
+                    f"La receta «{rd.text}» que muestra el HMI no existe en el programa; "
+                    f"se mantiene «{self.state.recipe or 'ninguna'}»"))
+            return
+        self._missing_recipe = None
+        if match.name != self.state.recipe:
             self.set_recipe(match.name)
 
     def series(self, var_id: str):
@@ -141,9 +200,44 @@ class MonitorEngine:
     def grab_frame(self):
         return self.source.grab()
 
-    def run_tour_now(self) -> None:
-        """Fuerza el recorrido en el siguiente ciclo."""
-        self.tour.last_run = None
+    def run_tour_now(self, tour_id: Optional[str] = None) -> None:
+        """Encola el recorrido (por defecto el de lectura) para el siguiente ciclo."""
+        with self._data_lock:
+            self.scheduler.run_now(tour_id)
+
+    def confirm_tour(self, tour_id: str) -> None:
+        with self._data_lock:
+            self.scheduler.confirm(tour_id)
+
+    def snooze_tour(self, tour_id: str) -> None:
+        with self._data_lock:
+            self.scheduler.snooze(tour_id)
+
+    def pending_prompts(self) -> dict:
+        with self._data_lock:
+            return self.scheduler.pending_prompts()
+
+    def _run_job(self, job: TourJob, pages: set[str]) -> Optional[TourResult]:
+        tour = self.config.get_tour(job.tour_id)
+        if tour is None or not tour.steps:
+            return None
+
+        def on_frame(frame):
+            seen, _ = self.acquirer.read(frame, self.clock())
+            pages.update(seen)
+
+        res = self.tour_runner.run(tour, on_frame, stop=self._stop.is_set, skip_idle=job.consent)
+        res.trigger = job.reason
+        self.last_tour_result = res
+        with self._data_lock:
+            if res.skipped:
+                # Se reintenta en los siguientes ciclos (disparos por flanco incluidos) durante un tiempo.
+                if self.clock() - job.created < JOB_RETRY_S:
+                    self.scheduler.requeue(job)
+            else:
+                self.scheduler.mark_run(tour.id, self.clock())
+        self._tour_events(tour, res)
+        return res
 
     # --- ciclo ---------------------------------------------------------------
     def step(self) -> Snapshot:
@@ -155,20 +249,21 @@ class MonitorEngine:
             pages: set[str] = set()
             readings = self.acquirer.readings
             try:
-                if not self.tour_paused and self.tour.due(now):
-                    def on_frame(frame):
-                        seen, _ = self.acquirer.read(frame, self.clock())
-                        pages.update(seen)
-
-                    tour_result = self.tour.run(on_frame, stop=self._stop.is_set)
-                    self._tour_events(tour_result)
-                    if tour_result.skipped:
-                        tour_result_frame = self.source.grab()
-                        pages, readings = self.acquirer.read(tour_result_frame, now)
+                job = None
+                if not self.tour_paused:
+                    with self._data_lock:
+                        for msg in self.scheduler.update(now, self._last_pages, readings):
+                            self._pending_events.append(Event(now, "tour_prompt", Level.INFO, "RECORRIDO", "", msg))
+                        job = self.scheduler.pop()
+                if job is not None:
+                    tour_result = self._run_job(job, pages)
+                if tour_result is not None and not tour_result.skipped:
+                    readings = self.acquirer.readings
                     now = self.clock()
                 else:
                     frame = self.source.grab()
                     pages, readings = self.acquirer.read(frame, now)
+                self._last_pages = set(pages)
             except Exception as exc:
                 log.exception("Fallo de captura")
                 error = f"Fallo de captura: {exc}"
@@ -187,7 +282,7 @@ class MonitorEngine:
                 ts=now, cycle_ms=(time.perf_counter() - t0) * 1000, pages=pages, statuses=statuses,
                 findings=findings, events=events, recipe=self.state.recipe, ocr_engine=self.ocr.name,
                 error=error, overall=overall, read_ok=sum(r.ok for r in visible), read_total=len(visible),
-                tour=tour_result)
+                tour=tour_result, prompts=self.pending_prompts())
             self._record_oee(snap)
             self._store(snap)
             self.last = snap
@@ -202,28 +297,42 @@ class MonitorEngine:
         o = self.config.oee
         if not (o.enabled and o.speed_var and self.historian):
             return
-        sample = oee_sample(self.config, snap, self.recipe, self._oee_last_ts)
+        last = self._oee_last_ts
+        sample = oee_sample(self.config, snap, self.recipe, last)
         self._oee_last_ts = snap.ts
         if sample is None:
             return
+        gap = snap.ts - last - sample.dt if last is not None else 0.0
+        if (gap > 0 and o.gap_productive and gap <= o.gap_productive_max_s
+                and sample.state in (RUNNING, SLOW) and sample.good is not False and sample.overall < Level.ALARM):
+            # Al volver los datos la línea marcha y todo está en parámetros: el hueco se toma como productivo.
+            try:
+                self.historian.write_oee((snap.ts - sample.dt, gap, ASSUMED, sample.speed, sample.nominal, 1, 0))
+            except Exception:
+                log.exception("No se pudo guardar el hueco OEE")
         try:
             self.historian.write_oee((sample.ts, sample.dt, sample.state, sample.speed, sample.nominal,
                                       None if sample.good is None else int(sample.good), sample.overall))
         except Exception:
             log.exception("No se pudo guardar la muestra OEE")
 
-    def _tour_events(self, res: TourResult) -> None:
+    def _tour_events(self, tour, res: TourResult) -> None:
+        name = f"Recorrido «{tour.name}»"
         if res.skipped:
             # Solo se registra cuando cambia el motivo, para no llenar el registro.
-            if res.message != self._last_skip:
-                self._pending_events.append(Event(self.clock(), "tour", Level.INFO, "RECORRIDO", "",
-                                                  f"Recorrido {res.message}"))
-            self._last_skip = res.message
+            if res.message != self._skip_msgs.get(tour.id):
+                self._pending_events.append(Event(self.clock(), "tour", Level.INFO, "RECORRIDO", tour.id,
+                                                  f"{name} {res.message}"))
+            self._skip_msgs[tour.id] = res.message
             return
-        self._last_skip = ""
-        if not res.ok:
-            self._pending_events.append(Event(self.clock(), "tour", Level.WARN, "RECORRIDO", "",
-                                              f"Recorrido {res.message}"))
+        self._skip_msgs.pop(tour.id, None)
+        if res.ok:
+            # Evento de recorrido ejecutado: puede disparar un reporte.
+            self._pending_events.append(Event(self.clock(), "tour_done", Level.INFO, "RECORRIDO", tour.id,
+                                              f"{name}: {res.message} ({res.trigger})"))
+        else:
+            self._pending_events.append(Event(self.clock(), "tour", Level.WARN, "RECORRIDO", tour.id,
+                                              f"{name} {res.message}"))
 
     def _store(self, snap: Snapshot) -> None:
         if not self.historian:
@@ -232,9 +341,16 @@ class MonitorEngine:
         for vid, st in snap.statuses.items():
             rd = st.reading
             # Con recorrido, cada variable se lee en un instante distinto: se guarda cada lectura nueva.
-            if rd.ts is not None and rd.ts > self._stored.get(vid, 0.0):
-                self._stored[vid] = rd.ts
-                rows.append((rd.ts, vid, rd.value, rd.text if st.var.kind == "text" else None))
+            if rd.ts is None or rd.ts <= self._stored.get(vid, 0.0):
+                continue
+            text = rd.text if st.var.kind in ("text", "selector") else None
+            last = self._stored_val.get(vid)
+            # Banda muerta: solo se guarda si cambió o cada HEARTBEAT_S (el historial no crece sin medida).
+            if last is not None and last[1] == (rd.value, text) and rd.ts - last[0] < HEARTBEAT_S:
+                continue
+            self._stored[vid] = rd.ts
+            self._stored_val[vid] = (rd.ts, (rd.value, text))
+            rows.append((rd.ts, vid, rd.value, text))
         try:
             self.historian.write_samples(rows)
             self.historian.write_events(
@@ -272,6 +388,9 @@ class MonitorEngine:
 
 # Calidad: mediciones reales fuera de tolerancia y selectores en estado incorrecto
 # (un ajuste distinto de receta se reporta aparte; afecta la calidad cuando saca las mediciones).
+HEARTBEAT_S = 20.0
+JOB_RETRY_S = 600.0  # un recorrido pospuesto (operador activo, otra pantalla) se reintenta hasta 10 min  # un valor sin cambios se vuelve a guardar como máximo cada 20 s
+
 QUALITY_RULES = {"TOLERANCIA", "SELECTOR"}
 
 

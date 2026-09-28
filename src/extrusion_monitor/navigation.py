@@ -20,7 +20,7 @@ from typing import Callable, Optional, Protocol
 import numpy as np
 
 from .capture import FrameSource, crop, load_png, similarity
-from .config import AppConfig, Click, Rect, Workspace
+from .config import AppConfig, Click, Rect, TourDef, Workspace
 from .pages import PageDetector
 
 log = logging.getLogger(__name__)
@@ -59,10 +59,14 @@ class TourResult:
     duration_s: float = 0.0
     pages_read: list[str] = field(default_factory=list)
     message: str = ""
-    skipped: bool = False  # no se inició (operador activo o fuera de la pantalla principal)
+    skipped: bool = False  # no se inició (operador activo o fuera de la pantalla de inicio)
+    tour_id: str = ""
+    trigger: str = ""  # motivo del disparo
 
 
 class TourRunner:
+    """Ejecuta un recorrido (TourDef): clics verificados, llegada a cada pantalla y regreso."""
+
     def __init__(self, config: AppConfig, workspace: Workspace, source: FrameSource, clicker: Clicker,
                  pages: PageDetector, clock: Callable[[], float] = time.time,
                  sleep: Callable[[float], None] = time.sleep,
@@ -74,58 +78,58 @@ class TourRunner:
         self.clock = clock
         self.sleep = sleep
         if patches is None:
-            patches = {c.id: load_png(workspace.click_patch_file(c.id)) for c in config.tour.all_clicks()}
+            patches = {c.id: load_png(workspace.click_patch_file(c.id)) for c in config.all_tour_clicks()}
         self.patches = patches
-        self.last_run: Optional[float] = None
         self.last_result: Optional[TourResult] = None
         self._own_input_at = 0.0
+        self._tour: Optional[TourDef] = None
 
-    @property
-    def settings(self):
-        return self.config.tour
+    def run(self, tour: TourDef, on_frame: Callable[[np.ndarray], None],
+            stop: Callable[[], bool] = lambda: False, skip_idle: bool = False) -> TourResult:
+        """Ejecuta `tour`. `on_frame` recibe la captura de cada pantalla alcanzada.
 
-    def due(self, now: float) -> bool:
-        t = self.settings
-        if not (t.enabled and t.steps and t.home_page):
-            return False
-        return self.last_run is None or now - self.last_run >= t.interval_s
-
-    def run(self, on_frame: Callable[[np.ndarray], None], stop: Callable[[], bool] = lambda: False) -> TourResult:
-        """Ejecuta el recorrido. `on_frame` recibe la captura de cada pantalla alcanzada."""
-        t = self.settings
+        `skip_idle`: el operador ya dio su consentimiento (aceptó o dejó correr la cuenta regresiva).
+        """
+        self._tour = tour
         started = self.clock()
-        self.last_run = started
-        res = TourResult(ok=False, started=started)
-        idle = self.clicker.idle_seconds()
-        if idle < t.idle_required_s:
-            res.skipped = True
-            res.message = f"pospuesto: operador activo hace {idle:.0f} s"
-            return self._finish(res)
+        res = TourResult(ok=False, started=started, tour_id=tour.id)
+        if not skip_idle:
+            idle = self.clicker.idle_seconds()
+            if idle < tour.idle_required_s:
+                res.skipped = True
+                res.message = f"pospuesto: operador activo hace {idle:.0f} s"
+                return self._finish(res)
         frame = self.source.grab()
-        if t.home_page not in self.pages.visible_pages(frame):
+        if tour.start_page and tour.start_page not in self.pages.visible_pages(frame):
+            page = self.config.page(tour.start_page)
             res.skipped = True
-            res.message = "pospuesto: el HMI no está en la pantalla principal"
+            res.message = f"pospuesto: el HMI no está en «{page.name if page else tour.start_page}»"
             return self._finish(res)
-        on_frame(frame)
+        if tour.read_data:
+            on_frame(frame)
         self._mark_own_input()  # referencia: desde aquí cualquier entrada ajena es del operador
-        left_home = False
+        moved = False
         try:
-            for i, step in enumerate(t.steps, 1):
+            for i, step in enumerate(tour.steps, 1):
                 if stop():
                     raise TourAborted("detenido")
                 frame = self._clicks(step.clicks, frame, f"paso {i}")
-                left_home = True
-                frame = self._arrive(step.page, step.settle_s, f"paso {i}")
-                on_frame(frame)
+                moved = True
+                frame = self._arrive(step.page, step.settle_s, f"paso {i}", tour.page_retries)
+                if tour.read_data:
+                    on_frame(frame)
                 res.pages_read.append(step.page)
-            frame = self._clicks(t.home_clicks, frame, "regreso")
-            self._arrive(t.home_page, t.home_settle_s, "regreso")
-            left_home = False
+            if tour.return_clicks:
+                frame = self._clicks(tour.return_clicks, frame, "regreso")
+                if tour.return_page:
+                    self._arrive(tour.return_page, tour.return_settle_s, "regreso", tour.page_retries)
+            moved = False
             res.ok = True
-            res.message = f"{len(res.pages_read)} pantallas leídas"
+            res.message = (f"{len(res.pages_read)} pantallas leídas" if tour.read_data
+                           else f"{len(tour.steps)} pasos ejecutados")
         except TourAborted as exc:
             res.message = f"interrumpido: {exc}"
-            if left_home and "operador" not in str(exc):
+            if moved and tour.return_clicks and "operador" not in str(exc):
                 res.message += self._try_return_home()
         return self._finish(res)
 
@@ -147,9 +151,9 @@ class TourRunner:
                 frame = self.source.grab()
         return frame
 
-    def _arrive(self, page_id: str, settle_s: float, where: str) -> np.ndarray:
+    def _arrive(self, page_id: str, settle_s: float, where: str, retries: int = 2) -> np.ndarray:
         page = self.config.page(page_id)
-        for _attempt in range(self.settings.page_retries + 1):
+        for _attempt in range(retries + 1):
             self.sleep(settle_s)
             self._check_operator()
             frame = self.source.grab()
@@ -160,11 +164,13 @@ class TourRunner:
 
     def _try_return_home(self) -> str:
         """Tras un fallo, intenta volver a la principal solo si los botones de regreso coinciden."""
+        t = self._tour
         try:
             frame = self.source.grab()
-            self._clicks(self.settings.home_clicks, frame, "regreso de emergencia")
-            self._arrive(self.settings.home_page, self.settings.home_settle_s, "regreso de emergencia")
-            return " · se regresó a la pantalla principal"
+            self._clicks(t.return_clicks, frame, "regreso de emergencia")
+            if t.return_page:
+                self._arrive(t.return_page, t.return_settle_s, "regreso de emergencia", t.page_retries)
+            return " · se regresó a la pantalla de inicio"
         except TourAborted as exc:
             return f" · no se pudo regresar a la principal ({exc})"
 

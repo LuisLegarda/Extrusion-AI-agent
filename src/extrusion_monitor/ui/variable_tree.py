@@ -136,7 +136,7 @@ class VariableTree(QTreeWidget):
             cells = {C_PV: rd.text or ""}
         else:
             val = fmt(rd.value, var, rd.decimals) if rd.value is not None else ""
-            cells = {C_SP: val if var.kind == "setpoint" else "", C_PV: val if var.kind == "actual" else ""}
+            cells = {C_SP: val if var.kind == "setpoint" else "", C_PV: val if var.measured else ""}
             if sp is not None:
                 cells[C_SP] = (fmt(sp.reading.value, sp.var, sp.reading.decimals)
                                if sp.reading.value is not None else "")

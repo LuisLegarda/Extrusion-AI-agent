@@ -24,11 +24,14 @@ from ..pages import PageDetector
 from .common import to_pixmap
 from .region_view import RegionView
 
-KIND_COLORS = {"actual": "#43a047", "setpoint": "#1e88e5", "text": "#8e24aa", "selector": "#00897b"}
+KIND_COLORS = {"actual": "#43a047", "setpoint": "#1e88e5", "text": "#8e24aa", "selector": "#00897b",
+               "formula": "#6d4c41"}
 PAGE_COLOR = "#fb8c00"
 KINDS = [("actual", "Medición (valor real)"), ("setpoint", "Consigna (parámetro establecido)"),
-         ("text", "Texto (p. ej. nombre de receta)"), ("selector", "Selector / indicador (estado por imagen)")]
-KIND_SHORT = {"actual": "medición", "setpoint": "consigna", "text": "texto", "selector": "selector"}
+         ("text", "Texto (p. ej. nombre de receta)"), ("selector", "Selector / indicador (estado por imagen)"),
+         ("formula", "Fórmula (calculada de otras variables)")]
+KIND_SHORT = {"actual": "medición", "setpoint": "consigna", "text": "texto", "selector": "selector",
+              "formula": "fórmula"}
 ROLE = Qt.UserRole
 NO_PAGE = "__none__"
 
@@ -214,6 +217,8 @@ class SetupDialog(QDialog):
                 ("+ Medición", lambda: self._new_var("actual"), "Variable medida sin consigna"),
                 ("+ Consigna", lambda: self._new_var("setpoint"), "Parámetro establecido sin medición"),
                 ("+ Texto", lambda: self._new_var("text"), "Texto, p. ej. el nombre de la receta"),
+                ("+ Fórmula", self._new_formula, "Variable calculada con otras, p. ej. «vel / rpm» o "
+                 "«max(z1, z2, z3) - min(z1, z2, z3)»"),
                 ("+ Selector", lambda: self._new_var("selector"),
                  "Selector, interruptor o indicador: se reconoce su estado por imagen (ON/OFF, AUTO/MAN…)")):
             b = QPushButton(text)
@@ -313,6 +318,11 @@ class SetupDialog(QDialog):
                                  "Recuerda la que funciona para esta variable.")
         self.chk_trend = QCheckBox("Analizar tendencia")
         self.lbl_region = QLabel()
+        self.ed_formula = QLineEdit()
+        self.ed_formula.setPlaceholderText("p. ej. vel / rpm   ·   {z1} - {z1_sp}   ·   max(z1, z2) - min(z1, z2)")
+        self.ed_formula.setToolTip("Usa los ID de las variables. Funciones: abs, min, max, avg, round, sqrt, log, "
+                                   "exp, pow, clamp, si(cond, a, b). Operadores + - * / ** % y comparaciones.")
+        self.ed_formula.editingFinished.connect(self._commit_var)
         for label, wdg in (("ID", self.ed_id), ("Nombre", self.ed_name), ("Unidad", self.ed_unit),
                            ("Tipo", self.cmb_kind), ("Pestaña", self.cmb_page),
                            ("Consigna vinculada", self.cmb_sp), ("Decimales", self.sp_dec),
@@ -321,7 +331,7 @@ class SetupDialog(QDialog):
                            ("Salto máx. entre lecturas", self.ed_step), ("Contraste", self.cmb_invert),
                            ("", self.chk_auto), ("Escala OCR", self.sp_scale), ("Umbral binario", self.sp_thr),
                            ("", self.chk_border),
-                           ("", self.chk_trend), ("Región", self.lbl_region)):
+                           ("", self.chk_trend), ("Región", self.lbl_region), ("Fórmula", self.ed_formula)):
             f.addRow(label, wdg)
         for wdg in (self.ed_id, self.ed_name, self.ed_unit, self.ed_vmin, self.ed_vmax, self.ed_step):
             wdg.editingFinished.connect(self._commit_var)
@@ -493,6 +503,8 @@ class SetupDialog(QDialog):
                 regions.append((f"page:{p.id}", f"[{p.name}]", p.anchor, PAGE_COLOR))
         selected_vars = set(self._selected("var")) | {self._current_var}
         for v in self.config.variables:
+            if not v.screen:
+                continue
             if show(v.page) or v.id in selected_vars:
                 # Solo se rotula la selección: en HMI densos las etiquetas se encimarían.
                 label = v.name if v.id in selected_vars else ""
@@ -814,6 +826,8 @@ class SetupDialog(QDialog):
         self.chk_trend.setChecked(v.trend)
         self.sp_state_thr.setValue(v.state_threshold)
         self._refresh_states(v)
+        self.ed_formula.setText(v.formula)
+        self.ed_formula.setEnabled(v.kind == "formula")
         r = v.region
         self.lbl_region.setText(f"x={r.x} y={r.y} {r.w}×{r.h}")
         self._loading = False
@@ -844,7 +858,7 @@ class SetupDialog(QDialog):
                 ocr=OcrOptions(invert=self.cmb_invert.currentData(), scale=self.sp_scale.value(),
                                threshold=None if self.sp_thr.value() < 0 else self.sp_thr.value(),
                                clear_border=self.chk_border.isChecked(), auto=self.chk_auto.isChecked()),
-                trend=self.chk_trend.isChecked(), states=list(old.states),
+                trend=self.chk_trend.isChecked(), states=list(old.states), formula=self.ed_formula.text().strip(),
                 state_threshold=self.sp_state_thr.value())
         except ValueError as exc:
             self.lbl_result.setText(f"<span style='color:#e53935'>Valor inválido: {exc}</span>")
@@ -883,7 +897,7 @@ class SetupDialog(QDialog):
         if kind == "setpoint":
             base += "_sp"
         vid = _unique(base, {v.id for v in self.config.variables})
-        return Variable(id=vid, name=name, kind=kind, region=region, page=page, trend=kind == "actual")
+        return Variable(id=vid, name=name, kind=kind, region=region, page=page, trend=kind in ("actual", "formula"))
 
     def _new_var(self, kind: str) -> None:
         r = self._need_selection()
@@ -1038,9 +1052,12 @@ class SetupDialog(QDialog):
         if self.config.general.recipe_name_var in all_vars:
             self.config.general.recipe_name_var = None
         self.config.pages = [p for p in self.config.pages if p.id not in page_ids]
-        self.config.tour.steps = [st for st in self.config.tour.steps if st.page not in page_ids]
-        if self.config.tour.home_page in page_ids:
-            self.config.tour.home_page = None
+        for t in self.config.tours:
+            t.steps = [st for st in t.steps if st.page not in page_ids]
+            for attr in ("start_page", "return_page", "off_page"):
+                if getattr(t, attr) in page_ids:
+                    setattr(t, attr, None)
+        self.tour_tab.reload()
         for pid in page_ids:
             self.anchors.pop(pid, None)
         self.removed_pages |= page_ids
@@ -1110,9 +1127,49 @@ class SetupDialog(QDialog):
         from .behavior_dialog import BehaviorDialog
         pre = [vid for vid in self._selected("var") if (v := self.config.variable(vid)) and v.numeric]
         BehaviorDialog(self.ctx, self, preselect=pre, config=self.config).exec()
+        self.ctx.engine.save_profile()
+
+    def _new_formula(self) -> None:
+        page = self._context_page()
+        name, ok = QInputDialog.getText(self, "Nueva fórmula", "Nombre de la variable calculada:")
+        if not ok or not name.strip():
+            return
+        ids = ", ".join(v.id for v in self.config.variables if v.numeric)
+        expr, ok = QInputDialog.getText(self, "Fórmula", f"Expresión (usa los ID):\n{ids[:600]}")
+        if not ok or not expr.strip():
+            return
+        var = self._make_var("formula", name.strip(), Rect(x=0, y=0, w=1, h=1), page)
+        var.formula = expr.strip()
+        self.config.variables.append(var)
+        self._refresh_tree(("var", var.id))
+
+    def _test_formula(self, v: Variable) -> None:
+        from ..analysis.formula import FormulaError, compile_formula
+        self.lbl_crop.clear()
+        self.lbl_bin.clear()
+        try:
+            f = compile_formula(v.formula, {x.id for x in self.config.variables} - {v.id})
+        except FormulaError as exc:
+            self.lbl_result.setText(f"<span style='color:#e53935'>{exc}</span>")
+            return
+        snap = self.ctx.engine.last
+        values = {}
+        if snap is not None:
+            values = {k: st.reading.value for k, st in snap.statuses.items() if st.reading.value is not None}
+        missing = [d for d in f.deps if d not in values]
+        if missing:
+            self.lbl_result.setText(f"Fórmula válida. Usa: {', '.join(f.deps)}. Para ver el resultado "
+                                    f"inicia el monitoreo (faltan: {', '.join(missing)}).")
+            return
+        res = f.evaluate(values)
+        self.lbl_result.setText(f"Fórmula válida → <b>{'no válido' if res is None else f'{res:.6g}'}</b> "
+                                f"con los valores actuales ({', '.join(f'{d}={values[d]:g}' for d in f.deps)})")
 
     def _test_ocr(self) -> None:
         v = self.config.variable(self._current_var) if self._current_var else None
+        if v is not None and v.kind == "formula":
+            self._test_formula(v)
+            return
         if v is None or self.frame is None:
             return
         img = crop(self.frame, v.region)
@@ -1233,11 +1290,12 @@ class SetupDialog(QDialog):
     # --- guardar -------------------------------------------------------------------------
     def _save(self) -> None:
         self._commit_general()
-        problems = self.config.validate_references() + self.oee_tab.commit()
+        problems = self.tour_tab.commit() + self.oee_tab.commit()
+        problems = self.config.validate_references() + problems
         missing = [p.name for p in self.config.pages if p.anchor is not None and p.id not in self.anchors]
         if missing:
             problems.append(f"Pestañas sin imagen ancla: {', '.join(missing)}")
-        no_patch = [c for c in self.config.tour.all_clicks() if c.id not in self.tour_tab.patches]
+        no_patch = [c for c in self.config.all_tour_clicks() if c.id not in self.tour_tab.patches]
         if no_patch:
             problems.append(f"Recorrido: {len(no_patch)} clics sin imagen del botón; vuelve a grabarlos")
         if problems:
@@ -1262,7 +1320,7 @@ class SetupDialog(QDialog):
         for f in ws.selectors_dir.glob("*.png"):
             if f.name not in keep:
                 f.unlink()
-        used = {c.id for c in self.config.tour.all_clicks()}
+        used = {c.id for c in self.config.all_tour_clicks()}
         for cid, img in self.tour_tab.patches.items():
             if cid in used:
                 save_png(ws.click_patch_file(cid), img)

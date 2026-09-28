@@ -13,9 +13,11 @@ from typing import Optional
 import numpy as np
 
 RUNNING, SLOW, STOPPED, MICROSTOP, UNKNOWN = "running", "slow", "stopped", "microstop", "unknown"
+# Hueco sin datos que, al volver la lectura con todo en parámetros, se considera productivo.
+ASSUMED = "assumed"
 STATE_LABELS = {RUNNING: "En marcha", SLOW: "Lento", MICROSTOP: "Microparo", STOPPED: "Paro",
-                UNKNOWN: "Sin datos"}
-STATE_ORDER = [RUNNING, SLOW, MICROSTOP, STOPPED, UNKNOWN]
+                ASSUMED: "Sin datos (productivo)", UNKNOWN: "Sin datos"}
+STATE_ORDER = [RUNNING, ASSUMED, SLOW, MICROSTOP, STOPPED, UNKNOWN]
 
 
 @dataclass
@@ -100,7 +102,7 @@ def compute(samples: list[OeeSample], start: float, end: float, microstop_s: flo
         row_iv.append(len(raw) - 1)
     # Un arranque/frenado momentáneo entre dos paros (ruido cerca de 0) forma parte del paro.
     for i in range(1, len(raw) - 1):
-        if (raw[i].state != STOPPED and raw[i].duration < blip_s
+        if (raw[i].state not in (STOPPED, ASSUMED) and raw[i].duration < blip_s
                 and raw[i - 1].state == STOPPED and raw[i + 1].state == STOPPED):
             raw[i].state = STOPPED
     merged: list[Interval] = []

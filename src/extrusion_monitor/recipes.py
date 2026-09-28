@@ -84,6 +84,9 @@ def _slug(name: str) -> str:
     return s or "receta"
 
 
+recipe_slug = _slug
+
+
 def normalize_name(name: str) -> str:
     """Normalización usada para emparejar el nombre leído del HMI con la receta."""
     return re.sub(r"[^A-Z0-9]", "", name.upper())
@@ -132,3 +135,7 @@ class RecipeStore:
         path = self.directory / f"{_slug(name)}.json"
         if path.exists():
             path.unlink()
+        prof = self.directory / f"{_slug(name)}.profile"
+        if prof.exists():
+            import shutil
+            shutil.rmtree(prof)

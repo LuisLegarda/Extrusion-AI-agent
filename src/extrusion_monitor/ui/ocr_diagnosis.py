@@ -38,7 +38,7 @@ class DiagnosisDialog(QDialog):
         reader = RobustReader(engine)
         counts = {"OK": 0, "Débil": 0, "Falla": 0}
         for v in config.variables:
-            if not v.numeric or not (v.page is None or v.page in visible):
+            if not v.numeric or not v.screen or not (v.page is None or v.page in visible):
                 continue
             QApplication.processEvents()
             res = reader.read_number(crop(frame, v.region), v, None, lambda _: True, exhaustive=True)

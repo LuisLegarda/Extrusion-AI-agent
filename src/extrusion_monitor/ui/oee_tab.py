@@ -54,6 +54,12 @@ class OeeTab(QWidget):
                                     ("km/h", 1000 / 60, "m")):
             self.cmb_unit.addItem(label, (factor, unit))
         f.addRow("Unidad de la velocidad", self.cmb_unit)
+        self.chk_gap = QCheckBox("Tiempo sin datos cuenta como productivo si al volver todo está en parámetros")
+        f.addRow(self.chk_gap)
+        self.sp_gap = QDoubleSpinBox()
+        self.sp_gap.setRange(0, 1440)
+        self.sp_gap.setSuffix(" min")
+        f.addRow("…hasta un hueco de", self.sp_gap)
         lay.addLayout(f)
 
         q = QGroupBox("Calidad")
@@ -87,7 +93,7 @@ class OeeTab(QWidget):
         self.cmb_speed.clear()
         self.cmb_speed.addItem("— elegir —", None)
         for v in cfg.variables:
-            if v.kind == "actual":
+            if v.measured:
                 self.cmb_speed.addItem(cfg.var_label(v) + (f" [{v.unit}]" if v.unit else ""), v.id)
         self.cmb_speed.setCurrentIndex(max(0, self.cmb_speed.findData(o.speed_var)))
         self.sp_stop.setValue(o.stop_threshold)
@@ -110,6 +116,8 @@ class OeeTab(QWidget):
         self._fill_states()
         self.cmb_qstate.setCurrentIndex(max(0, self.cmb_qstate.findData(o.quality_good_state)))
         self.chk_strict.setChecked(o.strict_quality)
+        self.chk_gap.setChecked(o.gap_productive)
+        self.sp_gap.setValue(o.gap_productive_max_s / 60)
         self.ed_shifts.setText(", ".join(o.shift_starts))
 
     def _fill_states(self) -> None:
@@ -132,6 +140,8 @@ class OeeTab(QWidget):
         o.quality_selector = self.cmb_qsel.currentData()
         o.quality_good_state = self.cmb_qstate.currentData()
         o.strict_quality = self.chk_strict.isChecked()
+        o.gap_productive = self.chk_gap.isChecked()
+        o.gap_productive_max_s = self.sp_gap.value() * 60
         o.shift_starts = [s.strip() for s in self.ed_shifts.text().split(",") if s.strip()] or o.shift_starts
         problems = []
         if o.enabled:

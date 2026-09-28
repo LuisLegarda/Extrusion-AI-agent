@@ -33,6 +33,8 @@ class RecipeDialog(QDialog):
         self.recipes: dict[str, Recipe] = {n: ctx.recipes.get(n).model_copy(deep=True)
                                            for n in ctx.recipes.names()}
         self.deleted: set[str] = set()
+        # Perfiles a crear al guardar: receta -> receta de la que se copia (None = configuración actual)
+        self.profile_from: dict[str, Optional[str]] = {}
         self.current: Optional[str] = None
         self._build()
         self._refresh_list()
@@ -72,6 +74,11 @@ class RecipeDialog(QDialog):
         row = QHBoxLayout()
         b = QPushButton("Tomar valores actuales del HMI como nominales")
         b.clicked.connect(self._from_live)
+        row.addWidget(b)
+        b = QPushButton("📦 Guardar la configuración actual en esta receta")
+        b.setToolTip("La receta guarda todo: variables, pantallas, recorridos, OEE, reportes y comportamientos. "
+                     "Al cargarla se restaura esa configuración.")
+        b.clicked.connect(self._snapshot)
         row.addWidget(b)
         row.addStretch()
         rl.addLayout(row)
@@ -209,6 +216,7 @@ class RecipeDialog(QDialog):
         if name:
             self._commit()
             self.recipes[name] = Recipe(name=name)
+            self.profile_from[name] = None
             self.deleted.discard(name)
             self._refresh_list(name)
 
@@ -220,6 +228,7 @@ class RecipeDialog(QDialog):
             copy = self.recipes[self.current].model_copy(deep=True)
             copy.name = name
             self.recipes[name] = copy
+            self.profile_from[name] = self.profile_from.get(self.current, self.current)
             self.deleted.discard(name)
             self._refresh_list(name)
 
@@ -230,6 +239,7 @@ class RecipeDialog(QDialog):
         if name:
             r = self.recipes.pop(self.current)
             self.deleted.add(self.current)
+            self.profile_from[name] = self.profile_from.pop(self.current, self.current)
             r.name = name
             self.recipes[name] = r
             self.current = None
@@ -260,6 +270,7 @@ class RecipeDialog(QDialog):
             return
         self._commit()
         self.recipes[name] = recipe
+        self.profile_from[name] = None
         self.deleted.discard(name)
         self._refresh_list(name)
 
@@ -269,6 +280,13 @@ class RecipeDialog(QDialog):
         path, _ = QFileDialog.getSaveFileName(self, "Exportar receta", f"{self.current}.csv", "CSV (*.csv)")
         if path:
             Path(path).write_text(recipe_to_csv(self.recipes[self.current]), encoding="utf-8-sig")
+
+    def _snapshot(self) -> None:
+        if not self.current:
+            return
+        self.profile_from[self.current] = None
+        QMessageBox.information(self, "Configuración", f"Al guardar, «{self.current}» tendrá la configuración "
+                                "actual completa (variables, pantallas, recorridos, OEE, reportes y comportamientos).")
 
     def _from_live(self) -> None:
         snap = self.ctx.engine.last
@@ -288,10 +306,22 @@ class RecipeDialog(QDialog):
     def _save(self) -> None:
         if not self._commit():
             return
+        from .. import profiles
+        ws = self.ctx.workspace
+        # Primero se copian los perfiles (renombrar/duplicar usan el perfil de origen) y luego se borran.
+        for name, src in self.profile_from.items():
+            if name not in self.recipes:
+                continue
+            if src is not None and profiles.has_profile(ws, src):
+                profiles.copy_profile(ws, src, name)
+            else:
+                profiles.save_profile(ws, name, self.ctx.config)
         store = self.ctx.recipes
         for name in self.deleted:
             if name not in self.recipes:
                 store.delete(name)
         for recipe in self.recipes.values():
             store.save(recipe)
+            if not profiles.has_profile(ws, recipe.name):
+                profiles.save_profile(ws, recipe.name, self.ctx.config)
         self.accept()

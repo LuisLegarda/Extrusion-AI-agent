@@ -9,6 +9,7 @@ from .capture import FrameSource, ScreenSource, crop, save_png
 from .config import AppConfig, Workspace
 from .engine import MonitorEngine
 from .ocr import TemplateOcr, create_engine
+from .profiles import ensure_profiles
 from .recipes import RecipeStore
 from .storage import Historian
 
@@ -37,6 +38,7 @@ def build(home: Optional[Path] = None, demo: bool = False, source: Optional[Fram
     extra = {k: v for k, v in (("clock", clock), ("sleep", sleep)) if v is not None}
     engine = MonitorEngine(ws, config, recipes, source, ocr, Historian(ws.history_db),
                            clicker=make_clicker(source), **extra)
+    ensure_profiles(ws, recipes)
     state = ws.load_state()
     engine.state.auto_recipe = bool(state.get("auto_recipe", True))
     if state.get("recipe") in recipes.names():

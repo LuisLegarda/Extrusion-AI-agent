@@ -14,7 +14,7 @@ from typing import Callable, Optional
 import numpy as np
 from PIL import Image, ImageDraw, ImageFont
 
-from .config import AppConfig, Click, GeneralSettings, OeeSettings, OcrOptions, Page, Rect, TourSettings, TourStep, Variable
+from .config import AppConfig, Click, GeneralSettings, OeeSettings, OcrOptions, Page, Rect, TourDef, TourStep, Variable
 from .recipes import Limit, Recipe
 
 W, H = 1280, 800
@@ -292,13 +292,18 @@ def demo_config() -> AppConfig:
                 decimals=v.decimals, ocr=ocr, valid_min=0, valid_max=v.nominal * 3,
                 max_step=max(v.alarm * 4, v.nominal * 0.2)))
 
+    variables.append(Variable(id="rendimiento", name="Metros por vuelta", unit="m/rev", kind="formula",
+                              formula="si(rpm > 0, vel / rpm, 0)", decimals=2, trend=True,
+                              region=Rect(x=0, y=0, w=1, h=1)))
+
     def click(cid: str, page_id: str) -> Click:
         x, y = nav_center(page_id)
         return Click(id=cid, x=x, y=y)
 
-    tour = TourSettings(
-        enabled=True, home_page="principal", interval_s=15, idle_required_s=5, home_settle_s=0.5,
-        home_clicks=[click("home", "principal")],
+    tour = TourDef(
+        id="lectura", name="Lectura de pestañas", enabled=True, start_page="principal", return_page="principal",
+        interval_s=15, idle_required_s=5, return_settle_s=0.5,
+        return_clicks=[click("home", "principal")],
         steps=[TourStep(id="s_ext1", page="ext1", clicks=[click("c_ext1", "ext1")], settle_s=0.5),
                TourStep(id="s_linea", page="linea", clicks=[click("c_linea", "linea")], settle_s=0.5)])
     return AppConfig(
@@ -309,7 +314,7 @@ def demo_config() -> AppConfig:
         pages=[Page(id=pid, name=label.capitalize() if pid != "ext1" else label, anchor=nav_rect(pid))
                for pid, label in SIM_PAGES],
         variables=variables,
-        tour=tour,
+        tours=[tour],
         oee=OeeSettings(enabled=True, speed_var="vel", nominal_source="recipe", microstop_s=60,
                         quality_mode="both", quality_selector="inyeccion", quality_good_state="ON"),
     )
@@ -327,7 +332,7 @@ def demo_click_patches(sim: HmiSimulator, config: AppConfig) -> dict[str, np.nda
     sim.page = "linea"
     on_linea = sim.render()
     sim.page = saved
-    for c in config.tour.all_clicks():
+    for c in config.all_tour_clicks():
         frame = on_linea if c.id == "home" else on_home
         out[c.id] = crop(frame, click_rect(c)).copy()
     return out
