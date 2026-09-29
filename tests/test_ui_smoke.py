@@ -222,10 +222,12 @@ def test_trend_range_and_auto_y(ctx):
 
     from extrusion_monitor.ui.main_window import MainWindow, y_range
     # Límites 100 ± 5: con un pico en pantalla la escala lo incluye; sin él vuelve a los límites.
-    lo, hi = y_range(np.array([100.0, 101, 99]), 100, 2, 5)
+    lo, hi = y_range(np.array([100.0, 101, 99]), [95, 105, 100])
     assert 93 < lo < 95 and 105 < hi < 107
-    lo, hi = y_range(np.array([100.0, 160, 99]), 100, 2, 5)
+    lo, hi = y_range(np.array([100.0, 160, 99]), [95, 105, 100])
     assert hi > 160
+    lo, hi = y_range(np.array([2.0, 3.0]), [None, 5.0])  # solo máximo
+    assert lo < 2 and 5 < hi < 6
     ctx.engine.sleep = lambda s: None
     win = MainWindow(ctx)
     for _ in range(4):

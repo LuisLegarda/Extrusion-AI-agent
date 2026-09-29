@@ -1332,5 +1332,8 @@ class SetupDialog(QDialog):
         for f in ws.clicks_dir.glob("*.png"):
             if f.stem not in used:
                 f.unlink()
+        if self.frame is not None:
+            h, w = self.frame.shape[:2]
+            self.config.general.screen_size = [int(w), int(h)]  # resolución con la que se marcaron las regiones
         ws.save_config(self.config)
         self.accept()

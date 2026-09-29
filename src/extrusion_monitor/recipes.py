@@ -6,24 +6,44 @@ import io
 import os
 import re
 from pathlib import Path
-from typing import Literal, Optional
+from typing import Literal, NamedTuple, Optional
 
 from pydantic import BaseModel, Field
+
+
+class Bounds(NamedTuple):
+    """Límites absolutos; None = sin límite de ese lado."""
+
+    wl: Optional[float] = None  # aviso bajo
+    wh: Optional[float] = None  # aviso alto
+    al: Optional[float] = None  # alarma baja
+    ah: Optional[float] = None  # alarma alta
+
+    @property
+    def any(self) -> bool:
+        return any(v is not None for v in self)
 
 
 class Limit(BaseModel):
     nominal: Optional[float] = None
     warn: Optional[float] = Field(None, ge=0)
     alarm: Optional[float] = Field(None, ge=0)
-    # "abs" = tolerancia en unidades de la variable, "pct" = porcentaje del valor de referencia.
-    mode: Literal["abs", "pct"] = "abs"
+    # "abs" = ± en unidades de la variable, "pct" = ± % del valor de referencia,
+    # "range" = límites mínimo / máximo absolutos (pueden ser de un solo lado).
+    mode: Literal["abs", "pct", "range"] = "abs"
+    warn_min: Optional[float] = None
+    warn_max: Optional[float] = None
+    alarm_min: Optional[float] = None
+    alarm_max: Optional[float] = None
     # Para variables reales: comparar contra la receta o contra la consigna leída del HMI.
     reference: Literal["recipe", "setpoint"] = "recipe"
     # Selectores: estado esperado (p. ej. «ON»).
     expected: Optional[str] = None
 
     def band(self, reference: float) -> tuple[Optional[float], Optional[float]]:
-        """Tolerancias absolutas (aviso, alarma) para un valor de referencia."""
+        """Tolerancias ± absolutas (aviso, alarma) para un valor de referencia (modos ±)."""
+        if self.mode == "range":
+            return None, None
 
         def conv(t: Optional[float]) -> Optional[float]:
             if t is None:
@@ -31,6 +51,46 @@ class Limit(BaseModel):
             return abs(reference) * t / 100.0 if self.mode == "pct" else t
 
         return conv(self.warn), conv(self.alarm)
+
+    @property
+    def active(self) -> bool:
+        """La variable se verifica (tiene nominal o límites)."""
+        if self.mode == "range":
+            return Bounds(self.warn_min, self.warn_max, self.alarm_min, self.alarm_max).any
+        return self.nominal is not None or self.reference == "setpoint"
+
+    def center(self) -> Optional[float]:
+        """Valor objetivo: el nominal o, en mín/máx sin nominal, el centro del rango."""
+        if self.nominal is not None or self.mode != "range":
+            return self.nominal
+        for lo, hi in ((self.alarm_min, self.alarm_max), (self.warn_min, self.warn_max)):
+            if lo is not None and hi is not None:
+                return (lo + hi) / 2
+        return None
+
+    def bounds(self, reference: Optional[float]) -> Bounds:
+        """Límites absolutos (en mín/máx no dependen de la referencia)."""
+        if self.mode == "range":
+            return Bounds(self.warn_min, self.warn_max, self.alarm_min, self.alarm_max)
+        if reference is None:
+            return Bounds()
+        warn, alarm = self.band(reference)
+        return Bounds(None if warn is None else reference - warn, None if warn is None else reference + warn,
+                      None if alarm is None else reference - alarm, None if alarm is None else reference + alarm)
+
+    def check(self) -> Optional[str]:
+        """Error de coherencia de los límites (None si están bien)."""
+        if self.mode == "range":
+            for lo, hi, name in ((self.warn_min, self.warn_max, "aviso"), (self.alarm_min, self.alarm_max, "alarma")):
+                if lo is not None and hi is not None and lo > hi:
+                    return f"el mínimo de {name} es mayor que el máximo"
+            if self.warn_min is not None and self.alarm_min is not None and self.warn_min < self.alarm_min:
+                return "el mínimo de aviso debe estar dentro del rango de alarma"
+            if self.warn_max is not None and self.alarm_max is not None and self.warn_max > self.alarm_max:
+                return "el máximo de aviso debe estar dentro del rango de alarma"
+        elif self.warn is not None and self.alarm is not None and self.warn > self.alarm:
+            return "la tolerancia de aviso debe ser menor o igual que la de alarma"
+        return None
 
 
 class Recipe(BaseModel):
@@ -41,7 +101,8 @@ class Recipe(BaseModel):
     limits: dict[str, Limit] = Field(default_factory=dict)
 
 
-CSV_FIELDS = ["variable", "nominal", "warn", "alarm", "mode", "reference", "expected"]
+CSV_FIELDS = ["variable", "nominal", "warn", "alarm", "mode", "warn_min", "warn_max", "alarm_min", "alarm_max",
+              "reference", "expected"]
 
 
 def recipe_to_csv(recipe: Recipe) -> str:
@@ -73,6 +134,8 @@ def recipe_from_csv(name: str, text: str) -> Recipe:
             warn=num("warn"),
             alarm=num("alarm"),
             mode=(row.get("mode") or "abs").strip() or "abs",
+            warn_min=num("warn_min"), warn_max=num("warn_max"),
+            alarm_min=num("alarm_min"), alarm_max=num("alarm_max"),
             reference=(row.get("reference") or "recipe").strip() or "recipe",
             expected=(row.get("expected") or "").strip() or None,
         )

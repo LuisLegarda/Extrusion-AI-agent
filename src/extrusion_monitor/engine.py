@@ -15,7 +15,7 @@ from .config import AppConfig, Workspace
 from .ocr import OcrEngine
 from .analysis.behavior import BehaviorMonitor, BehaviorStore
 from .analysis.oee import ASSUMED, RUNNING, SLOW, OeeSample, classify
-from .capture import load_png
+from .capture import ScreenUnavailable, load_png
 from .navigation import Clicker, TourResult, TourRunner, UnavailableClicker
 from .pages import PageDetector
 from .profiles import apply_profile, has_profile, save_profile
@@ -82,6 +82,8 @@ class MonitorEngine:
         self._stored_val: dict[str, tuple] = {}
         self._oee_last_ts: Optional[float] = None
         self._last_pages: set[str] = set()
+        self._screen_problem: Optional[str] = None
+        self._good_size: Optional[tuple[int, int]] = None
         self._skip_msgs: dict[str, str] = {}
         self.last_tour_result: Optional[TourResult] = None
         self.scheduler = TourScheduler(config, clock)
@@ -244,6 +246,32 @@ class MonitorEngine:
         with self._data_lock:
             return self.scheduler.pending_prompts()
 
+    def _check_screen(self, frame):
+        """La captura debe tener la resolución con la que se configuraron las regiones."""
+        # Resolución de referencia: la del configurador o, en configuraciones anteriores, la última
+        # con la que se reconocieron las pantallas del HMI.
+        size = self.config.general.screen_size or self._good_size
+        h, w = frame.shape[:2]
+        if size and (w, h) != (size[0], size[1]):
+            raise ScreenUnavailable(
+                f"la resolución actual es {w}×{h} y las regiones se configuraron en {size[0]}×{size[1]}; "
+                "conéctate al HMI con esa resolución (en Escritorio remoto: Mostrar → Configuración de pantalla)")
+        return frame
+
+    def _screen_state(self, problem: Optional[str]) -> None:
+        """Registra una sola vez cuándo se pierde y cuándo se recupera la pantalla."""
+        if problem == self._screen_problem:
+            return
+        now = self.clock()
+        if problem is not None:
+            log.warning("Pantalla no disponible: %s", problem)
+            self._pending_events.append(Event(now, "screen", Level.WARN, "PANTALLA", "",
+                                              f"Pantalla no disponible: {problem}. Se conservan los últimos datos."))
+        elif self._screen_problem is not None:
+            self._pending_events.append(Event(now, "screen", Level.INFO, "PANTALLA", "",
+                                              "Pantalla disponible de nuevo: se reanuda la lectura"))
+        self._screen_problem = problem
+
     def _run_job(self, job: TourJob, pages: set[str]) -> Optional[TourResult]:
         tour = self.config.get_tour(job.tour_id)
         if tour is None or not tour.steps:
@@ -277,7 +305,8 @@ class MonitorEngine:
             readings = self.acquirer.readings
             try:
                 job = None
-                if not self.tour_paused:
+                # Con la pantalla no disponible (sesión bloqueada o remota desconectada) no hay recorridos.
+                if not self.tour_paused and self._screen_problem is None:
                     with self._data_lock:
                         for msg in self.scheduler.update(now, self._last_pages, readings):
                             self._pending_events.append(Event(now, "tour_prompt", Level.INFO, "RECORRIDO", "", msg))
@@ -288,9 +317,15 @@ class MonitorEngine:
                     readings = self.acquirer.readings
                     now = self.clock()
                 else:
-                    frame = self.source.grab()
+                    frame = self._check_screen(self.source.grab())
                     pages, readings = self.acquirer.read(frame, now)
+                    if pages and any(p.anchor is not None for p in self.config.pages if p.id in pages):
+                        self._good_size = (frame.shape[1], frame.shape[0])
                 self._last_pages = set(pages)
+                self._screen_state(None)
+            except ScreenUnavailable as exc:
+                error = f"Pantalla no disponible: {exc}"
+                self._screen_state(str(exc))
             except Exception as exc:
                 log.exception("Fallo de captura")
                 error = f"Fallo de captura: {exc}"
@@ -313,7 +348,9 @@ class MonitorEngine:
                 findings=findings, events=events, recipe=self.state.recipe, ocr_engine=self.ocr.name,
                 error=error, overall=overall, read_ok=sum(r.ok for r in visible), read_total=len(visible),
                 tour=tour_result, prompts=self.pending_prompts())
-            self._record_oee(snap)
+            if self._screen_problem is None:
+                # Sin pantalla no hay observación: queda como hueco (productivo si al volver todo está bien).
+                self._record_oee(snap)
             self._store(snap)
             self.last = snap
             self._check_reports(snap, readings)
@@ -369,10 +406,8 @@ class MonitorEngine:
     def _report_limits(self, snap: Snapshot) -> dict[str, VarLimits]:
         out = {}
         for vid, st in snap.statuses.items():
-            lim = VarLimits(target=st.reference, expected=st.expected)
-            if st.reference is not None and st.alarm_band is not None:
-                lim.lsl, lim.usl = st.reference - st.alarm_band, st.reference + st.alarm_band
-            out[vid] = lim
+            # Especificación = límites de alarma (± o mín/máx de la receta).
+            out[vid] = VarLimits(lsl=st.bounds.al, usl=st.bounds.ah, target=st.reference, expected=st.expected)
         return out
 
     def _report_done(self, job: ReportJob, out: ReportOutput) -> None:
@@ -514,8 +549,8 @@ def oee_sample(config: AppConfig, snap: Snapshot, recipe: Optional[Recipe],
     if nominal is None and recipe is not None and var is not None:
         for vid in (var.id, var.setpoint_var):
             lim = recipe.limits.get(vid) if vid else None
-            if lim is not None and lim.nominal is not None:
-                nominal = lim.nominal
+            if lim is not None and lim.center() is not None:
+                nominal = lim.center()
                 break
     state = classify(speed, nominal, o.stop_threshold, o.slow_pct)
     min_level = Level.WARN if o.strict_quality else Level.ALARM

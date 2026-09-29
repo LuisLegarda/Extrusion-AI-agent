@@ -5,6 +5,7 @@ from pathlib import Path
 from typing import Optional
 
 from PySide6.QtCore import Qt
+from PySide6.QtGui import QBrush, QColor
 from PySide6.QtWidgets import (
     QComboBox, QDialog, QDialogButtonBox, QFileDialog, QFormLayout, QHBoxLayout, QHeaderView,
     QInputDialog, QLabel, QLineEdit, QListWidget, QMessageBox, QPushButton, QSplitter, QTableWidget,
@@ -14,8 +15,13 @@ from PySide6.QtWidgets import (
 from ..bootstrap import AppContext
 from ..recipes import Limit, Recipe, recipe_from_csv, recipe_to_csv
 
-COLS = ["Variable", "Tipo", "Nominal", "Aviso ±", "Alarma ±", "Modo", "Comparar contra"]
-C_VAR, C_KIND, C_NOM, C_WARN, C_ALARM, C_MODE, C_REF = range(7)
+COLS = ["Variable", "Tipo", "Nominal", "Modo", "Aviso ±", "Alarma ±", "Aviso mín", "Aviso máx", "Alarma mín",
+        "Alarma máx", "Comparar contra"]
+C_VAR, C_KIND, C_NOM, C_MODE, C_WARN, C_ALARM, C_WMIN, C_WMAX, C_AMIN, C_AMAX, C_REF = range(11)
+PM_COLS = (C_WARN, C_ALARM)
+RANGE_COLS = (C_WMIN, C_WMAX, C_AMIN, C_AMAX)
+NUM_FIELDS = {C_NOM: "nominal", C_WARN: "warn", C_ALARM: "alarm", C_WMIN: "warn_min", C_WMAX: "warn_max",
+              C_AMIN: "alarm_min", C_AMAX: "alarm_max"}
 KIND_TEXT = {"actual": "real", "setpoint": "consigna", "selector": "selector"}
 
 
@@ -63,8 +69,12 @@ class RecipeDialog(QDialog):
         form.addRow("Descripción", self.ed_desc)
         form.addRow("Datos del producto", self.ed_meta)
         rl.addLayout(form)
-        rl.addWidget(QLabel("Deja vacío «Nominal» para no verificar una variable. «Comparar contra consigna» "
-                            "evalúa el valor real frente a la consigna leída del HMI."))
+        hint = QLabel("Modo <b>±</b>: nominal y tolerancias de aviso/alarma (en unidades o en %). "
+                      "Modo <b>mín / máx</b>: límites absolutos; deja vacío un lado para un límite de un solo lado "
+                      "(p. ej. solo máximo). Sin nominal ni límites la variable no se verifica. "
+                      "«Comparar contra consigna» evalúa el valor real frente a la consigna leída del HMI (modo ±).")
+        hint.setWordWrap(True)
+        rl.addWidget(hint)
         self.table = QTableWidget(0, len(COLS))
         self.table.setHorizontalHeaderLabels(COLS)
         self.table.verticalHeader().setVisible(False)
@@ -135,19 +145,22 @@ class RecipeDialog(QDialog):
                     exp.addItem(f"esperado: {st}", st)
                 exp.setCurrentIndex(max(0, exp.findData(lim.expected)))
                 self.table.setCellWidget(row, C_NOM, exp)
-                for c in (C_WARN, C_ALARM, C_MODE, C_REF):
+                for c in range(C_MODE, len(COLS)):
                     cell = QTableWidgetItem("")
                     cell.setFlags(Qt.ItemIsEnabled)
                     self.table.setItem(row, c, cell)
                 continue
-            for c, val in ((C_NOM, lim.nominal), (C_WARN, lim.warn), (C_ALARM, lim.alarm)):
+            for c, attr in NUM_FIELDS.items():
+                val = getattr(lim, attr)
                 cell = QTableWidgetItem("" if val is None else f"{val:g}")
                 cell.setTextAlignment(Qt.AlignRight | Qt.AlignVCenter)
                 self.table.setItem(row, c, cell)
             mode = QComboBox()
-            mode.addItem("absoluta", "abs")
-            mode.addItem("% de la referencia", "pct")
+            mode.addItem("± absoluta", "abs")
+            mode.addItem("± % de la referencia", "pct")
+            mode.addItem("mín / máx", "range")
             mode.setCurrentIndex(max(0, mode.findData(lim.mode)))
+            mode.currentIndexChanged.connect(lambda _=0, r=row: self._mode_changed(r))
             self.table.setCellWidget(row, C_MODE, mode)
             ref = QComboBox()
             ref.addItem("receta", "recipe")
@@ -155,6 +168,25 @@ class RecipeDialog(QDialog):
                 ref.addItem("consigna del HMI", "setpoint")
             ref.setCurrentIndex(max(0, ref.findData(lim.reference)))
             self.table.setCellWidget(row, C_REF, ref)
+            self._mode_changed(row)
+
+    def _mode_changed(self, row: int) -> None:
+        """Habilita las columnas del modo elegido (± o mín/máx) y atenúa las otras."""
+        mode = self.table.cellWidget(row, C_MODE)
+        if mode is None:
+            return
+        is_range = mode.currentData() == "range"
+        for cols, on in ((PM_COLS, not is_range), (RANGE_COLS, is_range)):
+            for c in cols:
+                it = self.table.item(row, c)
+                if it is None:
+                    continue
+                flags = Qt.ItemIsEnabled | Qt.ItemIsSelectable | (Qt.ItemIsEditable if on else Qt.NoItemFlags)
+                it.setFlags(flags)
+                it.setForeground(QBrush(QColor("#000000" if on else "#b0b0b0")))
+        ref = self.table.cellWidget(row, C_REF)
+        if ref is not None:
+            ref.setEnabled(not is_range)
 
     def _commit(self) -> bool:
         recipe = self.recipes.get(self.current) if self.current else None
@@ -178,21 +210,18 @@ class RecipeDialog(QDialog):
                     limits[vid] = Limit(expected=expected)
                 continue
             try:
-                nominal = _num(self.table.item(row, C_NOM).text())
-                warn = _num(self.table.item(row, C_WARN).text())
-                alarm = _num(self.table.item(row, C_ALARM).text())
-                lim = Limit(nominal=nominal, warn=warn, alarm=alarm,
-                            mode=self.table.cellWidget(row, C_MODE).currentData(),
+                vals = {attr: _num(self.table.item(row, c).text()) for c, attr in NUM_FIELDS.items()}
+                lim = Limit(**vals, mode=self.table.cellWidget(row, C_MODE).currentData(),
                             reference=self.table.cellWidget(row, C_REF).currentData())
             except ValueError as exc:
                 QMessageBox.warning(self, "Valor inválido",
                                     f"{self.table.item(row, C_VAR).text()}: {exc}")
                 return False
-            if warn is not None and alarm is not None and warn > alarm:
-                QMessageBox.warning(self, "Tolerancias", f"{self.table.item(row, C_VAR).text()}: "
-                                    "la tolerancia de aviso debe ser menor o igual que la de alarma.")
+            problem = lim.check()
+            if problem:
+                QMessageBox.warning(self, "Tolerancias", f"{self.table.item(row, C_VAR).text()}: {problem}.")
                 return False
-            if nominal is not None or lim.reference == "setpoint":
+            if lim.active:
                 limits[vid] = lim
         # Conserva límites de variables que no están en la configuración actual.
         known = {v.id for v in self._numeric_vars()}

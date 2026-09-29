@@ -79,15 +79,15 @@ class StatsPanel(QWidget):
         if len(y) < 5 or st is None:
             self.lbl.setText("Datos insuficientes: se necesitan al menos 5 lecturas en la ventana de tendencia.")
             return
-        lsl = usl = None
-        if st.reference is not None and st.alarm_band is not None:
-            lsl, usl = st.reference - st.alarm_band, st.reference + st.alarm_band
+        lsl, usl = st.bounds.al, st.bounds.ah  # límites de alarma (± o mín/máx); pueden ser de un solo lado
         cap = capability(y, lsl, usl)
         # Histograma
         bins = min(30, max(8, int(np.sqrt(len(y)))))
         lo, hi = float(y.min()), float(y.max())
         if lsl is not None:
-            lo, hi = min(lo, lsl), max(hi, usl)
+            lo = min(lo, lsl)
+        if usl is not None:
+            hi = max(hi, usl)
         if hi <= lo:
             hi = lo + 1
         counts, edges = np.histogram(y, bins=bins, range=(lo - (hi - lo) * 0.05, hi + (hi - lo) * 0.05))
@@ -119,9 +119,9 @@ class StatsPanel(QWidget):
             _hline(self.ctrl, xb.center, "#9e9e9e", Qt.DashLine, label="LC")
             _hline(self.ctrl, xb.ucl, WARN, label="LCS")
             _hline(self.ctrl, xb.lcl, WARN, label="LCI")
-            if lsl is not None:
-                _hline(self.ctrl, lsl, ALARM, width=1)
-                _hline(self.ctrl, usl, ALARM, width=1)
+            for lim in (lsl, usl):
+                if lim is not None:
+                    _hline(self.ctrl, lim, ALARM, width=1)
 
         def f(v, d=3):
             return "—" if v is None else f"{v:.{d}g}"
@@ -143,7 +143,7 @@ class StatsPanel(QWidget):
             f"fuera de límites estimado = {f(cap.pct_out, 2)} %<br>"
             f"Tendencia = {slope} · tiempo estimado al límite = {eta} · "
             f"reglas SPC: {', '.join(trend.nelson) if trend and trend.nelson else 'ninguna'}"
-            + ("" if lsl is not None else "<br><i>Sin límites de alarma en la receta: no se calcula Cp/Cpk.</i>"))
+            + ("" if lsl is not None or usl is not None else "<br><i>Sin límites de alarma en la receta: no se calcula Cp/Cpk.</i>"))
 
 
 class CorrelationPanel(QWidget):

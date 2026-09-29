@@ -1,13 +1,13 @@
 """Reglas de verificación: ajustes vs. receta, tolerancias, lectura y tendencias."""
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from enum import IntEnum
 from typing import Optional
 
 from ..acquisition import Reading
 from ..config import AppConfig, Variable
-from ..recipes import Recipe, normalize_name
+from ..recipes import Bounds, Recipe, normalize_name
 from .trends import TrendStats, TrendTracker
 
 
@@ -82,6 +82,7 @@ class VarStatus:
     trend: Optional[TrendStats] = None
     fresh: bool = False
     expected: Optional[str] = None  # selector: estado esperado por la receta
+    bounds: Bounds = field(default_factory=Bounds)  # límites absolutos (± o mín/máx)
 
 
 @dataclass
@@ -95,6 +96,27 @@ class _KeyState:
 class _Condition:
     level: Level
     message: str
+
+
+def _half_width(lo: Optional[float], hi: Optional[float], ref: Optional[float]) -> Optional[float]:
+    """Semiancho de una banda (o distancia del objetivo al único límite)."""
+    if lo is not None and hi is not None:
+        return (hi - lo) / 2
+    lim = lo if lo is not None else hi
+    if lim is None:
+        return None
+    return abs(lim - ref) if ref is not None else None
+
+
+def _outside(v: float, lo: Optional[float], hi: Optional[float], ref: Optional[float], k: float) -> bool:
+    """¿v está fuera de [lo, hi]? Con k < 1 (hallazgo activo) la banda se estrecha: histéresis."""
+    if lo is None and hi is None:
+        return False
+    margin = 0.0
+    if k < 1.0:
+        w = _half_width(lo, hi, ref)
+        margin = (1.0 - k) * w if w else 0.0
+    return (hi is not None and v > hi - margin) or (lo is not None and v < lo + margin)
 
 
 def fmt(v: Optional[float], var: Optional[Variable] = None, decimals: Optional[int] = None) -> str:
@@ -196,52 +218,63 @@ class RuleEngine:
                 st.level = Level.OK
                 continue
 
-            ref, src = lim.nominal, "receta"
-            if var.kind == "actual" and lim.reference == "setpoint" and var.setpoint_var:
+            ref, src = lim.center(), "receta"
+            if var.kind == "actual" and lim.reference == "setpoint" and var.setpoint_var and lim.mode != "range":
                 sp = readings.get(var.setpoint_var)
                 if sp is not None and sp.value is not None:
                     ref, src = sp.value, "consigna"
-            if ref is None:
+            if ref is None and lim.mode != "range":
                 st.level = Level.OK
                 continue
-            warn, alarm = lim.band(ref)
+            warn, alarm = lim.band(ref) if ref is not None else (None, None)
+            b = lim.bounds(ref)
             st.reference, st.ref_source = ref, src
-            st.deviation = rd.value - ref
+            st.deviation = rd.value - ref if ref is not None else None
             st.warn_band, st.alarm_band = warn, alarm
-            dev = abs(st.deviation)
+            st.bounds = b
             rule = R_RECIPE if var.kind == "setpoint" else R_TOL
             active = self._state.get((rule, var.id))
             active_level = active.finding.level if active and active.finding else Level.OK
             k_alarm = HYSTERESIS if active_level >= Level.ALARM else 1.0
             k_warn = HYSTERESIS if active_level >= Level.WARN else 1.0
             level = Level.OK
-            if alarm is not None and dev > alarm * k_alarm:
+            if _outside(rd.value, b.al, b.ah, ref, k_alarm):
                 level = Level.ALARM
-            elif warn is not None and dev > warn * k_warn:
+            elif _outside(rd.value, b.wl, b.wh, ref, k_warn):
                 level = Level.WARN
             st.level = level
 
             if level > Level.OK:
-                band = alarm if level == Level.ALARM else warn
-                if var.kind == "setpoint":
+                lo, hi = (b.al, b.ah) if level == Level.ALARM else (b.wl, b.wh)
+                if lim.mode == "range":
+                    limits = ", ".join(p for p in (f"mín {fmt(lo, var)}" if lo is not None else "",
+                                                   f"máx {fmt(hi, var)}" if hi is not None else "") if p)
+                    what = "consigna" if var.kind == "setpoint" else "valor"
+                    msg = f"«{self.config.var_label(var)}»: {what} {fmt(rd.value, var)} {var.unit} fuera de límites ({limits})"
+                    if var.kind == "setpoint":
+                        msg = "Ajuste erróneo " + msg
+                elif var.kind == "setpoint":
+                    band = alarm if level == Level.ALARM else warn
                     msg = (f"Ajuste erróneo «{self.config.var_label(var)}»: consigna {fmt(rd.value, var)} {var.unit}, "
                            f"receta {fmt(ref, var)} (Δ {st.deviation:+.4g}, tolerancia ±{band:.4g})")
-                    conds[(R_RECIPE, var.id)] = _Condition(level, msg)
                 else:
+                    band = alarm if level == Level.ALARM else warn
                     msg = (f"«{self.config.var_label(var)}» fuera de tolerancia: {fmt(rd.value, var)} {var.unit} vs {src} "
                            f"{fmt(ref, var)} (Δ {st.deviation:+.4g}, tolerancia ±{band:.4g})")
-                    conds[(R_TOL, var.id)] = _Condition(level, msg)
+                conds[(rule, var.id)] = _Condition(level, msg)
 
             if var.trend and var.measured:
-                lo = ref - alarm if alarm is not None else None
-                hi = ref + alarm if alarm is not None else None
-                effect = warn if warn is not None else (alarm / 2 if alarm is not None else 0.0)
+                lo, hi = b.al, b.ah
+                effect = _half_width(b.wl, b.wh, ref)
+                if effect is None:
+                    effect = (_half_width(lo, hi, ref) or 0.0) / 2
                 ts = trends.stats(var.id, now, center=ref, lo_limit=lo, hi_limit=hi, min_effect=effect)
                 st.trend = ts
                 enough = ts is not None and ts.span_s >= max(MIN_TREND_SPAN_S, g.trend_window_min * 15)
                 if enough and level < Level.ALARM:
                     if (ts.eta_to_alarm_min is not None and ts.eta_to_alarm_min <= g.trend_horizon_min
-                            and dev >= 0.25 * effect and ts.r2 >= MIN_DRIFT_R2):
+                            and (st.deviation is None or abs(st.deviation) >= 0.25 * effect)
+                            and ts.r2 >= MIN_DRIFT_R2):
                         conds[(R_DRIFT, var.id)] = _Condition(
                             Level.WARN,
                             f"«{self.config.var_label(var)}» tiende a salir de tolerancia en ~{ts.eta_to_alarm_min:.1f} min "
@@ -283,7 +316,16 @@ class RuleEngine:
         msg = f"Cambio de ajuste «{self.config.var_label(var)}»: {fmt(prev, var)} → {fmt(new, var)} {var.unit}"
         level = Level.INFO
         lim = recipe.limits.get(var.id) if recipe else None
-        if lim and lim.nominal is not None:
+        if lim and lim.mode == "range" and lim.active:
+            b = lim.bounds(None)
+            lo = b.wl if b.wl is not None else b.al
+            hi = b.wh if b.wh is not None else b.ah
+            if _outside(new, lo, hi, None, 1.0):
+                level = Level.WARN
+                msg += " (fuera de los límites de la receta)"
+            else:
+                msg += " (dentro de receta)"
+        elif lim and lim.nominal is not None:
             warn, alarm = lim.band(lim.nominal)
             tol = warn if warn is not None else alarm
             if tol is not None and abs(new - lim.nominal) > tol:

@@ -17,19 +17,46 @@ class FrameSource(Protocol):
         ...
 
 
+class ScreenUnavailable(RuntimeError):
+    """La pantalla no se puede capturar (sesión bloqueada, escritorio remoto desconectado…)."""
+
+
+def is_blank(frame: np.ndarray) -> bool:
+    """Captura negra o de un solo color: la sesión está bloqueada o desconectada."""
+    small = frame[::16, ::16]
+    return small.size == 0 or int(small.max()) - int(small.min()) < 6
+
+
 class ScreenSource:
-    """Captura de pantalla con mss (solo lectura, no interactúa con el HMI)."""
+    """Captura de pantalla con mss (solo lectura, no interactúa con el HMI).
+
+    Tras una desconexión del escritorio remoto o un bloqueo de sesión el contexto de captura de
+    Windows queda inválido (capturas negras, errores o geometría vieja): se vuelve a crear solo
+    al detectarlo y periódicamente, para que al regresar la lectura se recupere sin reiniciar.
+    """
+
+    REFRESH_S = 60.0  # se renueva el contexto de captura (y la geometría del monitor) cada minuto
 
     def __init__(self, monitor: int = 1):
         self.monitor = monitor
         self._local = threading.local()
+        self.size_changed = False
 
-    def _mss(self):
+    def _mss(self, renew: bool = False):
+        import time
         inst = getattr(self._local, "mss", None)
+        born = getattr(self._local, "born", 0.0)
+        if inst is not None and (renew or time.monotonic() - born > self.REFRESH_S):
+            try:
+                inst.close()
+            except Exception:
+                pass
+            inst = None
         if inst is None:
             import mss
             inst = mss.mss()
             self._local.mss = inst
+            self._local.born = time.monotonic()
         return inst
 
     def monitors(self) -> list[dict]:
@@ -41,11 +68,27 @@ class ScreenSource:
         m = mons[self.monitor] if self.monitor < len(mons) else mons[1]
         return int(m["left"]), int(m["top"])
 
-    def grab(self) -> np.ndarray:
-        sct = self._mss()
+    def _grab_once(self, renew: bool) -> np.ndarray:
+        sct = self._mss(renew)
         idx = self.monitor if self.monitor < len(sct.monitors) else 1
         shot = sct.grab(sct.monitors[idx])
         return cv2.cvtColor(np.asarray(shot), cv2.COLOR_BGRA2BGR)
+
+    def grab(self) -> np.ndarray:
+        try:
+            frame = self._grab_once(renew=False)
+            if not is_blank(frame):
+                return frame
+        except Exception:
+            pass
+        # Contexto inválido o captura negra: se reintenta con uno nuevo.
+        try:
+            frame = self._grab_once(renew=True)
+        except Exception as exc:
+            raise ScreenUnavailable(f"no se puede capturar la pantalla ({exc})") from exc
+        if is_blank(frame):
+            raise ScreenUnavailable("la pantalla está en negro (sesión bloqueada o escritorio remoto desconectado)")
+        return frame
 
 
 class ImageFileSource:

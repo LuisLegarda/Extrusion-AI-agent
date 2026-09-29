@@ -19,6 +19,7 @@ from ..bootstrap import AppContext, make_clicker, make_ocr
 from ..capture import ScreenSource
 from ..navigation import exclude_window_from_capture
 from ..engine import Snapshot
+from ..recipes import Bounds
 from .common import SnapshotBridge, level_color
 from .variable_tree import VariableTree
 from .kpi_dashboard import KpiDashboard
@@ -32,7 +33,7 @@ RANGES = [("5 min", 300), ("15 min", 900), ("30 min", 1800), ("1 h", 3600), ("4 
           ("8 h", 8 * 3600), ("24 h", 86400), ("7 días", 7 * 86400)]
 
 
-def y_range(y, ref: Optional[float], warn: Optional[float], alarm: Optional[float]) -> Optional[tuple[float, float]]:
+def y_range(y, limits) -> Optional[tuple[float, float]]:
     """Escala Y: los límites de la variable (con margen) más los datos visibles.
 
     Un pico amplía la escala solo mientras está dentro del rango de tiempo mostrado; al salir,
@@ -40,10 +41,8 @@ def y_range(y, ref: Optional[float], warn: Optional[float], alarm: Optional[floa
     """
     y = np.asarray(y, float)
     y = y[np.isfinite(y)]
-    band = alarm if alarm is not None else warn
-    lo = hi = None
-    if ref is not None and band is not None:
-        lo, hi = ref - band, ref + band
+    vals = [float(v) for v in limits if v is not None]
+    lo, hi = (min(vals), max(vals)) if vals else (None, None)
     if len(y):
         dlo, dhi = float(y.min()), float(y.max())
         lo = dlo if lo is None else min(lo, dlo)
@@ -128,19 +127,20 @@ class TrendPanel(QWidget):
     def range_s(self) -> float:
         return float(self.cmb_range.currentData())
 
-    def _fit_view(self, w, t, y, ref, warn, alarm, pr) -> None:
+    def _fit_view(self, w, t, y, ref, bounds, pr) -> None:
         if not len(t):
             return
         now = float(t[-1])
         end = float(pr["t"][-1]) if pr is not None else now
         w.setXRange(now - self.range_s, max(end, now), padding=0.01)
         if self.chk_auto_y.isChecked():
-            yr = y_range(np.asarray(y)[np.asarray(t) >= now - self.range_s], ref, warn, alarm)
+            alarm = [bounds.al, bounds.ah] if bounds.al is not None or bounds.ah is not None else [bounds.wl, bounds.wh]
+            yr = y_range(np.asarray(y)[np.asarray(t) >= now - self.range_s], alarm + [ref])
             if yr is not None:
                 w.setYRange(*yr, padding=0)
 
-    def update_plot(self, vid: str, t, y, ref: Optional[float], warn: Optional[float],
-                    alarm: Optional[float], sp_series=None, horizon_s: float = 0.0, fit_s: float = 0.0) -> None:
+    def update_plot(self, vid: str, t, y, ref: Optional[float], bounds: Bounds = Bounds(),
+                    sp_series=None, horizon_s: float = 0.0, fit_s: float = 0.0) -> None:
         p = self.plots.get(vid)
         if not p:
             return
@@ -152,7 +152,7 @@ class TrendPanel(QWidget):
             p["proj_hi"].setData(pr["t"], pr["hi"])
             end = float(pr["y"][-1])
             text = f"en {horizon_s / 60:.0f} min: {end:.4g}"
-            if ref is not None and alarm is not None and (end > ref + alarm or end < ref - alarm):
+            if (bounds.ah is not None and end > bounds.ah) or (bounds.al is not None and end < bounds.al):
                 text += "  ⚠ fuera de alarma"
             p["eta"].setText(text)
             p["eta"].setPos(float(pr["t"][-1]), end)
@@ -166,13 +166,9 @@ class TrendPanel(QWidget):
             if len(t) and t[-1] > st[-1]:
                 st, sy = np.append(st, t[-1]), np.append(sy, sy[-1])
             p["sp"].setData(st, sy)
-        self._fit_view(p["widget"], t, y, ref, warn, alarm, pr)
+        self._fit_view(p["widget"], t, y, ref, bounds, pr)
         lines = p["lines"]
-        for key, val in (("ref", ref),
-                         ("wl", ref - warn if ref is not None and warn is not None else None),
-                         ("wh", ref + warn if ref is not None and warn is not None else None),
-                         ("al", ref - alarm if ref is not None and alarm is not None else None),
-                         ("ah", ref + alarm if ref is not None and alarm is not None else None)):
+        for key, val in (("ref", ref), ("wl", bounds.wl), ("wh", bounds.wh), ("al", bounds.al), ("ah", bounds.ah)):
             lines[key].setVisible(val is not None)
             if val is not None:
                 lines[key].setValue(val)
@@ -591,7 +587,7 @@ class MainWindow(QMainWindow):
             sp_id = self.table.setpoint_of(vid)
             sp_series = self._plot_series(sp_id) if sp_id else None
             g = self.ctx.config.general
-            self.trends.update_plot(vid, t, y, st.reference, st.warn_band, st.alarm_band, sp_series,
+            self.trends.update_plot(vid, t, y, st.reference, st.bounds, sp_series,
                                     horizon_s=g.trend_horizon_min * 60,
                                     fit_s=max(120.0, g.trend_window_min * 60 / 3))
 

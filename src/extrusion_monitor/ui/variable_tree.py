@@ -142,7 +142,20 @@ class VariableTree(QTreeWidget):
                                if sp.reading.value is not None else "")
         tol = ""
         if st.warn_band is not None or st.alarm_band is not None:
-            tol = f"{fmt(st.warn_band)} / {fmt(st.alarm_band)}"
+            tol = f"±{fmt(st.warn_band)} / ±{fmt(st.alarm_band)}"
+        elif st.bounds.any:
+            b = st.bounds
+
+            def rng(lo, hi):
+                if lo is None and hi is None:
+                    return "—"
+                if lo is None:
+                    return f"≤ {fmt(hi, var)}"
+                if hi is None:
+                    return f"≥ {fmt(lo, var)}"
+                return f"{fmt(lo, var)}…{fmt(hi, var)}"
+
+            tol = f"{rng(b.wl, b.wh)} / {rng(b.al, b.ah)}"
         trend = ""
         if st.trend:
             arrow = "↑" if st.trend.slope_per_min > 0 else "↓"

@@ -117,6 +117,8 @@ class GeneralSettings(BaseModel):
     # Variable de texto que muestra el nombre de la receta activa en el HMI.
     recipe_name_var: Optional[str] = None
     beep_on_alarm: bool = True
+    # Resolución (ancho, alto) de la pantalla con la que se marcaron las regiones.
+    screen_size: Optional[list[int]] = None
 
 
 class Click(BaseModel):
