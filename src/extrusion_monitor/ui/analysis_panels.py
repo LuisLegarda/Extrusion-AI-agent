@@ -16,7 +16,7 @@ from ..analysis.statistics import align, capability, correlation, linear_fit, xb
 from ..engine import MonitorEngine, Snapshot
 from .behavior_dialog import fill_corr_table
 
-LINE = "#4fc3f7"
+LINE = "#1e6fb8"
 WARN = "#f9a825"
 ALARM = "#e53935"
 
@@ -97,7 +97,7 @@ class StatsPanel(QWidget):
         if cap.std_overall > 0:
             xs = np.linspace(edges[0], edges[-1], 200)
             pdf = np.exp(-0.5 * ((xs - cap.mean) / cap.std_overall) ** 2) / (cap.std_overall * np.sqrt(2 * np.pi))
-            self.hist.plot(xs, pdf * len(y) * width, pen=pg.mkPen("#ffffff", width=2))
+            self.hist.plot(xs, pdf * len(y) * width, pen=pg.mkPen("#37474f", width=2))
         for val, color, name in ((lsl, ALARM, "LIE"), (usl, ALARM, "LSE"), (st.reference, "#9e9e9e", "objetivo"),
                                  (cap.mean, LINE, "media")):
             if val is not None:

@@ -34,6 +34,13 @@ Por eso sirve para cualquier línea de extrusión.
 | Pantalla no disponible | Si la sesión se bloquea o el escritorio remoto se desconecta, la captura se renueva sola y la lectura se reanuda al volver. Si la resolución cambió respecto a la configurada, avisa en vez de leer regiones equivocadas. El tiempo sin pantalla cuenta en el OEE como hueco. |
 | Historial | SQLite propio (`history.sqlite`) con retención de 90 días. Guarda cada valor cuando cambia o cada 20 s, para que no crezca sin medida. Exporta a CSV con una columna por variable. |
 
+## Interfaz
+
+- **Menú superior:** Archivo (iniciar/detener con F5, carpeta de datos), Receta (editar, receta activa, autocarga desde el HMI), Datos (exportar CSV, generar reporte), Entrenamiento (comportamiento), Recorridos (pausar, ejecutar ahora), Configuración (pestañas y variables, recorridos, KPI/OEE, reportes, general), Ver (páginas con Ctrl+1…8, siempre visible, pantalla completa con F11) y Ayuda.
+- **Barra lateral:** Inicio, Variables en vivo, Tendencias, KPI / OEE, SPC, Correlación, Estabilidad (IA) y Alarmas y eventos (con el número de alarmas activas). Debajo están Recetas, Reportes (lista de PDF/CSV generados) y Configuración.
+- **Inicio:** tablero general con indicadores tipo gauge: OEE del turno, índice 5.0, estabilidad (comportamiento aprendido), Cpk mínimo, % de variables en especificación y calidad de lectura. También muestra el estado de la máquina, las alarmas activas, las 6 variables con el Cpk más bajo y la franja de estado del turno. Un clic en un gauge abre su vista detallada.
+- Solo se actualiza la página visible, para no cargar la PC.
+
 ## Uso
 
 ```

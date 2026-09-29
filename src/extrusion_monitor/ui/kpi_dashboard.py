@@ -57,18 +57,26 @@ def shift_start(now: float, starts: list[str]) -> float:
 
 
 class Gauge(QWidget):
-    """Indicador de aguja 0-100 % con bandas rojo/amarillo/verde."""
+    """Indicador de aguja con bandas rojo/amarillo/verde (por defecto 0-100 %)."""
 
-    def __init__(self, low: float = 60, high: float = 85, parent=None):
+    def __init__(self, low: float = 60, high: float = 85, parent=None, vmin: float = 0.0, vmax: float = 100.0,
+                 unit: str = "%", decimals: int = 1, needle: bool = False):
         super().__init__(parent)
         self.value: Optional[float] = None
+        self.needle = needle
         self.low, self.high = low, high
+        self.vmin, self.vmax, self.unit, self.decimals = vmin, vmax, unit, decimals
         self.setMinimumSize(150, 120)
         self.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
 
     def set_value(self, v: Optional[float]) -> None:
-        self.value = v
-        self.update()
+        if v != self.value:
+            self.value = v
+            self.update()
+
+    def _pos(self, v: float) -> float:
+        """Valor → 0..100 del arco."""
+        return 100.0 * (min(max(v, self.vmin), self.vmax) - self.vmin) / ((self.vmax - self.vmin) or 1.0)
 
     def _color(self, v: float) -> QColor:
         return RED if v < self.low else (YELLOW if v < self.high else GREEN)
@@ -90,11 +98,14 @@ class Gauge(QWidget):
                       int((start + span * a / 100) * 16), int(span * (b - a) / 100 * 16))
 
         arc(0, 100, QColor(120, 120, 120, 60), thick)
-        for a, b, c in ((0, self.low, RED), (self.low, self.high, YELLOW), (self.high, 100, GREEN)):
+        lo, hi = self._pos(self.low), self._pos(self.high)
+        for a, b, c in ((0, lo, RED), (lo, hi, YELLOW), (hi, 100, GREEN)):
             arc(a, b, c, thick * 0.35)
         if self.value is not None:
-            v = max(0.0, min(100.0, self.value))
+            v = self._pos(self.value)
             arc(0, v, self._color(self.value), thick)
+        if self.value is not None and self.needle:
+            v = self._pos(self.value)
             ang = math.radians(start + span * v / 100)
             c = rect.center()
             r = side / 2 - thick * 1.6
@@ -105,12 +116,12 @@ class Gauge(QWidget):
         f.setBold(True)
         p.setFont(f)
         p.setPen(self.palette().text().color())
-        text = "—" if self.value is None else f"{self.value:.1f}"
+        text = "—" if self.value is None else f"{self.value:.{self.decimals}f}"
         p.drawText(rect.adjusted(0, side * 0.18, 0, 0), Qt.AlignCenter, text)
         f.setPointSizeF(max(8.0, side * 0.07))
         f.setBold(False)
         p.setFont(f)
-        p.drawText(rect.adjusted(0, side * 0.42, 0, 0), Qt.AlignCenter, "%")
+        p.drawText(rect.adjusted(0, side * 0.42, 0, 0), Qt.AlignCenter, self.unit)
         p.end()
 
 

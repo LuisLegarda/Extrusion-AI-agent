@@ -23,6 +23,7 @@ def test_main_window_and_dialogs(ctx, monkeypatch):
     from extrusion_monitor.ui.setup_dialog import SetupDialog
 
     win = MainWindow(ctx)
+    win.show_page("variables")
     for _ in range(5):
         ctx.engine.step()
     QApplication.processEvents()
@@ -125,8 +126,8 @@ def test_analysis_tabs_and_behavior_dialog(ctx, monkeypatch):
     win = MainWindow(ctx)
     for _ in range(12):
         ctx.engine.step()
-    for i in range(win.analysis.count()):
-        win.analysis.setCurrentIndex(i)
+    for key in ("spc", "corr", "behavior"):
+        win.show_page(key)
         win._refresh_analysis(force=True)
     QApplication.processEvents()
     assert "n =" in win.stats_panel.lbl.text()
@@ -147,7 +148,7 @@ def test_kpi_dashboard(ctx):
     win.show()
     for _ in range(20):
         ctx.engine.step()
-    win.main_tabs.setCurrentIndex(1)
+    win.show_page("kpi")
     QApplication.processEvents()
     win.kpi.refresh()
     assert win.kpi.result is not None and win.kpi.result.run_s > 0
@@ -239,4 +240,34 @@ def test_trend_range_and_auto_y(ctx):
     (x0, x1), (y0, y1) = win.trends.plots["diam"]["widget"].viewRange()
     assert x1 - x0 > 3 * 3600
     assert y0 < 3.15 and y1 > 3.25  # límites de alarma 3.20 ± 0.05 visibles
+    win.close()
+
+
+def test_navigation_and_home_dashboard(ctx):
+    from PySide6.QtWidgets import QApplication
+
+    from extrusion_monitor.ui.main_window import NAV_ITEMS, MainWindow
+    ctx.engine.sleep = lambda s: None
+    win = MainWindow(ctx)
+    win.show()
+    for _ in range(25):
+        ctx.engine.step()
+    QApplication.processEvents()
+    snap = ctx.engine.last
+    win.home.update_snapshot(snap, force=True)
+    win.home.refresh_oee(force=True)
+    cards = win.home.cards
+    assert cards["read"].gauge.value is not None and cards["read"].gauge.value > 50
+    assert cards["conform"].gauge.value is not None
+    assert cards["oee"].gauge.value is not None  # la demo tiene OEE configurado
+    assert "Receta" in win.home.lbl_state.text()
+    for key, _label, _icon in NAV_ITEMS:  # todas las páginas abren sin error
+        win.show_page(key)
+        QApplication.processEvents()
+        win.on_snapshot(snap)
+        assert win.current_page() == key
+    win.show_page("reports")
+    win.reports_page.refresh()
+    cards["cpk"].clicked.emit("spc")
+    assert win.current_page() == "spc"
     win.close()

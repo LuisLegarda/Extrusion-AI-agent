@@ -76,8 +76,11 @@ class TrendTracker:
                 if eta >= 0:
                     st.eta_to_alarm_min = eta
 
-        if lo_limit is not None and hi_limit is not None and std > 0:
-            st.cpk = min(hi_limit - mean, mean - lo_limit) / (3 * std)
+        if (lo_limit is not None or hi_limit is not None) and std > 0:
+            # Cpk (con un solo límite, Cpu o Cpl según el lado).
+            sides = [x for x in ((hi_limit - mean) if hi_limit is not None else None,
+                                 (mean - lo_limit) if lo_limit is not None else None) if x is not None]
+            st.cpk = min(sides) / (3 * std)
 
         st.nelson = _nelson(t, y, now, self.subgroup_s, center, min_effect)
         return st

@@ -1,4 +1,4 @@
-"""Ventana principal: estado de variables, tendencias, hallazgos y registro."""
+"""Ventana principal: menú superior, barra lateral de navegación y páginas (inicio, variables, análisis…)."""
 from __future__ import annotations
 
 import time
@@ -6,12 +6,12 @@ from typing import Optional
 
 import numpy as np
 import pyqtgraph as pg
-from PySide6.QtCore import Qt, QTimer
-from PySide6.QtGui import QAction, QBrush, QColor
+from PySide6.QtCore import Qt, QTimer, QUrl
+from PySide6.QtGui import QAction, QActionGroup, QBrush, QColor, QDesktopServices
 from PySide6.QtWidgets import (
-    QApplication, QCheckBox, QComboBox, QFileDialog, QHeaderView, QLabel, QListWidget,
-    QHBoxLayout, QListWidgetItem, QMainWindow, QMenu, QMessageBox, QSplitter, QTableWidget, QTableWidgetItem,
-    QTabWidget, QToolBar, QToolButton, QVBoxLayout, QWidget,
+    QApplication, QCheckBox, QComboBox, QFileDialog, QFrame, QHeaderView, QLabel, QListWidget,
+    QHBoxLayout, QListWidgetItem, QMainWindow, QMenu, QMessageBox, QSplitter, QStackedWidget, QTableWidget,
+    QTableWidgetItem, QTabWidget, QToolButton, QVBoxLayout, QWidget,
 )
 
 from ..analysis.rules import Level
@@ -27,6 +27,8 @@ from .analysis_panels import BehaviorPanel, CorrelationPanel, StatsPanel
 from ..analysis.statistics import projection
 
 MAX_PLOTS = 4
+# Gráficas con fondo claro, coherentes con el tema de la aplicación.
+pg.setConfigOptions(antialias=True, background="w", foreground="#37474f")
 
 
 RANGES = [("5 min", 300), ("15 min", 900), ("30 min", 1800), ("1 h", 3600), ("4 h", 4 * 3600),
@@ -54,10 +56,16 @@ def y_range(y, limits) -> Optional[tuple[float, float]]:
     return lo - pad, hi + pad
 
 
+NAV_ITEMS = [("home", "Inicio", "🏠"), ("variables", "Variables en vivo", "📟"), ("trends", "Tendencias", "📈"),
+             ("kpi", "KPI / OEE", "🏭"), ("spc", "SPC", "📊"), ("corr", "Correlación", "🔗"),
+             ("behavior", "Estabilidad (IA)", "🧠"), ("events", "Alarmas y eventos", "🔔")]
+NAV_TOOLS = [("recipes", "Recetas", "📋"), ("reports", "Reportes", "📄"), ("setup", "Configuración", "⚙")]
+HELP_URL = "https://github.com/LuisLegarda/Extrusion-AI-agent#readme"
+
+
 class TrendPanel(QWidget):
     def __init__(self, parent=None):
         super().__init__(parent)
-        pg.setConfigOptions(antialias=True)
         self.layout_ = QVBoxLayout(self)
         self.layout_.setContentsMargins(0, 0, 0, 0)
         self.plots: dict[str, dict] = {}
@@ -97,7 +105,7 @@ class TrendPanel(QWidget):
             w.setClipToView(True)
             w.setDownsampling(auto=True, mode="peak")
             w.showGrid(x=True, y=True, alpha=0.3)
-            curve = w.plot(pen=pg.mkPen("#4fc3f7", width=2), name="medición")
+            curve = w.plot(pen=pg.mkPen("#1e6fb8", width=2), name="medición")
             sp_curve = w.plot(pen=pg.mkPen("#1e88e5", width=2, style=Qt.DashLine), name="consigna")
             proj = w.plot(pen=pg.mkPen("#ffb74d", width=2, style=Qt.DotLine), name="proyección")
             proj_lo = pg.PlotDataItem(pen=pg.mkPen(None))
@@ -193,93 +201,58 @@ class MainWindow(QMainWindow):
 
     # --- construcción -------------------------------------------------------
     def _build_ui(self) -> None:
-        self.resize(1400, 860)
-        tb = QToolBar("Principal")
-        tb.setMovable(False)
-        self.addToolBar(tb)
-        self.act_run = QAction("▶ Iniciar", self)
-        self.act_run.triggered.connect(self.toggle_run)
-        tb.addAction(self.act_run)
-        tb.addSeparator()
-        tb.addWidget(QLabel(" Receta: "))
-        self.cmb_recipe = QComboBox()
-        self.cmb_recipe.setMinimumWidth(240)
-        self.cmb_recipe.activated.connect(self._recipe_chosen)
-        tb.addWidget(self.cmb_recipe)
-        self.chk_auto = QCheckBox("Auto desde HMI")
-        self.chk_auto.setChecked(self.engine.state.auto_recipe)
-        self.chk_auto.toggled.connect(self._auto_toggled)
-        tb.addWidget(self.chk_auto)
-        tb.addSeparator()
-        act_setup = QAction("⚙ Configurar variables", self)
-        act_setup.triggered.connect(self.open_setup)
-        tb.addAction(act_setup)
-        act_recipes = QAction("📋 Recetas", self)
-        act_recipes.triggered.connect(self.open_recipes)
-        tb.addAction(act_recipes)
-        act_beh = QAction("🧠 Comportamiento", self)
-        act_beh.setToolTip("Entrenar el comportamiento normal (variación y correlación entre variables)")
-        act_beh.triggered.connect(self.open_behavior)
-        tb.addAction(act_beh)
-        act_export = QAction("⤓ Exportar CSV", self)
-        act_export.triggered.connect(self.export_csv)
-        tb.addAction(act_export)
-        tb.addSeparator()
-        self.act_tour_pause = QAction("⏸ Pausar recorrido", self, checkable=True)
-        self.act_tour_pause.setToolTip("Detiene los clics automáticos en el HMI (se siguen leyendo los datos visibles)")
-        self.act_tour_pause.toggled.connect(self._tour_pause)
-        tb.addAction(self.act_tour_pause)
-        self.btn_tour_now = QToolButton()
-        self.btn_tour_now.setText("⟳ Recorrer ahora")
-        self.btn_tour_now.setToolTip("Ejecuta el recorrido de lectura; la flecha permite elegir otro recorrido")
-        self.btn_tour_now.setPopupMode(QToolButton.MenuButtonPopup)
-        self.btn_tour_now.clicked.connect(lambda: self.engine.run_tour_now())
-        self._tour_menu = QMenu(self)
-        self._tour_menu.aboutToShow.connect(self._fill_tour_menu)
-        self.btn_tour_now.setMenu(self._tour_menu)
-        tb.addWidget(self.btn_tour_now)
-        self.btn_report = QToolButton()
-        self.btn_report.setText("📄 Reporte")
-        self.btn_report.setToolTip("Generar ahora un reporte PDF configurado")
-        self.btn_report.setPopupMode(QToolButton.InstantPopup)
-        self._report_menu = QMenu(self)
-        self._report_menu.aboutToShow.connect(self._fill_report_menu)
-        self.btn_report.setMenu(self._report_menu)
-        tb.addWidget(self.btn_report)
-        tb.addSeparator()
-        self.act_top = QAction("📌 Siempre visible", self, checkable=True)
-        self.act_top.toggled.connect(self._always_on_top)
-        tb.addAction(self.act_top)
+        self.resize(1440, 880)
+        self._build_actions()
+        self._build_menus()
 
         central = QWidget()
-        lay = QVBoxLayout(central)
-        self.banner = QLabel("DETENIDO")
-        self.banner.setObjectName("banner")
-        self._set_banner(None, "DETENIDO")
-        lay.addWidget(self.banner)
+        outer = QHBoxLayout(central)
+        outer.setContentsMargins(0, 0, 0, 0)
+        outer.setSpacing(0)
+        outer.addWidget(self._build_sidebar())
+        right = QWidget()
+        right.setObjectName("content")
+        rl = QVBoxLayout(right)
+        rl.setContentsMargins(10, 8, 10, 6)
+        rl.addLayout(self._build_header())
+        self.stack = QStackedWidget()
+        rl.addWidget(self.stack, 1)
+        outer.addWidget(right, 1)
+        self.setCentralWidget(central)
 
-        vsplit = QSplitter(Qt.Vertical)
-        hsplit = QSplitter(Qt.Horizontal)
+        # --- páginas ---
+        from .home_page import HomePage
+        self.home = HomePage(self.engine)
+        self.home.navigate.connect(self.show_page)
+
         self.table = VariableTree()
         self.table.quality_fn = lambda vid: self.engine.acquirer.quality(vid)
         self.table.plotToggled.connect(self._plot_toggled)
-        hsplit.addWidget(self.table)
+
         self.trends = TrendPanel()
         self.trends.cmb_range.currentIndexChanged.connect(self._replot)
         self.trends.chk_auto_y.toggled.connect(self._replot)
-        self.analysis = QTabWidget()
-        self.analysis.addTab(self.trends, "📈 Tendencias")
+        self.plot_list = QListWidget()
+        self.plot_list.setMaximumWidth(280)
+        self.plot_list.setTextElideMode(Qt.ElideLeft)
+        self.plot_list.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        self.plot_list.itemChanged.connect(self._plot_list_changed)
+        trends_page = QSplitter(Qt.Horizontal)
+        left = QWidget()
+        ll = QVBoxLayout(left)
+        ll.setContentsMargins(0, 0, 0, 0)
+        ll.addWidget(QLabel(f"<b>Variables a graficar</b> (máx. {MAX_PLOTS})"))
+        ll.addWidget(self.plot_list, 1)
+        trends_page.addWidget(left)
+        trends_page.addWidget(self.trends)
+        trends_page.setSizes([240, 1100])
+
         self.stats_panel = StatsPanel(self.engine)
-        self.analysis.addTab(self.stats_panel, "📊 Estadística")
         self.corr_panel = CorrelationPanel(self.engine)
-        self.analysis.addTab(self.corr_panel, "🔗 Correlación")
         self.behavior_panel = BehaviorPanel(self.engine)
-        self.analysis.addTab(self.behavior_panel, "🧠 Comportamiento")
-        self.analysis.currentChanged.connect(lambda _: self._refresh_analysis(force=True))
+        self.analysis_pages = (self.stats_panel, self.corr_panel, self.behavior_panel)
         self._analysis_at = 0.0
-        hsplit.addWidget(self.analysis)
-        hsplit.setSizes([760, 640])
-        vsplit.addWidget(hsplit)
+        self.kpi = KpiDashboard(self.engine)
 
         tabs = QTabWidget()
         self.findings = QTableWidget(0, 5)
@@ -292,14 +265,18 @@ class MainWindow(QMainWindow):
         self.log = QListWidget()
         tabs.addTab(self.log, "Registro de eventos")
         self.tabs = tabs
-        vsplit.addWidget(tabs)
-        vsplit.setSizes([600, 260])
-        self.main_tabs = QTabWidget()
-        self.main_tabs.addTab(vsplit, "📟 Monitoreo")
-        self.kpi = KpiDashboard(self.engine)
-        self.main_tabs.addTab(self.kpi, "🏭 KPI / OEE")
-        lay.addWidget(self.main_tabs)
-        self.setCentralWidget(central)
+
+        from .reports_page import ReportsPage
+        self.reports_page = ReportsPage(self.ctx, self)
+
+        self.pages: dict[str, QWidget] = {}
+        for key, w in (("home", self.home), ("variables", self.table), ("trends", trends_page), ("kpi", self.kpi),
+                       ("spc", self.stats_panel), ("corr", self.corr_panel), ("behavior", self.behavior_panel),
+                       ("events", tabs), ("reports", self.reports_page)):
+            self.pages[key] = w
+            self.stack.addWidget(w)
+        self.stack.currentChanged.connect(self._page_changed)
+        self.show_page("home")
 
         self.lbl_tour = QLabel()
         self.lbl_page = QLabel()
@@ -308,9 +285,220 @@ class MainWindow(QMainWindow):
         for w in (self.lbl_tour, self.lbl_page, self.lbl_ocr, self.lbl_cycle):
             self.statusBar().addPermanentWidget(w)
 
+    # --- acciones y menús ---------------------------------------------------------
+    def _build_actions(self) -> None:
+        self.act_run = QAction("▶ Iniciar monitoreo", self)
+        self.act_run.setShortcut("F5")
+        self.act_run.triggered.connect(self.toggle_run)
+        self.act_auto = QAction("Cargar automáticamente la receta del HMI", self, checkable=True)
+        self.act_auto.setChecked(self.engine.state.auto_recipe)
+        self.act_tour_pause = QAction("⏸ Pausar recorridos", self, checkable=True)
+        self.act_tour_pause.setToolTip("Detiene los clics automáticos en el HMI (se siguen leyendo los datos visibles)")
+        self.act_tour_pause.toggled.connect(self._tour_pause)
+        self.act_top = QAction("📌 Siempre visible", self, checkable=True)
+        self.act_top.toggled.connect(self._always_on_top)
+        self._tour_menu = QMenu("⟳ Ejecutar recorrido ahora", self)
+        self._tour_menu.aboutToShow.connect(self._fill_tour_menu)
+        self._report_menu = QMenu("📄 Generar reporte ahora", self)
+        self._report_menu.aboutToShow.connect(self._fill_report_menu)
+
+    def _build_menus(self) -> None:
+        mb = self.menuBar()
+        m = mb.addMenu("&Archivo")
+        m.addAction(self.act_run)
+        m.addSeparator()
+        m.addAction("📂 Abrir carpeta de datos", lambda: self._open_dir(self.ctx.workspace.home))
+        m.addSeparator()
+        m.addAction("Salir", self.close)
+
+        m = mb.addMenu("&Receta")
+        m.addAction("📋 Editar recetas…", self.open_recipes)
+        m.addAction(self.act_auto)
+        m.addSeparator()
+        self._recipe_menu = m.addMenu("Receta activa")
+        self._recipe_menu.aboutToShow.connect(self._fill_recipe_menu)
+
+        m = mb.addMenu("&Datos")
+        m.addAction("⤓ Exportar historial a CSV…", self.export_csv)
+        m.addMenu(self._report_menu)
+        m.addAction("📂 Abrir carpeta de reportes", self._open_reports_dir)
+
+        m = mb.addMenu("&Entrenamiento")
+        m.addAction("🧠 Entrenar comportamiento…", self.open_behavior)
+        m.addAction("Ver estabilidad (comportamiento)", lambda: self.show_page("behavior"))
+
+        m = mb.addMenu("Reco&rridos")
+        m.addAction(self.act_tour_pause)
+        m.addMenu(self._tour_menu)
+        m.addSeparator()
+        m.addAction("Configurar recorridos…", lambda: self.open_setup("Recorrido automático"))
+
+        m = mb.addMenu("&Configuración")
+        for label, tab in (("Pestañas y variables…", "Pestañas y variables"),
+                           ("Recorridos…", "Recorrido automático"), ("KPI / OEE…", "KPI / OEE"),
+                           ("Reportes…", "Reportes"), ("General…", "General")):
+            m.addAction(label, lambda tab=tab: self.open_setup(tab))
+
+        m = mb.addMenu("&Ver")
+        for i, (key, label, _icon) in enumerate(NAV_ITEMS, 1):
+            act = m.addAction(label, lambda key=key: self.show_page(key))
+            act.setShortcut(f"Ctrl+{i}")
+        m.addSeparator()
+        m.addAction(self.act_top)
+        act = m.addAction("Pantalla completa", self._toggle_fullscreen)
+        act.setShortcut("F11")
+
+        m = mb.addMenu("A&yuda")
+        m.addAction("Manual de uso", lambda: self._open_url(HELP_URL))
+        m.addAction("Acerca de…", self._about)
+
+    def _build_sidebar(self) -> QWidget:
+        side = QWidget()
+        side.setObjectName("sidebar")
+        side.setFixedWidth(215)
+        lay = QVBoxLayout(side)
+        lay.setContentsMargins(10, 14, 10, 10)
+        logo = QLabel("<div style='font-size:20px; color:#1f4e79'><b>⫶⫶ Extrusion</b></div>"
+                      "<div style='color:#5f6b7a'>Monitor de línea</div>")
+        logo.setAlignment(Qt.AlignCenter)
+        lay.addWidget(logo)
+        lay.addSpacing(12)
+        self.nav = QListWidget()
+        self.nav.setObjectName("nav")
+        self.nav.setFocusPolicy(Qt.NoFocus)
+        for key, label, icon in NAV_ITEMS:
+            it = QListWidgetItem(f"{icon}  {label}")
+            it.setData(Qt.UserRole, key)
+            self.nav.addItem(it)
+        self.nav.setFixedHeight(len(NAV_ITEMS) * 38 + 6)
+        self.nav.currentItemChanged.connect(self._nav_changed)
+        lay.addWidget(self.nav)
+        line = QFrame()
+        line.setFrameShape(QFrame.HLine)
+        line.setStyleSheet("color:#c7d3e3;")
+        lay.addWidget(line)
+        self.nav2 = QListWidget()
+        self.nav2.setObjectName("nav")
+        self.nav2.setFocusPolicy(Qt.NoFocus)
+        for key, label, icon in NAV_TOOLS:
+            it = QListWidgetItem(f"{icon}  {label}")
+            it.setData(Qt.UserRole, key)
+            self.nav2.addItem(it)
+        self.nav2.setFixedHeight(len(NAV_TOOLS) * 38 + 6)
+        self.nav2.itemClicked.connect(self._tool_clicked)
+        lay.addWidget(self.nav2)
+        lay.addStretch(1)
+        self.lbl_side_status = QLabel()
+        self.lbl_side_status.setWordWrap(True)
+        self.lbl_side_status.setStyleSheet("color:#5f6b7a; font-size:11px;")
+        lay.addWidget(self.lbl_side_status)
+        return side
+
+    def _build_header(self) -> QHBoxLayout:
+        row = QHBoxLayout()
+        self.lbl_title = QLabel()
+        row.addWidget(self.lbl_title)
+        self.banner = QLabel("DETENIDO")
+        self.banner.setObjectName("banner")
+        self._set_banner(None, "DETENIDO")
+        row.addWidget(self.banner, 1)
+        row.addSpacing(8)
+        row.addWidget(QLabel("Receta:"))
+        self.cmb_recipe = QComboBox()
+        self.cmb_recipe.setMinimumWidth(230)
+        self.cmb_recipe.activated.connect(self._recipe_chosen)
+        row.addWidget(self.cmb_recipe)
+        self.chk_auto = QCheckBox("Auto desde HMI")
+        self.chk_auto.setChecked(self.engine.state.auto_recipe)
+        self.chk_auto.toggled.connect(self._auto_toggled)
+        self.act_auto.toggled.connect(self.chk_auto.setChecked)
+        self.chk_auto.toggled.connect(self.act_auto.setChecked)
+        row.addWidget(self.chk_auto)
+        self.btn_run = QToolButton()
+        self.btn_run.setObjectName("run")
+        self.btn_run.setDefaultAction(self.act_run)
+        row.addWidget(self.btn_run)
+        return row
+
+    # --- navegación -----------------------------------------------------------------
+    def show_page(self, key: str) -> None:
+        w = self.pages.get(key)
+        if w is None:
+            return
+        self.stack.setCurrentWidget(w)
+        for i in range(self.nav.count()):
+            if self.nav.item(i).data(Qt.UserRole) == key:
+                self.nav.blockSignals(True)
+                self.nav.setCurrentRow(i)
+                self.nav.blockSignals(False)
+                break
+
+    def current_page(self) -> str:
+        w = self.stack.currentWidget()
+        return next((k for k, v in self.pages.items() if v is w), "")
+
+    def _nav_changed(self, item, _prev) -> None:
+        if item is not None:
+            self.show_page(item.data(Qt.UserRole))
+
+    def _tool_clicked(self, item) -> None:
+        key = item.data(Qt.UserRole)
+        self.nav2.clearSelection()
+        if key == "recipes":
+            self.open_recipes()
+        elif key == "setup":
+            self.open_setup()
+        else:
+            self.show_page(key)
+
+    def _page_changed(self, _index: int) -> None:
+        self._refresh_analysis(force=True)
+        snap = self.engine.last
+        if snap is not None and self.stack.currentWidget() is self.home:
+            self.home.update_snapshot(snap, force=True)
+        if self.stack.currentWidget() is self.pages.get("trends"):
+            self._replot()
+        if snap is not None and self.stack.currentWidget() is self.table:
+            self._update_table(snap)
+
+    def _fill_recipe_menu(self) -> None:
+        self._recipe_menu.clear()
+        group = QActionGroup(self._recipe_menu)
+        for name in [None] + self.ctx.recipes.names():
+            act = self._recipe_menu.addAction(name or "— sin receta —")
+            act.setCheckable(True)
+            act.setChecked(name == self.engine.state.recipe)
+            group.addAction(act)
+            act.triggered.connect(lambda _=False, n=name: self._choose_recipe(n))
+
+    def _choose_recipe(self, name: Optional[str]) -> None:
+        idx = self.cmb_recipe.findData(name)
+        if idx >= 0:
+            self.cmb_recipe.setCurrentIndex(idx)
+            self._recipe_chosen(idx)
+
+    def _open_dir(self, path) -> None:
+        from pathlib import Path
+        d = Path(path)
+        d.mkdir(parents=True, exist_ok=True)
+        QDesktopServices.openUrl(QUrl.fromLocalFile(str(d)))
+
+    def _open_url(self, url: str) -> None:
+        QDesktopServices.openUrl(QUrl(url))
+
+    def _toggle_fullscreen(self) -> None:
+        self.showNormal() if self.isFullScreen() else self.showFullScreen()
+
+    def _about(self) -> None:
+        QMessageBox.about(self, "Acerca de", "<b>Monitor de extrusión</b><br>Verificación de parámetros, recetas, "
+                                             "tendencias, KPI/OEE y reportes a partir de la pantalla del HMI.<br>"
+                                             "Solo lee la pantalla: no modifica el PLC ni el software del fabricante.")
+
     def _update_title(self) -> None:
         demo = " — MODO DEMO (HMI simulado)" if self.ctx.demo else ""
         self.setWindowTitle(f"Monitor de extrusión · {self.ctx.config.machine_name}{demo}")
+        self.lbl_title.setText(f"<span style='font-size:17px; color:#1f3b57'><b>{self.ctx.config.machine_name}</b>"
+                               f"</span><span style='color:#c62828'>{'  DEMO' if self.ctx.demo else ''}</span>")
 
     def _set_banner(self, level: Optional[Level], text: str) -> None:
         self.banner.setText(text)
@@ -322,6 +510,16 @@ class MainWindow(QMainWindow):
             self._plotted = [v.id for v in cfg.variables if v.measured and v.trend][:3]
         self._plotted = [vid for vid in self._plotted if cfg.variable(vid)]
         self.table.rebuild(cfg, self._plotted)
+        self.plot_list.blockSignals(True)
+        self.plot_list.clear()
+        for v in cfg.variables:
+            if v.numeric:
+                it = QListWidgetItem(VariableTree.title(v, cfg))
+                it.setData(Qt.UserRole, v.id)
+                it.setFlags(it.flags() | Qt.ItemIsUserCheckable)
+                it.setCheckState(Qt.Checked if v.id in self._plotted else Qt.Unchecked)
+                self.plot_list.addItem(it)
+        self.plot_list.blockSignals(False)
         self._sync_plots()
         self.stats_panel.set_variables(cfg)
         self.corr_panel.set_variables(cfg, self._plotted)
@@ -340,12 +538,28 @@ class MainWindow(QMainWindow):
         if on and vid not in self._plotted:
             self._plotted.append(vid)
             if len(self._plotted) > MAX_PLOTS:
-                self.table.set_checked(self._plotted.pop(0), False)
+                old = self._plotted.pop(0)
+                self.table.set_checked(old, False)
+                self._set_plot_item(old, False)
         elif not on and vid in self._plotted:
             self._plotted.remove(vid)
+        self._set_plot_item(vid, on)
         self._sync_plots()
         if self.engine.last:
             self._update_plots(self.engine.last)
+
+    def _set_plot_item(self, vid: str, on: bool) -> None:
+        self.plot_list.blockSignals(True)
+        for i in range(self.plot_list.count()):
+            it = self.plot_list.item(i)
+            if it.data(Qt.UserRole) == vid:
+                it.setCheckState(Qt.Checked if on else Qt.Unchecked)
+        self.plot_list.blockSignals(False)
+
+    def _plot_list_changed(self, item) -> None:
+        vid, on = item.data(Qt.UserRole), item.checkState() == Qt.Checked
+        self.table.set_checked(vid, on)
+        self._plot_toggled(vid, on)
 
     # --- recetas -------------------------------------------------------------
     def refresh_recipes(self) -> None:
@@ -378,7 +592,7 @@ class MainWindow(QMainWindow):
     def toggle_run(self) -> None:
         if self.engine.running:
             self.engine.stop()
-            self.act_run.setText("▶ Iniciar")
+            self.act_run.setText("▶ Iniciar monitoreo")
             self._set_banner(None, "DETENIDO")
         else:
             if not self.ctx.config.variables:
@@ -386,14 +600,19 @@ class MainWindow(QMainWindow):
                                         "Primero configura las variables a leer del HMI.")
                 return
             self.engine.start()
-            self.act_run.setText("■ Detener")
+            self.act_run.setText("■ Detener monitoreo")
 
-    def open_setup(self) -> None:
+    def open_setup(self, tab: Optional[str] = None) -> None:
         from .setup_dialog import SetupDialog
         was_running = self.engine.running
         # Durante la configuración el monitoreo (y su recorrido con clics) se detiene.
         self.engine.stop()
         dlg = SetupDialog(self.ctx, self)
+        if tab:
+            for i in range(dlg.tabs.count()):
+                if dlg.tabs.tabText(i) == tab:
+                    dlg.tabs.setCurrentIndex(i)
+                    break
         accepted = dlg.exec()
         if accepted:
             if not self.ctx.demo and dlg.config.general.monitor != self.ctx.config.general.monitor:
@@ -515,8 +734,14 @@ class MainWindow(QMainWindow):
         if snap.recipe != self.cmb_recipe.currentData():
             self.refresh_recipes()
         self._update_prompts(snap)
-        self._update_table(snap)
-        self._update_plots(snap)
+        page = self.stack.currentWidget()
+        # Solo se dibuja la página visible (no carga la PC con gráficas ocultas).
+        if page is self.home:
+            self.home.update_snapshot(snap)
+        if page is self.table:
+            self._update_table(snap)
+        if page is self.pages["trends"]:
+            self._update_plots(snap)
         self._refresh_analysis()
         self._update_findings(snap)
         self._append_events(snap)
@@ -533,6 +758,9 @@ class MainWindow(QMainWindow):
         self._update_tour_label()
         self.lbl_ocr.setText(f"OCR: {snap.ocr_engine} · lecturas {snap.read_ok}/{snap.read_total}")
         self.lbl_cycle.setText(f"Ciclo: {snap.cycle_ms:.0f} ms · {time.strftime('%H:%M:%S', time.localtime(snap.ts))}")
+        self.lbl_side_status.setText(
+            f"{'● En monitoreo' if self.engine.running else '○ Detenido'}<br>"
+            f"Receta: {snap.recipe or '—'}<br>Última lectura: {time.strftime('%H:%M:%S', time.localtime(snap.ts))}")
 
     def open_behavior(self) -> None:
         from .behavior_dialog import BehaviorDialog
@@ -541,8 +769,8 @@ class MainWindow(QMainWindow):
         self.behavior_panel.set_models()
 
     def _refresh_analysis(self, force: bool = False) -> None:
-        w = self.analysis.currentWidget()
-        if w is self.trends:
+        w = self.stack.currentWidget()
+        if w not in self.analysis_pages:
             return
         now = time.monotonic()
         if not force and now - self._analysis_at < 2.0:
@@ -608,6 +836,11 @@ class MainWindow(QMainWindow):
                 self.findings.setItem(i, c, it)
         n_alarm = sum(1 for f in snap.findings if f.level >= Level.WARN)
         self.tabs.setTabText(0, f"Hallazgos activos ({n_alarm})" if n_alarm else "Hallazgos activos")
+        for i in range(self.nav.count()):
+            it = self.nav.item(i)
+            if it.data(Qt.UserRole) == "events":
+                it.setText(f"🔔  Alarmas y eventos ({n_alarm})" if n_alarm else "🔔  Alarmas y eventos")
+                it.setForeground(QBrush(QColor("#c62828")) if n_alarm else QBrush())
 
     def _append_events(self, snap: Snapshot) -> None:
         alarm = False
