@@ -4,6 +4,8 @@ from __future__ import annotations
 from typing import Callable
 
 from PySide6.QtCore import Qt, QTimer
+from ..i18n import tr
+from . import theme
 from PySide6.QtWidgets import QDialog, QHBoxLayout, QLabel, QPushButton, QVBoxLayout
 
 
@@ -19,7 +21,7 @@ class TourPrompt(QDialog):
         self._on_run, self._on_snooze = on_run, on_snooze
         self._done = False
         lay = QVBoxLayout(self)
-        title = QLabel(f"<b>Se ejecutará el recorrido «{name}»</b><br>{reason}")
+        title = QLabel(tr("<b>Se ejecutará el recorrido «{n}»</b><br>{r}", n=name, r=reason))
         title.setWordWrap(True)
         lay.addWidget(title)
         self.lbl = QLabel()
@@ -27,7 +29,7 @@ class TourPrompt(QDialog):
         self.lbl.setAlignment(Qt.AlignCenter)
         lay.addWidget(self.lbl)
         hint = QLabel("Si no respondes, se ejecuta al terminar la cuenta.")
-        hint.setStyleSheet("color: #757575;")
+        hint.setStyleSheet(f"color: {theme.c('muted')};")
         lay.addWidget(hint)
         row = QHBoxLayout()
         b = QPushButton("▶ Ejecutar ahora")

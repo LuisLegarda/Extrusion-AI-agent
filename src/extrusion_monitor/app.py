@@ -18,8 +18,8 @@ def main(argv: list[str] | None = None) -> int:
 
     from .bootstrap import build
     from .config import default_home
-    from .ui.common import STYLE
-    from .ui.main_window import MainWindow, start_timer_autorun
+    from .i18n import Translator
+    from .ui.main_window import MainWindow, apply_ui_prefs, start_timer_autorun
 
     home = args.home
     if args.demo and home is None:
@@ -31,9 +31,10 @@ def main(argv: list[str] | None = None) -> int:
 
     app = QApplication(sys.argv[:1])
     app.setApplicationName("Monitor de extrusión")
-    app.setStyle("Fusion")
-    app.setStyleSheet(STYLE)
     ctx = build(home_dir, demo=args.demo)
+    apply_ui_prefs(ctx.workspace.load_state().get("ui", {}))  # idioma y tema guardados
+    translator = Translator()
+    translator.install(app)
     win = MainWindow(ctx)
     win.show()
     if args.autostart or args.demo:

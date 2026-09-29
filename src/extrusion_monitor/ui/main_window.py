@@ -20,15 +20,15 @@ from ..capture import ScreenSource
 from ..navigation import exclude_window_from_capture
 from ..engine import Snapshot
 from ..recipes import Bounds
-from .common import SnapshotBridge, level_color
+from ..i18n import LANGS, lang as i18n_lang, tr
+from . import theme
+from .common import SnapshotBridge, level_color, level_text, level_text_color
 from .variable_tree import VariableTree
 from .kpi_dashboard import KpiDashboard
 from .analysis_panels import BehaviorPanel, CorrelationPanel, StatsPanel
 from ..analysis.statistics import projection
 
 MAX_PLOTS = 4
-# Gráficas con fondo claro, coherentes con el tema de la aplicación.
-pg.setConfigOptions(antialias=True, background="w", foreground="#37474f")
 
 
 RANGES = [("5 min", 300), ("15 min", 900), ("30 min", 1800), ("1 h", 3600), ("4 h", 4 * 3600),
@@ -105,23 +105,25 @@ class TrendPanel(QWidget):
             w.setClipToView(True)
             w.setDownsampling(auto=True, mode="peak")
             w.showGrid(x=True, y=True, alpha=0.3)
-            curve = w.plot(pen=pg.mkPen("#1e6fb8", width=2), name="medición")
-            sp_curve = w.plot(pen=pg.mkPen("#1e88e5", width=2, style=Qt.DashLine), name="consigna")
-            proj = w.plot(pen=pg.mkPen("#ffb74d", width=2, style=Qt.DotLine), name="proyección")
+            curve = w.plot(pen=pg.mkPen(theme.c("measure"), width=2), name=tr("medición"))
+            sp_curve = w.plot(pen=pg.mkPen(theme.c("setpoint"), width=2, style=Qt.DashLine), name=tr("consigna"))
+            proj = w.plot(pen=pg.mkPen(theme.c("projection"), width=2, style=Qt.DotLine), name=tr("proyección"))
             proj_lo = pg.PlotDataItem(pen=pg.mkPen(None))
             proj_hi = pg.PlotDataItem(pen=pg.mkPen(None))
-            band = pg.FillBetweenItem(proj_lo, proj_hi, brush=pg.mkBrush(255, 183, 77, 45))
+            pc = QColor(theme.c("projection"))
+            pc.setAlpha(45)
+            band = pg.FillBetweenItem(proj_lo, proj_hi, brush=pg.mkBrush(pc))
             w.addItem(proj_lo)
             w.addItem(proj_hi)
             w.addItem(band)
-            eta = pg.TextItem(color="#ffb74d", anchor=(1, 1))
+            eta = pg.TextItem(color=theme.c("projection"), anchor=(1, 1))
             w.addItem(eta)
             lines = {
-                "ref": pg.InfiniteLine(angle=0, pen=pg.mkPen("#9e9e9e", style=Qt.DashLine)),
-                "wl": pg.InfiniteLine(angle=0, pen=pg.mkPen("#f9a825")),
-                "wh": pg.InfiniteLine(angle=0, pen=pg.mkPen("#f9a825")),
-                "al": pg.InfiniteLine(angle=0, pen=pg.mkPen("#e53935", width=2)),
-                "ah": pg.InfiniteLine(angle=0, pen=pg.mkPen("#e53935", width=2)),
+                "ref": pg.InfiniteLine(angle=0, pen=pg.mkPen(theme.c("reference"), style=Qt.DashLine)),
+                "wl": pg.InfiniteLine(angle=0, pen=pg.mkPen(theme.c("warning"))),
+                "wh": pg.InfiniteLine(angle=0, pen=pg.mkPen(theme.c("warning"))),
+                "al": pg.InfiniteLine(angle=0, pen=pg.mkPen(theme.c("critical"), width=2)),
+                "ah": pg.InfiniteLine(angle=0, pen=pg.mkPen(theme.c("critical"), width=2)),
             }
             for ln in lines.values():
                 ln.setVisible(False)
@@ -159,9 +161,9 @@ class TrendPanel(QWidget):
             p["proj_lo"].setData(pr["t"], pr["lo"])
             p["proj_hi"].setData(pr["t"], pr["hi"])
             end = float(pr["y"][-1])
-            text = f"en {horizon_s / 60:.0f} min: {end:.4g}"
+            text = tr("en {m} min: {v}", m=f"{horizon_s / 60:.0f}", v=f"{end:.4g}")
             if (bounds.ah is not None and end > bounds.ah) or (bounds.al is not None and end < bounds.al):
-                text += "  ⚠ fuera de alarma"
+                text += tr("  ⚠ fuera de alarma")
             p["eta"].setText(text)
             p["eta"].setPos(float(pr["t"][-1]), end)
         else:
@@ -194,6 +196,7 @@ class MainWindow(QMainWindow):
         self.bridge.snapshot.connect(self.on_snapshot, Qt.QueuedConnection)
         self.engine.listeners.append(self.bridge.snapshot.emit)
         self._plotted: list[str] = []
+        self._rebuilding = False
         self._build_ui()
         self.rebuild_table()
         self.refresh_recipes()
@@ -234,14 +237,14 @@ class MainWindow(QMainWindow):
         self.trends.chk_auto_y.toggled.connect(self._replot)
         self.plot_list = QListWidget()
         self.plot_list.setMaximumWidth(280)
-        self.plot_list.setTextElideMode(Qt.ElideLeft)
+        self.plot_list.setTextElideMode(Qt.ElideRight)
         self.plot_list.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
         self.plot_list.itemChanged.connect(self._plot_list_changed)
         trends_page = QSplitter(Qt.Horizontal)
         left = QWidget()
         ll = QVBoxLayout(left)
         ll.setContentsMargins(0, 0, 0, 0)
-        ll.addWidget(QLabel(f"<b>Variables a graficar</b> (máx. {MAX_PLOTS})"))
+        ll.addWidget(QLabel(f"<b>{tr('Variables a graficar')}</b> {tr('(máx. {n})', n=MAX_PLOTS)}"))
         ll.addWidget(self.plot_list, 1)
         trends_page.addWidget(left)
         trends_page.addWidget(self.trends)
@@ -344,6 +347,21 @@ class MainWindow(QMainWindow):
             act = m.addAction(label, lambda key=key: self.show_page(key))
             act.setShortcut(f"Ctrl+{i}")
         m.addSeparator()
+        lm = m.addMenu("🌐 Idioma / Language")
+        grp = QActionGroup(lm)
+        for code, label in LANGS.items():
+            act = lm.addAction(label, lambda code=code: self._set_ui_pref("lang", code))
+            act.setCheckable(True)
+            act.setChecked(code == i18n_lang())
+            grp.addAction(act)
+        tm = m.addMenu("🎨 Tema")
+        grp2 = QActionGroup(tm)
+        for code, label in (("light", "Claro"), ("dark", "Oscuro")):
+            act = tm.addAction(tr(label), lambda code=code: self._set_ui_pref("theme", code))
+            act.setCheckable(True)
+            act.setChecked(code == theme.name())
+            grp2.addAction(act)
+        m.addSeparator()
         m.addAction(self.act_top)
         act = m.addAction("Pantalla completa", self._toggle_fullscreen)
         act.setShortcut("F11")
@@ -358,14 +376,15 @@ class MainWindow(QMainWindow):
         side.setFixedWidth(215)
         lay = QVBoxLayout(side)
         lay.setContentsMargins(10, 14, 10, 10)
-        logo = QLabel("<div style='font-size:20px; color:#1f4e79'><b>⫶⫶ Extrusion</b></div>"
-                      "<div style='color:#5f6b7a'>Monitor de línea</div>")
+        logo = QLabel(f"<div style='font-size:20px; color:{theme.c('accent')}'><b>⫶⫶ Extrusion</b></div>"
+                      f"<div style='color:{theme.c('muted')}'>{tr('Monitor de línea')}</div>")
         logo.setAlignment(Qt.AlignCenter)
         lay.addWidget(logo)
         lay.addSpacing(12)
         self.nav = QListWidget()
         self.nav.setObjectName("nav")
         self.nav.setFocusPolicy(Qt.NoFocus)
+        self.nav.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
         for key, label, icon in NAV_ITEMS:
             it = QListWidgetItem(f"{icon}  {label}")
             it.setData(Qt.UserRole, key)
@@ -375,7 +394,7 @@ class MainWindow(QMainWindow):
         lay.addWidget(self.nav)
         line = QFrame()
         line.setFrameShape(QFrame.HLine)
-        line.setStyleSheet("color:#c7d3e3;")
+        line.setStyleSheet(f"color:{theme.c('sidebar_border')};")
         lay.addWidget(line)
         self.nav2 = QListWidget()
         self.nav2.setObjectName("nav")
@@ -390,7 +409,7 @@ class MainWindow(QMainWindow):
         lay.addStretch(1)
         self.lbl_side_status = QLabel()
         self.lbl_side_status.setWordWrap(True)
-        self.lbl_side_status.setStyleSheet("color:#5f6b7a; font-size:11px;")
+        self.lbl_side_status.setStyleSheet(f"color:{theme.c('muted')}; font-size:11px;")
         lay.addWidget(self.lbl_side_status)
         return side
 
@@ -495,14 +514,15 @@ class MainWindow(QMainWindow):
                                              "Solo lee la pantalla: no modifica el PLC ni el software del fabricante.")
 
     def _update_title(self) -> None:
-        demo = " — MODO DEMO (HMI simulado)" if self.ctx.demo else ""
-        self.setWindowTitle(f"Monitor de extrusión · {self.ctx.config.machine_name}{demo}")
-        self.lbl_title.setText(f"<span style='font-size:17px; color:#1f3b57'><b>{self.ctx.config.machine_name}</b>"
-                               f"</span><span style='color:#c62828'>{'  DEMO' if self.ctx.demo else ''}</span>")
+        demo = tr(" — MODO DEMO (HMI simulado)") if self.ctx.demo else ""
+        self.setWindowTitle(f"{tr('Monitor de extrusión')} · {self.ctx.config.machine_name}{demo}")
+        self.lbl_title.setText(f"<span style='font-size:17px; color:{theme.c('title')}'>"
+                               f"<b>{self.ctx.config.machine_name}</b></span>"
+                               f"<span style='color:{theme.c('critical')}'>{'  DEMO' if self.ctx.demo else ''}</span>")
 
     def _set_banner(self, level: Optional[Level], text: str) -> None:
         self.banner.setText(text)
-        self.banner.setStyleSheet(f"background:{level_color(level).name()};")
+        self.banner.setStyleSheet(f"background:{level_color(level).name()}; color:{level_text_color(level).name()};")
 
     def rebuild_table(self) -> None:
         cfg = self.ctx.config
@@ -515,6 +535,7 @@ class MainWindow(QMainWindow):
         for v in cfg.variables:
             if v.numeric:
                 it = QListWidgetItem(VariableTree.title(v, cfg))
+                it.setToolTip(VariableTree.title(v, cfg))
                 it.setData(Qt.UserRole, v.id)
                 it.setFlags(it.flags() | Qt.ItemIsUserCheckable)
                 it.setCheckState(Qt.Checked if v.id in self._plotted else Qt.Unchecked)
@@ -585,22 +606,23 @@ class MainWindow(QMainWindow):
         self._save_state()
 
     def _save_state(self) -> None:
-        self.ctx.workspace.save_state({"recipe": self.engine.state.recipe,
-                                       "auto_recipe": self.engine.state.auto_recipe})
+        state = self.ctx.workspace.load_state()
+        state.update({"recipe": self.engine.state.recipe, "auto_recipe": self.engine.state.auto_recipe})
+        self.ctx.workspace.save_state(state)
 
     # --- acciones --------------------------------------------------------------
     def toggle_run(self) -> None:
         if self.engine.running:
             self.engine.stop()
-            self.act_run.setText("▶ Iniciar monitoreo")
-            self._set_banner(None, "DETENIDO")
+            self.act_run.setText(tr("▶ Iniciar monitoreo"))
+            self._set_banner(None, tr("DETENIDO"))
         else:
             if not self.ctx.config.variables:
-                QMessageBox.information(self, "Sin variables",
-                                        "Primero configura las variables a leer del HMI.")
+                QMessageBox.information(self, tr("Sin variables"),
+                                        tr("Primero configura las variables a leer del HMI."))
                 return
             self.engine.start()
-            self.act_run.setText("■ Detener monitoreo")
+            self.act_run.setText(tr("■ Detener monitoreo"))
 
     def open_setup(self, tab: Optional[str] = None) -> None:
         from .setup_dialog import SetupDialog
@@ -644,7 +666,7 @@ class MainWindow(QMainWindow):
         if not path:
             return
         n = self.engine.historian.export_csv(path, time.time() - 86400)
-        QMessageBox.information(self, "Exportado", f"Se exportaron {n} registros.")
+        QMessageBox.information(self, tr("Exportado"), tr("Se exportaron {n} registros.", n=n))
 
     def _tour_pause(self, on: bool) -> None:
         self.engine.tour_paused = on
@@ -701,22 +723,23 @@ class MainWindow(QMainWindow):
     def _update_tour_label(self) -> None:
         tours = [t for t in self.ctx.config.tours if t.enabled and t.steps]
         if not tours:
-            self.lbl_tour.setText("Recorrido: desactivado")
+            self.lbl_tour.setText(tr("Recorrido: desactivado"))
             return
         if self.engine.tour_paused:
-            self.lbl_tour.setText("Recorrido: EN PAUSA")
+            self.lbl_tour.setText(tr("Recorrido: EN PAUSA"))
             return
         res = self.engine.last_tour_result
         if res is None:
-            self.lbl_tour.setText(f"Recorridos: {len(tours)} activos, pendiente")
+            self.lbl_tour.setText(tr("Recorridos: {n} activos, pendiente", n=len(tours)))
             return
         when = time.strftime("%H:%M:%S", time.localtime(res.started))
-        state = "OK" if res.ok else ("pospuesto" if res.skipped else "FALLÓ")
-        color = "#2e7d32" if res.ok else ("#9e9e9e" if res.skipped else "#c62828")
+        state = tr("OK" if res.ok else ("pospuesto" if res.skipped else "FALLÓ"))
+        color = theme.c("good_text") if res.ok else (theme.c("muted") if res.skipped else theme.c("critical"))
         detail = res.message.replace("pospuesto: ", "") if res.skipped else res.message
         t = self.ctx.config.get_tour(res.tour_id)
         name = f"«{t.name}» " if t and len(tours) > 1 else ""
-        self.lbl_tour.setText(f"<span style='color:{color}'>Recorrido {name}{when}: {state}</span> · {detail}")
+        label = tr("Recorrido {name}{when}: {state}", name=name, when=when, state=state)
+        self.lbl_tour.setText(f"<span style='color:{color}'>{label}</span> · {detail}")
 
     def _always_on_top(self, on: bool) -> None:
         self.setWindowFlag(Qt.WindowStaysOnTopHint, on)
@@ -747,20 +770,22 @@ class MainWindow(QMainWindow):
         self._append_events(snap)
         counts = {lvl: sum(1 for f in snap.findings if f.level == lvl) for lvl in Level}
         if snap.error:
-            self._set_banner(Level.ALARM, snap.error)
+            self._set_banner(Level.ALARM, snap.error)  # los mensajes del motor quedan en español
         elif self.engine.running:
-            text = {Level.OK: "PROCESO OK", Level.INFO: "PROCESO OK",
-                    Level.WARN: "AVISO", Level.ALARM: "ALARMA"}[snap.overall]
-            detail = f"   ·   {counts[Level.ALARM]} alarmas · {counts[Level.WARN]} avisos"
+            text = tr({Level.OK: "PROCESO OK", Level.INFO: "PROCESO OK",
+                       Level.WARN: "AVISO", Level.ALARM: "ALARMA"}[snap.overall])
+            detail = "   ·   " + tr("{n} alarmas · {m} avisos", n=counts[Level.ALARM], m=counts[Level.WARN])
             self._set_banner(snap.overall if snap.overall > Level.INFO else Level.OK, text + detail)
-        pages = ", ".join(sorted(snap.pages)) or ("—" if self.ctx.config.pages else "sin páginas definidas")
-        self.lbl_page.setText(f"Página HMI: {pages}")
+        pages = ", ".join(sorted(snap.pages)) or ("—" if self.ctx.config.pages else tr("sin páginas definidas"))
+        self.lbl_page.setText(tr("Página HMI: {pages}", pages=pages))
         self._update_tour_label()
-        self.lbl_ocr.setText(f"OCR: {snap.ocr_engine} · lecturas {snap.read_ok}/{snap.read_total}")
-        self.lbl_cycle.setText(f"Ciclo: {snap.cycle_ms:.0f} ms · {time.strftime('%H:%M:%S', time.localtime(snap.ts))}")
+        self.lbl_ocr.setText(tr("OCR: {engine} · lecturas {ok}/{total}", engine=snap.ocr_engine, ok=snap.read_ok,
+                                total=snap.read_total))
+        stamp = time.strftime('%H:%M:%S', time.localtime(snap.ts))
+        self.lbl_cycle.setText(tr("Ciclo: {ms} ms · {time}", ms=f"{snap.cycle_ms:.0f}", time=stamp))
         self.lbl_side_status.setText(
-            f"{'● En monitoreo' if self.engine.running else '○ Detenido'}<br>"
-            f"Receta: {snap.recipe or '—'}<br>Última lectura: {time.strftime('%H:%M:%S', time.localtime(snap.ts))}")
+            f"{tr('● En monitoreo') if self.engine.running else tr('○ Detenido')}<br>"
+            f"{tr('Receta: {r}', r=snap.recipe or '—')}<br>{tr('Última lectura: {t}', t=stamp)}")
 
     def open_behavior(self) -> None:
         from .behavior_dialog import BehaviorDialog
@@ -832,21 +857,21 @@ class MainWindow(QMainWindow):
                 it = QTableWidgetItem(text)
                 if c == 1:
                     it.setBackground(QBrush(level_color(f.level)))
-                    it.setForeground(QBrush(QColor("white")))
+                    it.setForeground(QBrush(level_text_color(f.level)))
                 self.findings.setItem(i, c, it)
         n_alarm = sum(1 for f in snap.findings if f.level >= Level.WARN)
-        self.tabs.setTabText(0, f"Hallazgos activos ({n_alarm})" if n_alarm else "Hallazgos activos")
+        self.tabs.setTabText(0, tr("Hallazgos activos ({n})", n=n_alarm) if n_alarm else tr("Hallazgos activos"))
         for i in range(self.nav.count()):
             it = self.nav.item(i)
             if it.data(Qt.UserRole) == "events":
-                it.setText(f"🔔  Alarmas y eventos ({n_alarm})" if n_alarm else "🔔  Alarmas y eventos")
-                it.setForeground(QBrush(QColor("#c62828")) if n_alarm else QBrush())
+                it.setText(tr("🔔  Alarmas y eventos ({n})", n=n_alarm) if n_alarm else tr("🔔  Alarmas y eventos"))
+                it.setForeground(QBrush(theme.qcolor("critical")) if n_alarm else QBrush())
 
     def _append_events(self, snap: Snapshot) -> None:
         alarm = False
         for e in snap.events:
             item = QListWidgetItem(f"{time.strftime('%H:%M:%S', time.localtime(e.ts))}  "
-                                   f"[{e.level.label}]  {e.message}")
+                                   f"[{level_text(e.level)}]  {e.message}")
             if e.level >= Level.WARN:
                 item.setForeground(QBrush(level_color(e.level)))
             self.log.insertItem(0, item)
@@ -860,11 +885,72 @@ class MainWindow(QMainWindow):
             QApplication.alert(self)
 
     def closeEvent(self, event) -> None:
-        self.engine.stop()
-        self._save_state()
-        if self.engine.historian:
-            self.engine.historian.close()
+        self._detach()
+        if not self._rebuilding:
+            self.engine.stop()
+            self._save_state()
+            if self.engine.historian:
+                self.engine.historian.close()
         super().closeEvent(event)
+
+    def _detach(self) -> None:
+        try:
+            self.engine.listeners.remove(self.bridge.snapshot.emit)
+        except ValueError:
+            pass
+        self.home.timer.stop()
+        self.kpi.timer.stop()
+        for dlg in self._prompts.values():
+            dlg.dismiss()
+        self._prompts.clear()
+
+    # --- idioma y tema ------------------------------------------------------------
+    def _set_ui_pref(self, key: str, value: str) -> None:
+        state = self.ctx.workspace.load_state()
+        ui = dict(state.get("ui", {}))
+        if ui.get(key) == value:
+            return
+        ui[key] = value
+        state["ui"] = ui
+        self.ctx.workspace.save_state(state)
+        apply_ui_prefs(ui)
+        self.rebuild_window()
+
+    def rebuild_window(self) -> "MainWindow":
+        """Vuelve a construir la ventana (idioma o tema nuevos); el monitoreo sigue corriendo."""
+        new = MainWindow(self.ctx)
+        new.setGeometry(self.geometry())
+        new._plotted = list(self._plotted)
+        new.rebuild_table()
+        new.act_top.setChecked(self.act_top.isChecked())
+        new.act_tour_pause.setChecked(self.act_tour_pause.isChecked())
+        if self.engine.running:
+            new.act_run.setText(tr("■ Detener monitoreo"))
+        if self.isMaximized():
+            new.showMaximized()
+        else:
+            new.show()
+        new.show_page(self.current_page())
+        if self.engine.last is not None:
+            new.on_snapshot(self.engine.last)
+        self._rebuilding = True
+        self.close()
+        self.deleteLater()
+        rebuilt_windows.append(new)
+        return new
+
+
+rebuilt_windows: list = []  # referencia a la ventana nueva tras cambiar idioma o tema
+
+
+def apply_ui_prefs(ui: dict) -> None:
+    """Aplica idioma y tema guardados (antes de construir la ventana)."""
+    from ..i18n import set_lang
+    set_lang(ui.get("lang", "es"))
+    theme.set_theme(ui.get("theme", "light"))
+    app = QApplication.instance()
+    if app is not None:
+        theme.apply(app)
 
 
 def start_timer_autorun(window: MainWindow, delay_ms: int = 300) -> None:

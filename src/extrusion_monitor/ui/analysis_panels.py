@@ -14,11 +14,26 @@ from PySide6.QtWidgets import (
 
 from ..analysis.statistics import align, capability, correlation, linear_fit, xbar_chart
 from ..engine import MonitorEngine, Snapshot
+from ..i18n import tr
+from . import theme
 from .behavior_dialog import fill_corr_table
 
-LINE = "#1e6fb8"
-WARN = "#f9a825"
-ALARM = "#e53935"
+
+
+def LINE():  # noqa: N802 (colores del tema activo)
+    return theme.c("measure")
+
+
+def WARN():  # noqa: N802
+    return theme.c("warning")
+
+
+def ALARM():  # noqa: N802
+    return theme.c("critical")
+
+
+def GOOD():  # noqa: N802
+    return theme.c("good_text")
 
 
 def _time_axis() -> dict:
@@ -50,9 +65,9 @@ class StatsPanel(QWidget):
         self.lbl.setTextFormat(Qt.RichText)
         lay.addWidget(self.lbl)
         split = QSplitter(Qt.Vertical)
-        self.hist = pg.PlotWidget(title="Distribución (ventana de tendencia)")
+        self.hist = pg.PlotWidget(title=tr("Distribución (ventana de tendencia)"))
         self.hist.showGrid(x=True, y=True, alpha=0.2)
-        self.ctrl = pg.PlotWidget(title="Carta de control X̄ (medias por subgrupo)", axisItems=_time_axis())
+        self.ctrl = pg.PlotWidget(title=tr("Carta de control X̄ (medias por subgrupo)"), axisItems=_time_axis())
         self.ctrl.showGrid(x=True, y=True, alpha=0.2)
         split.addWidget(self.hist)
         split.addWidget(self.ctrl)
@@ -93,35 +108,35 @@ class StatsPanel(QWidget):
         counts, edges = np.histogram(y, bins=bins, range=(lo - (hi - lo) * 0.05, hi + (hi - lo) * 0.05))
         width = edges[1] - edges[0]
         self.hist.addItem(pg.BarGraphItem(x=edges[:-1] + width / 2, height=counts, width=width * 0.9,
-                                          brush=pg.mkBrush(79, 195, 247, 160)))
+                                          brush=pg.mkBrush(theme.c("hist"))))
         if cap.std_overall > 0:
             xs = np.linspace(edges[0], edges[-1], 200)
             pdf = np.exp(-0.5 * ((xs - cap.mean) / cap.std_overall) ** 2) / (cap.std_overall * np.sqrt(2 * np.pi))
-            self.hist.plot(xs, pdf * len(y) * width, pen=pg.mkPen("#37474f", width=2))
-        for val, color, name in ((lsl, ALARM, "LIE"), (usl, ALARM, "LSE"), (st.reference, "#9e9e9e", "objetivo"),
-                                 (cap.mean, LINE, "media")):
+            self.hist.plot(xs, pdf * len(y) * width, pen=pg.mkPen(theme.c("plot_fg"), width=2))
+        for val, color, name in ((lsl, ALARM(), tr("LIE")), (usl, ALARM(), tr("LSE")), (st.reference, theme.c("reference"), tr("objetivo")),
+                                 (cap.mean, LINE(), tr("media"))):
             if val is not None:
                 ln = pg.InfiniteLine(pos=val, angle=90, pen=pg.mkPen(color, width=2,
-                                                                     style=Qt.DashLine if name == "media" else
+                                                                     style=Qt.DashLine if name == tr("media") else
                                                                      Qt.SolidLine),
-                                     label=name, labelOpts={"position": 0.8 if name == "media" else 0.95,
+                                     label=name, labelOpts={"position": 0.8 if name == tr("media") else 0.95,
                                                             "color": color})
                 self.hist.addItem(ln)
         # Carta X̄
         sub = self.engine.config.general.spc_subgroup_s
         xb = xbar_chart(t, y, sub)
         if xb is not None:
-            self.ctrl.plot(xb.t, xb.means, pen=pg.mkPen(LINE, width=2), symbol="o", symbolSize=5,
-                           symbolBrush=LINE)
+            self.ctrl.plot(xb.t, xb.means, pen=pg.mkPen(LINE(), width=2), symbol="o", symbolSize=5,
+                           symbolBrush=LINE())
             if len(xb.out):
                 self.ctrl.plot(xb.t[xb.out], xb.means[xb.out], pen=None, symbol="o", symbolSize=9,
-                               symbolBrush=ALARM)
-            _hline(self.ctrl, xb.center, "#9e9e9e", Qt.DashLine, label="LC")
-            _hline(self.ctrl, xb.ucl, WARN, label="LCS")
-            _hline(self.ctrl, xb.lcl, WARN, label="LCI")
+                               symbolBrush=ALARM())
+            _hline(self.ctrl, xb.center, theme.c("reference"), Qt.DashLine, label=tr("LC"))
+            _hline(self.ctrl, xb.ucl, WARN(), label=tr("LCS"))
+            _hline(self.ctrl, xb.lcl, WARN(), label=tr("LCI"))
             for lim in (lsl, usl):
                 if lim is not None:
-                    _hline(self.ctrl, lim, ALARM, width=1)
+                    _hline(self.ctrl, lim, ALARM(), width=1)
 
         def f(v, d=3):
             return "—" if v is None else f"{v:.{d}g}"
@@ -129,21 +144,23 @@ class StatsPanel(QWidget):
         def grade(v):
             if v is None:
                 return "—"
-            color = "#2e7d32" if v >= 1.33 else (WARN if v >= 1.0 else ALARM)
+            color = GOOD() if v >= 1.33 else (WARN() if v >= 1.0 else ALARM())
             return f"<b style='color:{color}'>{v:.2f}</b>"
 
         trend = st.trend
-        slope = f"{trend.slope_per_min:+.3g}/min" + (" (significativa)" if trend.slope_significant else "") \
+        slope = f"{trend.slope_per_min:+.3g}/min" + (tr(" (significativa)") if trend.slope_significant else "") \
             if trend else "—"
         eta = f"{trend.eta_to_alarm_min:.1f} min" if trend and trend.eta_to_alarm_min is not None else "—"
-        self.lbl.setText(
-            f"n = {cap.n} · media = {f(cap.mean, 5)} · σ total = {f(cap.std_overall)} · σ corto plazo = "
-            f"{f(cap.std_within)} · mín/máx = {f(cap.minimum, 5)} / {f(cap.maximum, 5)}<br>"
-            f"Cp = {grade(cap.cp)} · Cpk = {grade(cap.cpk)} · Pp = {grade(cap.pp)} · Ppk = {grade(cap.ppk)} · "
-            f"fuera de límites estimado = {f(cap.pct_out, 2)} %<br>"
-            f"Tendencia = {slope} · tiempo estimado al límite = {eta} · "
-            f"reglas SPC: {', '.join(trend.nelson) if trend and trend.nelson else 'ninguna'}"
-            + ("" if lsl is not None or usl is not None else "<br><i>Sin límites de alarma en la receta: no se calcula Cp/Cpk.</i>"))
+        self.lbl.setText(tr(
+            "n = {n} · media = {mean} · σ total = {s} · σ corto plazo = {sw} · mín/máx = {mn} / {mx}<br>"
+            "Cp = {cp} · Cpk = {cpk} · Pp = {pp} · Ppk = {ppk} · fuera de límites estimado = {out} %<br>"
+            "Tendencia = {slope} · tiempo estimado al límite = {eta} · reglas SPC: {rules}",
+            n=cap.n, mean=f(cap.mean, 5), s=f(cap.std_overall), sw=f(cap.std_within), mn=f(cap.minimum, 5),
+            mx=f(cap.maximum, 5), cp=grade(cap.cp), cpk=grade(cap.cpk), pp=grade(cap.pp), ppk=grade(cap.ppk),
+            out=f(cap.pct_out, 2), slope=slope, eta=eta,
+            rules=", ".join(trend.nelson) if trend and trend.nelson else tr("ninguna"))
+            + ("" if lsl is not None or usl is not None
+               else tr("<br><i>Sin límites de alarma en la receta: no se calcula Cp/Cpk.</i>")))
 
 
 class CorrelationPanel(QWidget):
@@ -176,7 +193,7 @@ class CorrelationPanel(QWidget):
         right.addLayout(row)
         self.lbl = QLabel()
         right.addWidget(self.lbl)
-        self.scatter = pg.PlotWidget(title="Dispersión")
+        self.scatter = pg.PlotWidget(title=tr("Dispersión"))
         self.scatter.showGrid(x=True, y=True, alpha=0.2)
         right.addWidget(self.scatter, 1)
         lay.addLayout(right, 3)
@@ -233,12 +250,12 @@ class CorrelationPanel(QWidget):
         vx, vy = self.cmb_x.currentData(), self.cmb_y.currentData()
         if vx in names and vy in names and vx != vy:
             x, y = m[:, names.index(vx)], m[:, names.index(vy)]
-            self.scatter.plot(x, y, pen=None, symbol="o", symbolSize=5, symbolBrush=pg.mkBrush(79, 195, 247, 150))
+            self.scatter.plot(x, y, pen=None, symbol="o", symbolSize=5, symbolBrush=pg.mkBrush(theme.c("measure")))
             fit = linear_fit(x, y)
             if fit:
                 b, a, r2 = fit
                 xs = np.array([x.min(), x.max()])
-                self.scatter.plot(xs, a + b * xs, pen=pg.mkPen(WARN, width=2))
+                self.scatter.plot(xs, a + b * xs, pen=pg.mkPen(WARN(), width=2))
                 self.lbl.setText(f"Y = {a:.4g} + {b:.4g}·X · R² = {r2:.2f} · n = {len(x)}")
             self.scatter.setLabel("bottom", self.cmb_x.currentText().split(" › ")[-1])
             self.scatter.setLabel("left", self.cmb_y.currentText().split(" › ")[-1])
@@ -261,9 +278,9 @@ class BehaviorPanel(QWidget):
         self.lbl.setWordWrap(True)
         lay.addWidget(self.lbl)
         split = QSplitter(Qt.Vertical)
-        self.plot = pg.PlotWidget(title="Desviación respecto a lo normal (D² / umbral)", axisItems=_time_axis())
+        self.plot = pg.PlotWidget(title=tr("Desviación respecto a lo normal (D² / umbral)"), axisItems=_time_axis())
         self.plot.showGrid(x=True, y=True, alpha=0.2)
-        self.bars = pg.PlotWidget(title="Contribución por variable (%)")
+        self.bars = pg.PlotWidget(title=tr("Contribución por variable (%)"))
         split.addWidget(self.plot)
         split.addWidget(self.bars)
         lay.addWidget(split, 1)
@@ -284,8 +301,8 @@ class BehaviorPanel(QWidget):
         self.plot.clear()
         self.bars.clear()
         if not mid:
-            self.lbl.setText("No hay modelos. Crea uno en ⚙ Configurar variables → «Entrenar comportamiento…» "
-                             "o con el botón 🧠 Comportamiento.")
+            self.lbl.setText(tr("No hay modelos. Crea uno en ⚙ Configurar variables → «Entrenar comportamiento…» "
+                                "o con el botón 🧠 Comportamiento."))
             return
         model = self.engine.behaviors.store.get(mid)
         hist = list(self.engine.behaviors.history.get(mid, []))
@@ -293,30 +310,30 @@ class BehaviorPanel(QWidget):
         if hist:
             t = np.array([h[0] for h in hist])
             ratio = np.array([h[1] / h[2] if h[2] > 0 else 0 for h in hist])
-            self.plot.plot(t, ratio, pen=pg.mkPen(LINE, width=2))
-            _hline(self.plot, 1.0, WARN, label="umbral")
-            _hline(self.plot, 2.0, ALARM, label="alarma")
+            self.plot.plot(t, ratio, pen=pg.mkPen(LINE(), width=2))
+            _hline(self.plot, 1.0, WARN(), label=tr("umbral"))
+            _hline(self.plot, 2.0, ALARM(), label=tr("alarma"))
         res = self.engine.behaviors.last.get(mid)
         if res is None:
-            reason = "inactivo" if model and not model.enabled else (
+            reason = tr("inactivo") if model and not model.enabled else tr(
                 "no aplica a la receta activa" if model and model.recipe and model.recipe != self.engine.state.recipe
                 else "esperando datos vigentes de todas sus variables")
-            self.lbl.setText(f"Sin evaluación: {reason}.")
+            self.lbl.setText(tr("Sin evaluación: {r}.", r=reason))
             return
         labels = [cfg.var_label(cfg.variable(v)).split(" › ")[-1] if cfg.variable(v) else v
                   for v in res.contributions]
         vals = list(res.contributions.values())
-        colors = [pg.mkBrush(ALARM) if abs(res.z[v]) > model.z_limit * model.sensitivity else pg.mkBrush(LINE)
+        colors = [pg.mkBrush(ALARM()) if abs(res.z[v]) > model.z_limit * model.sensitivity else pg.mkBrush(LINE())
                   for v in res.contributions]
         self.bars.addItem(pg.BarGraphItem(x=np.arange(len(vals)), height=vals, width=0.6, brushes=colors))
         self.bars.getAxis("bottom").setTicks([list(enumerate(labels))])
-        state = "NORMAL" if res.ratio <= 1 else ("ANORMAL" if res.ratio <= 2 else "MUY ANORMAL")
-        color = "#2e7d32" if res.ratio <= 1 else (WARN if res.ratio <= 2 else ALARM)
+        state = tr("NORMAL" if res.ratio <= 1 else ("ANORMAL" if res.ratio <= 2 else "MUY ANORMAL"))
+        color = GOOD() if res.ratio <= 1 else (WARN() if res.ratio <= 2 else ALARM())
         zs = ", ".join(f"{lb} z={res.z[v]:+.1f}" for lb, v in zip(labels, res.contributions))
         def lab(v):
             return cfg.var_label(cfg.variable(v)).split(" › ")[-1] if cfg.variable(v) else v
 
-        broken = "; ".join(f"{lab(a)} ↔ {lab(b)} ({r:+.1f}σ)" for a, b, r in res.broken_pairs) or "ninguna"
+        broken = "; ".join(f"{lab(a)} ↔ {lab(b)} ({r:+.1f}σ)" for a, b, r in res.broken_pairs) or tr("ninguna")
         self.lbl.setText(
             f"<b style='color:{color}'>{state}</b> · D²/umbral = {res.ratio:.2f} · "
-            f"{time.strftime('%H:%M:%S', time.localtime(res.ts))}<br>{zs}<br>Relaciones rotas: {broken}")
+            f"{time.strftime('%H:%M:%S', time.localtime(res.ts))}<br>{zs}<br>{tr('Relaciones rotas: {b}', b=broken)}")

@@ -10,13 +10,14 @@ from PySide6.QtWidgets import QHeaderView, QTreeWidget, QTreeWidgetItem
 from ..analysis.rules import Level, VarStatus, fmt
 from ..config import AppConfig, Variable
 from ..engine import Snapshot
-from .common import LEVEL_TEXT, level_color
+from ..i18n import tr
+from . import theme
+from .common import level_color, level_text, level_text_color
 
 COLS = ["Variable", "Consigna", "Medición", "Unidad", "Referencia", "Desv.", "Tol. aviso / alarma",
         "Estado", "Tendencia /min", "Cpk", "Lectura"]
 C_NAME, C_SP, C_PV, C_UNIT, C_REF, C_DEV, C_TOL, C_STATE, C_TREND, C_CPK, C_READ = range(len(COLS))
 ROLE = Qt.UserRole
-SP_COLOR = QColor("#1e88e5")
 
 
 class VariableTree(QTreeWidget):
@@ -25,7 +26,8 @@ class VariableTree(QTreeWidget):
     def __init__(self, parent=None):
         super().__init__(parent)
         self.setColumnCount(len(COLS))
-        self.setHeaderLabels(COLS)
+        self.setHeaderLabels([tr(c) for c in COLS])
+        self.sp_color = QColor(theme.c("setpoint"))
         self.setAlternatingRowColors(True)
         self.setUniformRowHeights(True)
         self.header().setSectionResizeMode(QHeaderView.ResizeToContents)
@@ -53,7 +55,7 @@ class VariableTree(QTreeWidget):
             page = config.page(pid) if pid else None
             if pid and page is None:
                 return page_item(None)
-            it = QTreeWidgetItem([page.name if page else "General"])
+            it = QTreeWidgetItem([page.name if page else tr("General")])
             it.setFont(C_NAME, bold)
             it.setFirstColumnSpanned(False)
             it.setData(C_NAME, ROLE, ("page", pid))
@@ -74,11 +76,11 @@ class VariableTree(QTreeWidget):
             if v.numeric:
                 it.setFlags(it.flags() | Qt.ItemIsUserCheckable)
                 it.setCheckState(C_NAME, Qt.Checked if v.id in plotted else Qt.Unchecked)
-                it.setToolTip(C_NAME, "Marca la casilla para graficar la tendencia")
+                it.setToolTip(C_NAME, tr("Marca la casilla para graficar la tendencia"))
             it.setText(C_UNIT, v.unit)
             for c in (C_SP, C_PV, C_REF, C_DEV, C_TOL, C_TREND, C_CPK):
                 it.setTextAlignment(c, Qt.AlignRight | Qt.AlignVCenter)
-            it.setForeground(C_SP, QBrush(SP_COLOR))
+            it.setForeground(C_SP, QBrush(self.sp_color))
             bold_value = QFont()
             bold_value.setBold(True)
             it.setFont(C_PV, bold_value)
@@ -123,9 +125,9 @@ class VariableTree(QTreeWidget):
                 pid = page.parent
         for pid, it in self._pages.items():
             level = page_levels.get(pid)
-            text = LEVEL_TEXT[level] if level is not None else ""
+            text = level_text(level) if level is not None else ""
             if pid is not None and pid not in snap.pages and self.config and self.config.page(pid):
-                note = "vía recorrido" if pid in self.config.toured_pages() else "no visible"
+                note = tr("vía recorrido") if pid in self.config.toured_pages() else tr("no visible")
                 text = (text + " · " if text else "") + note
             it.setText(C_STATE, text)
             it.setForeground(C_STATE, QBrush(level_color(level)))
@@ -159,18 +161,18 @@ class VariableTree(QTreeWidget):
         trend = ""
         if st.trend:
             arrow = "↑" if st.trend.slope_per_min > 0 else "↓"
-            trend = f"{arrow} {st.trend.slope_per_min:+.3g}" if st.trend.slope_significant else "→ estable"
+            trend = f"{arrow} {st.trend.slope_per_min:+.3g}" if st.trend.slope_significant else tr("→ estable")
         levels = [x.level for x in (st, sp) if x is not None and x.fresh and x.level is not None]
         level = max(levels) if levels else None
         fresh = st.fresh or (sp is not None and sp.fresh)
-        state = LEVEL_TEXT[level] if level is not None else (
-            "no visible" if not rd.visible else ("sin dato" if not fresh else LEVEL_TEXT[None]))
-        reasons = [f"{'consigna' if x is sp else 'medición'}: {x.reading.reason}"
+        state = level_text(level) if level is not None else (
+            tr("no visible") if not rd.visible else (tr("sin dato") if not fresh else level_text(None)))
+        reasons = [f"{tr('consigna') if x is sp else tr('medición')}: {x.reading.reason}"
                    for x in (st, sp) if x is not None and not x.reading.ok and x.reading.reason]
         ref_dec = sp.reading.decimals if sp is not None and st.ref_source == "consigna" else rd.decimals
-        ref = f"{fmt(st.reference, var, ref_dec)} ({st.ref_source})" if st.reference is not None else ""
+        ref = f"{fmt(st.reference, var, ref_dec)} ({tr(st.ref_source)})" if st.reference is not None else ""
         if st.expected:
-            ref = f"esperado «{st.expected}»"
+            ref = tr("esperado «{e}»", e=st.expected)
         if sp is not None and sp.reference is not None and st.ref_source != "receta":
             ref += f" · receta SP {fmt(sp.reference, sp.var)}"
         cells.update({
@@ -187,11 +189,11 @@ class VariableTree(QTreeWidget):
                 it.setText(c, text)
         color = level_color(level)
         it.setBackground(C_STATE, QBrush(color))
-        it.setForeground(C_STATE, QBrush(QColor("white")))
+        it.setForeground(C_STATE, QBrush(level_text_color(level)))
         pv_bad = st.level is not None and st.level >= Level.WARN and st.fresh
         sp_bad = sp is not None and sp.level is not None and sp.level >= Level.WARN and sp.fresh
         it.setForeground(C_PV, QBrush(level_color(st.level)) if pv_bad else self.palette().text())
-        it.setForeground(C_SP, QBrush(level_color(sp.level)) if sp_bad else QBrush(SP_COLOR))
+        it.setForeground(C_SP, QBrush(level_color(sp.level)) if sp_bad else QBrush(self.sp_color))
         if var.kind == "setpoint" and st.level is not None and st.level >= Level.WARN and st.fresh:
             it.setForeground(C_SP, QBrush(level_color(st.level)))
         return level

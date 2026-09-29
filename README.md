@@ -36,10 +36,11 @@ Por eso sirve para cualquier línea de extrusión.
 
 ## Interfaz
 
-- **Menú superior:** Archivo (iniciar/detener con F5, carpeta de datos), Receta (editar, receta activa, autocarga desde el HMI), Datos (exportar CSV, generar reporte), Entrenamiento (comportamiento), Recorridos (pausar, ejecutar ahora), Configuración (pestañas y variables, recorridos, KPI/OEE, reportes, general), Ver (páginas con Ctrl+1…8, siempre visible, pantalla completa con F11) y Ayuda.
+- **Menú superior:** Archivo (iniciar/detener con F5, carpeta de datos), Receta (editar, receta activa, autocarga desde el HMI), Datos (exportar CSV, generar reporte), Entrenamiento (comportamiento), Recorridos (pausar, ejecutar ahora), Configuración (pestañas y variables, recorridos, KPI/OEE, reportes, general), Ver (páginas con Ctrl+1…8, idioma español/inglés, tema claro/oscuro, siempre visible, pantalla completa con F11) y Ayuda.
 - **Barra lateral:** Inicio, Variables en vivo, Tendencias, KPI / OEE, SPC, Correlación, Estabilidad (IA) y Alarmas y eventos (con el número de alarmas activas). Debajo están Recetas, Reportes (lista de PDF/CSV generados) y Configuración.
 - **Inicio:** tablero general con indicadores tipo gauge: OEE del turno, índice 5.0, estabilidad (comportamiento aprendido), Cpk mínimo, % de variables en especificación y calidad de lectura. También muestra el estado de la máquina, las alarmas activas, las 6 variables con el Cpk más bajo y la franja de estado del turno. Un clic en un gauge abre su vista detallada.
 - Solo se actualiza la página visible, para no cargar la PC.
+- **Idioma y tema:** en *Ver* se elige español o inglés y tema claro u oscuro. La ventana se reconstruye al momento, sin detener el monitoreo, y la elección se recuerda. Las gráficas usan una paleta validada para daltonismo y contraste, con tonos propios para cada tema. Los mensajes de hallazgos y eventos del motor se mantienen en español.
 
 ## Uso
 

@@ -1,0 +1,445 @@
+"""Traducción al inglés (clave = texto original en español)."""
+
+EN: dict[str, str] = {
+    # --- navegación y menús ---
+    "Inicio": "Home", "Variables en vivo": "Live variables", "Tendencias": "Trends", "KPI / OEE": "KPI / OEE",
+    "SPC": "SPC", "Correlación": "Correlation", "Estabilidad (IA)": "Stability (AI)",
+    "Alarmas y eventos": "Alarms & events", "Recetas": "Recipes", "Reportes": "Reports",
+    "Configuración": "Settings", "&Archivo": "&File", "&Receta": "&Recipe", "&Datos": "&Data",
+    "&Entrenamiento": "&Training", "Reco&rridos": "&Tours", "&Configuración": "&Configuration", "&Ver": "&View",
+    "A&yuda": "&Help", "▶ Iniciar monitoreo": "▶ Start monitoring", "■ Detener monitoreo": "■ Stop monitoring",
+    "Cargar automáticamente la receta del HMI": "Load the HMI recipe automatically",
+    "⏸ Pausar recorridos": "⏸ Pause tours",
+    "Detiene los clics automáticos en el HMI (se siguen leyendo los datos visibles)":
+        "Stops automatic clicks on the HMI (visible data is still read)",
+    "📌 Siempre visible": "📌 Always on top", "⟳ Ejecutar recorrido ahora": "⟳ Run tour now",
+    "📄 Generar reporte ahora": "📄 Generate report now", "📂 Abrir carpeta de datos": "📂 Open data folder",
+    "Salir": "Exit", "📋 Editar recetas…": "📋 Edit recipes…", "Receta activa": "Active recipe",
+    "⤓ Exportar historial a CSV…": "⤓ Export history to CSV…", "📂 Abrir carpeta de reportes": "📂 Open reports folder",
+    "🧠 Entrenar comportamiento…": "🧠 Train behavior…", "Ver estabilidad (comportamiento)": "View stability (behavior)",
+    "Configurar recorridos…": "Configure tours…", "Pantalla completa": "Full screen", "Manual de uso": "User manual",
+    "Acerca de…": "About…", "Acerca de": "About", "Pestañas y variables…": "Tabs and variables…",
+    "Pestañas y variables": "Tabs and variables", "Recorridos…": "Tours…", "Recorrido automático": "Tours",
+    "KPI / OEE…": "KPI / OEE…", "Reportes…": "Reports…", "General…": "General…", "General": "General",
+    "Idioma": "Language", "🎨 Tema": "🎨 Theme", "Monitor de extrusión": "Extrusion monitor", "Tema": "Theme", "Claro": "Light", "Oscuro": "Dark",
+    "Monitor de línea": "Line monitor", "DETENIDO": "STOPPED", "Auto desde HMI": "Auto from HMI",
+    "Receta:": "Recipe:", "— sin receta —": "— no recipe —", "  DEMO": "  DEMO",
+    " — MODO DEMO (HMI simulado)": " — DEMO MODE (simulated HMI)",
+    "<b>Monitor de extrusión</b><br>Verificación de parámetros, recetas, tendencias, KPI/OEE y reportes a partir "
+    "de la pantalla del HMI.<br>Solo lee la pantalla: no modifica el PLC ni el software del fabricante.":
+        "<b>Extrusion monitor</b><br>Parameter and recipe verification, trends, KPI/OEE and reports from the HMI "
+        "screen.<br>It only reads the screen: it does not modify the PLC or the manufacturer's software.",
+    "Exportar historial (últimas 24 h)": "Export history (last 24 h)", "Exportado": "Exported",
+    "Se exportaron {n} registros.": "{n} records exported.",
+    "Rango:": "Range:", "  ⚠ fuera de alarma": "  ⚠ outside alarm", "Desde": "Since", "Nivel": "Level",
+    "Regla": "Rule", "Descripción": "Description", "Recorrido: desactivado": "Tour: disabled",
+    "Recorrido: EN PAUSA": "Tour: PAUSED", "FALLÓ": "FAILED", "OK": "OK", "pospuesto": "postponed",
+    "Recorridos: {n} activos, pendiente": "Tours: {n} active, pending",
+    "Recorrido {name}{when}: {state}": "Tour {name}{when}: {state}",
+    "sin páginas definidas": "no pages defined", "Página HMI: {pages}": "HMI page: {pages}",
+    "OCR: {engine} · lecturas {ok}/{total}": "OCR: {engine} · reads {ok}/{total}",
+    "Ciclo: {ms} ms · {time}": "Cycle: {ms} ms · {time}",
+    "medición": "measurement", "proyección": "projection", "consigna": "setpoint", "Sin variables": "No variables",
+    "Primero configura las variables a leer del HMI.": "First configure the variables to read from the HMI.",
+    "  (desactivado)": "  (disabled)", "Sin reportes: créalos en ⚙ Configurar → Reportes":
+        "No reports: create them in ⚙ Settings → Reports", "Abrir carpeta de reportes": "Open reports folder",
+    "PROCESO OK": "PROCESS OK", "AVISO": "WARNING", "ALARMA": "ALARM", "INFO": "INFO",
+    "{n} alarmas · {m} avisos": "{n} alarms · {m} warnings",
+    "Pantalla no disponible: {e}": "Screen unavailable: {e}",
+    "● En monitoreo": "● Monitoring", "○ Detenido": "○ Stopped",
+    "Receta: {r}": "Recipe: {r}", "Última lectura: {t}": "Last reading: {t}",
+    "🔔  Alarmas y eventos": "🔔  Alarms & events", "🔔  Alarmas y eventos ({n})": "🔔  Alarms & events ({n})",
+    "Hallazgos activos": "Active findings", "en {m} min: {v}": "in {m} min: {v}", "Hallazgos activos ({n})": "Active findings ({n})",
+    "Registro de eventos": "Event log",
+    "Variables a graficar": "Variables to plot", "(máx. {n})": "(max. {n})",
+    "Tiempo mostrado. Más allá de la ventana en memoria se lee del historial.":
+        "Time shown. Beyond the in-memory window, data is read from history.",
+    "Escala Y automática (según límites)": "Automatic Y scale (by limits)",
+    "La escala se ajusta a los límites de la variable y a los datos visibles; un pico solo la amplía mientras "
+    "está en pantalla. Desmárcala para hacer zoom manual con el mouse.":
+        "The scale follows the variable limits and the visible data; a spike only widens it while it is on "
+        "screen. Uncheck it to zoom manually with the mouse.",
+    "Marca la casilla de una variable para graficar su tendencia.": "Check a variable to plot its trend.",
+    "5 min": "5 min", "15 min": "15 min", "30 min": "30 min", "1 h": "1 h", "4 h": "4 h", "8 h": "8 h",
+    "24 h": "24 h", "7 días": "7 days",
+    # --- inicio ---
+    "Estado de la máquina": "Machine status", "Alarmas y avisos activos": "Active alarms and warnings",
+    "Cpk por variable (las 6 más bajas)": "Cpk by variable (lowest 6)", "Estado del turno": "Shift status",
+    "\n(clic para ver el detalle)": "\n(click for details)",
+    "Sin datos: se necesitan límites en la receta y lecturas en la ventana de tendencia.":
+        "No data: recipe limits and readings in the trend window are needed.",
+    "OEE (turno)": "OEE (shift)", "Disponibilidad × Rendimiento × Calidad del turno en curso":
+        "Availability × Performance × Quality of the current shift",
+    "Índice 5.0": "5.0 index", "Factor humano (carga de alarmas), resiliencia y sostenibilidad del turno":
+        "Human factor (alarm load), resilience and sustainability of the shift",
+    "Estabilidad": "Stability", "% del tiempo (últimos 30 min) en que el comportamiento aprendido fue normal":
+        "% of time (last 30 min) the learned behavior was normal",
+    "Cpk mínimo (proceso)": "Minimum Cpk (process)",
+    "El Cpk más bajo de las variables con límites (ventana de tendencia)":
+        "Lowest Cpk of the variables with limits (trend window)",
+    "En especificación": "In specification",
+    "% de las variables verificadas que están dentro de tolerancia ahora":
+        "% of checked variables currently within tolerance",
+    "Calidad de lectura": "Reading quality",
+    "% de las variables visibles leídas correctamente en el último ciclo":
+        "% of visible variables read correctly in the last cycle",
+    "Sin límites o sin datos suficientes": "No limits or not enough data", "Sin receta o sin límites":
+        "No recipe or no limits", "comportamiento normal": "normal behavior",
+    "✔ Sin alarmas ni avisos activos": "✔ No active alarms or warnings", "Sin variables visibles": "No visible variables",
+    "Sin datos frescos de los modelos": "No fresh data for the models",
+    "Entrena un comportamiento (menú Entrenamiento)": "Train a behavior (Training menu)",
+    "Configura el OEE (Configuración → KPI / OEE)": "Set up OEE (Configuration → KPI / OEE)",
+    "● Monitoreo detenido": "● Monitoring stopped", "Cpk": "Cpk",
+    "{ok} de {n} variables": "{ok} of {n} variables", "{ok} de {n} leídas": "{ok} of {n} read",
+    "{a} alarmas/h · normal {p}": "{a} alarms/h · normal {p}",
+    "desde hace {d}": "for {d}", "Velocidad: <b>{v}</b>{nom} {u}": "Speed: <b>{v}</b>{nom} {u}",
+    "Receta: <b>{r}</b>": "Recipe: <b>{r}</b>",
+    "Producido en el turno: <b>{t}</b> (conforme {g})": "Produced this shift: <b>{t}</b> (good {g})",
+    "Paros: <b>{s}</b> · microparos: <b>{m}</b> · detenido {d}": "Stops: <b>{s}</b> · microstops: <b>{m}</b> · stopped {d}",
+    "Hallazgos: <b style='color:{ca}'>{a} alarmas</b> · <b style='color:{cw}'>{w} avisos</b>":
+        "Findings: <b style='color:{ca}'>{a} alarms</b> · <b style='color:{cw}'>{w} warnings</b>",
+    # --- estados OEE ---
+    "En marcha": "Running", "Lento": "Slow", "Microparo": "Microstop", "Paro": "Stopped",
+    "Sin datos (productivo)": "No data (productive)", "Sin datos": "No data",
+    # --- KPI ---
+    "Turno actual": "Current shift", "Última hora": "Last hour", "Últimas 8 h": "Last 8 h",
+    "Últimas 24 h": "Last 24 h", "Últimos 7 días": "Last 7 days", "Otros KPIs": "Other KPIs",
+    "Distribución": "Distribution", "Industria 5.0 · personas, resiliencia y sostenibilidad":
+        "Industry 5.0 · people, resilience and sustainability",
+    "Periodo:": "Period:", "OEE": "OEE", "Disponibilidad × Rendimiento × Calidad": "Availability × Performance × Quality",
+    "Disponibilidad": "Availability", "Rendimiento": "Performance", "Calidad": "Quality",
+    "Tiempo en marcha / tiempo planificado. Velocidad ≤ umbral = línea detenida.":
+        "Run time / planned time. Speed ≤ threshold = line stopped.",
+    "Velocidad real promedio / velocidad nominal (los microparos cuentan como velocidad 0).":
+        "Average actual speed / nominal speed (microstops count as speed 0).",
+    "Longitud producida en condición conforme / longitud total.": "Length produced in good condition / total length.",
+    "Actual": "Current", "Anterior": "Previous", "Resumen": "Summary", "Estado": "Status", "Duración": "Duration",
+    "Veces": "Count", "Factor humano": "Human factor",
+    "Carga de alarmas por hora según ISA-18.2: ≤6/h manejable": "Alarms per hour per ISA-18.2: ≤6/h manageable",
+    "Resiliencia": "Resilience", "% del tiempo con el proceso en condición normal (sin avisos)":
+        "% of time with the process in normal condition (no warnings)",
+    "Sostenibilidad": "Sustainability", "Material conforme, penalizado por tiempo detenido":
+        "Good material, penalized by downtime",
+    "variables en especificación": "variables in specification", "indicador visual": "visual indicator",
+    "variables en especificación e indicador visual": "variables in specification and visual indicator",
+    "TEEP": "TEEP", "MTBF": "MTBF", "MTTR": "MTTR", "Paros": "Stops", "Microparos": "Microstops",
+    "Detenido": "Stopped", "Producido": "Produced", "Conforme": "Good", "Desperdicio": "Scrap",
+    "Vel. promedio": "Avg. speed", "Vel. nominal": "Nominal speed", "Sin datos en el periodo.": "No data in the period.",
+    "Periodo anterior": "Previous period",
+    "<b>Índice 5.0: <span style='color:{color}; font-size:16px'>{idx}</span></b> / 100<br>"
+    "Alarmas y avisos: {aph}/h (ISA-18.2 recomienda ≤ 6/h) · intervenciones del operador: {iph}/h<br>"
+    "Tiempo en condición normal: {normal} · recuperación media: {rec}<br>"
+    "Desperdicio: {scrap} ({slen} {unit}) · tiempo detenido: {stop}":
+        "<b>5.0 index: <span style='color:{color}; font-size:16px'>{idx}</span></b> / 100<br>"
+        "Alarms and warnings: {aph}/h (ISA-18.2 recommends ≤ 6/h) · operator interventions: {iph}/h<br>"
+        "Time in normal condition: {normal} · mean recovery: {rec}<br>"
+        "Scrap: {scrap} ({slen} {unit}) · downtime: {stop}",
+    "Velocidad: {v} · paro si ≤ {s} · microparo &lt; {m} s · calidad por {q}":
+        "Speed: {v} · stop if ≤ {s} · microstop &lt; {m} s · quality by {q}",
+    "Estado actual: <b style='color:{c}'>{s}</b> desde hace {d}": "Current status: <b style='color:{c}'>{s}</b> for {d}",
+    "<b>Configura el OEE</b> en ⚙ Configurar variables → pestaña «KPI / OEE»: elige la variable de velocidad de "
+    "línea, la velocidad nominal y cómo se mide la calidad.":
+        "<b>Set up OEE</b> in ⚙ Settings → «KPI / OEE» tab: choose the line speed variable, the nominal speed and "
+        "how quality is measured.",
+    # --- análisis ---
+    "NORMAL": "NORMAL", "ANORMAL": "ABNORMAL", "MUY ANORMAL": "VERY ABNORMAL", "Variable:": "Variable:",
+    "Distribución (ventana de tendencia)": "Distribution (trend window)",
+    "Carta de control X̄ (medias por subgrupo)": "X̄ control chart (subgroup means)",
+    "Datos insuficientes: se necesitan al menos 5 lecturas en la ventana de tendencia.":
+        "Not enough data: at least 5 readings in the trend window are needed.",
+    "LIE": "LSL", "LSE": "USL", "LCS": "UCL", "LCI": "LCL", "LC": "CL", "media": "mean", "objetivo": "target",
+    "Variables a comparar": "Variables to compare", "Dispersión": "Scatter", "Marca al menos 2 variables.":
+        "Check at least 2 variables.", "Datos insuficientes en la ventana de tendencia.": "Not enough data in the trend window.",
+    "Modelo:": "Model:", "Desviación respecto a lo normal (D² / umbral)": "Deviation from normal (D² / threshold)",
+    "Contribución por variable (%)": "Contribution by variable (%)",
+    "No hay modelos. Crea uno en ⚙ Configurar variables → «Entrenar comportamiento…» o con el botón 🧠 Comportamiento.":
+        "There are no models. Create one in the Training menu → «Train behavior…».",
+    " (significativa)": " (significant)",
+    "<br><i>Sin límites de alarma en la receta: no se calcula Cp/Cpk.</i>":
+        "<br><i>No alarm limits in the recipe: Cp/Cpk is not calculated.</i>",
+    "no aplica a la receta activa": "does not apply to the active recipe",
+    "esperando datos vigentes de todas sus variables": "waiting for current data of all its variables",
+    " (inactivo)": " (inactive)", "inactivo": "inactive", "umbral": "threshold", "alarma": "alarm",
+    "ninguna": "none", "Sin evaluación: {r}.": "Not evaluated: {r}.", "Relaciones rotas: {b}": "Broken relationships: {b}",
+    "n = {n} · media = {mean} · σ total = {s} · σ corto plazo = {sw} · mín/máx = {mn} / {mx}<br>"
+    "Cp = {cp} · Cpk = {cpk} · Pp = {pp} · Ppk = {ppk} · fuera de límites estimado = {out} %<br>"
+    "Tendencia = {slope} · tiempo estimado al límite = {eta} · reglas SPC: {rules}":
+        "n = {n} · mean = {mean} · σ overall = {s} · σ short term = {sw} · min/max = {mn} / {mx}<br>"
+        "Cp = {cp} · Cpk = {cpk} · Pp = {pp} · Ppk = {ppk} · estimated out of limits = {out} %<br>"
+        "Trend = {slope} · estimated time to limit = {eta} · SPC rules: {rules}",
+    # --- tabla de variables ---
+    "Variable": "Variable", "Consigna": "Setpoint", "Medición": "Measurement", "Unidad": "Unit",
+    "Referencia": "Reference", "Desv.": "Dev.", "Tol. aviso / alarma": "Warn / alarm tol.",
+    "Tendencia /min": "Trend /min", "Lectura": "Reading", "→ estable": "→ stable",
+    "Marca la casilla para graficar la tendencia": "Check to plot the trend", "vía recorrido": "via tour",
+    "sin dato": "no data", "esperado «{e}»": "expected «{e}»", "no visible": "not visible", "receta": "recipe",
+    # --- reportes ---
+    "📄 Generar ahora": "📄 Generate now", "Reportes generados": "Generated reports", "⟳ Actualizar": "⟳ Refresh",
+    "📂 Abrir carpeta": "📂 Open folder", "⚙ Configurar reportes": "⚙ Configure reports", "Fecha": "Date",
+    "Archivo": "File", "Tipo": "Type", "Carpeta": "Folder",
+    "{n} archivos · doble clic para abrir · carpetas: {d}": "{n} files · double-click to open · folders: {d}",
+    "Variable cruza un valor": "Variable crosses a value", "Valor pasa a uno menor": "Value drops",
+    "Valor / texto cambia": "Value / text changes", "Selector cambia de estado": "Selector changes state",
+    "Se ejecuta un recorrido": "A tour runs",
+    "El reporte PDF se genera solo cuando ocurre alguno de sus disparadores y abarca desde el fin del reporte "
+    "anterior hasta ese momento. Cada variable se evalúa por especificación (todas las lecturas dentro de los "
+    "límites de la receta) o por Cpk mínimo; el resultado general es conforme si todas lo son.":
+        "The PDF report is generated automatically when any of its triggers occurs and covers from the end of the "
+        "previous report up to that moment. Each variable is evaluated by specification (all readings within the "
+        "recipe limits) or by minimum Cpk; the overall result passes if all of them pass.",
+    "Activado": "Enabled", "Tiempo mínimo entre reportes": "Minimum time between reports",
+    "Periodo máximo (primer reporte)": "Maximum period (first report)",
+    "Reiniciar tendencias, estadística y comportamiento al generarlo":
+        "Reset trends, statistics and behavior when generated",
+    "Disparadores (cualquiera genera el reporte)": "Triggers (any of them generates the report)",
+    "+ Disparador": "+ Trigger", "Quitar": "Remove", "Variables y estados del reporte": "Report variables and states",
+    "+ Agregar": "+ Add", "Gráfica de comportamiento (modelos entrenados)": "Behavior chart (trained models)",
+    "Salida": "Output", "Incluir también eventos generales (recetas, recorridos, reportes)":
+        "Also include general events (recipes, tours, reports)",
+    "Exportar los datos de las variables marcadas en CSV": "Export the checked variables' data to CSV",
+    "Nombre del archivo": "File name", "Abrir carpeta": "Open folder", "📄 Generar vista previa ahora": "📄 Generate preview now",
+    "Genera el reporte con los datos desde el último reporte, sin mover el inicio del siguiente":
+        "Generates the report with data since the last report, without moving the start of the next one",
+    "Fecha y hora": "Date and time", "Cpk mínimo": "Minimum Cpk", "Spec + Cpk mínimo": "Spec + minimum Cpk",
+    "Carpeta de reportes": "Reports folder", "vista previa": "preview", "Reporte:": "Report:", "+ Nuevo": "+ New",
+    "Variable / recorrido": "Variable / tour", "Condición": "Condition", "Valor / estado": "Value / state",
+    "Evaluación": "Evaluation", "Cpk mín.": "Min. Cpk", "Gráfica": "Chart", "Eventos": "Events", "CSV": "CSV",
+    "cualquier recorrido": "any tour", "Reporte": "Report", "Agrega al menos una variable al reporte.":
+        "Add at least one variable to the report.", "cualquier estado": "any state", " cambio mayor a": " change above",
+    " baja más de": " drops more than", "cambio mayor a": "change above", "baja más de": "drops more than",
+    "Se dispara cuando el valor es menor que la lectura anterior por más de esta cantidad (0 = cualquier baja). "
+    "Útil para contadores que se reinician, como la longitud del carrete.":
+        "Triggers when the value is lower than the previous reading by more than this amount (0 = any drop). "
+        "Useful for counters that reset, such as the reel length.",
+    "  (sin entrenar)": "  (untrained)", "En especificación ": "In specification ",
+    "Generado: {p}": "Generated: {p}", "No se pudo generar: {e}": "Could not generate: {e}",
+    # --- recorridos ---
+    "Si no respondes, se ejecuta al terminar la cuenta.": "If you do not respond, it runs when the countdown ends.",
+    "▶ Ejecutar ahora": "▶ Run now", "⏸ Posponer": "⏸ Postpone",
+    "<b>Se ejecutará el recorrido «{n}»</b><br>{r}": "<b>The tour «{n}» will run</b><br>{r}",
+    "Un recorrido hace clics grabados en el HMI (uno o varios pasos), puede leer los datos de cada pantalla y "
+    "regresar. Se dispara cada X tiempo, si el HMI queda fuera de una pantalla, si un selector cambia o si un valor "
+    "baja a cero. <b>Seguridad:</b> solo hace clic donde grabaste y si el botón se ve igual; se pospone si el "
+    "operador está usando el HMI.":
+        "A tour performs recorded clicks on the HMI (one or several steps), can read the data of each screen and "
+        "return. It triggers every X time, if the HMI stays away from a screen, if a selector changes or if a value "
+        "drops to zero. <b>Safety:</b> it only clicks where you recorded and if the button looks the same; it is "
+        "postponed while the operator is using the HMI.",
+    "Ajustes": "Settings", "Nombre": "Name", "Leer las variables de cada pantalla visitada":
+        "Read the variables of each visited screen", "Iniciar solo desde": "Start only from",
+    "Pantalla de regreso (verificada)": "Return screen (verified)", "Operador inactivo al menos": "Operator idle at least",
+    "Reintentos al verificar pantalla": "Retries when verifying a screen",
+    "Disparadores (cualquiera activa el recorrido)": "Triggers (any of them starts the tour)", "Cada": "Every",
+    "Fuera de la pantalla": "Away from screen", "durante": "for", "Si el selector cambia": "If the selector changes",
+    "a": "to", "Si el valor baja a": "If the value drops to",
+    "Avisar con cuenta regresiva (el operador puede posponer)": "Warn with a countdown (the operator can postpone)",
+    "Cuenta regresiva": "Countdown", "Al posponer, volver a avisar tras": "When postponed, warn again after",
+    "Pasos (en orden)": "Steps (in order)", "+ Paso a esta pestaña": "+ Step to this tab",
+    "Espera tras el clic": "Wait after click", "● Grabar clics (en vivo)": "● Record clicks (live)",
+    "Cada clic en la captura se ejecuta también en el HMI y se recaptura la pantalla":
+        "Each click on the capture is also executed on the HMI and the screen is recaptured",
+    "Borrar clics": "Clear clicks", "▶ Probar este recorrido": "▶ Test this tour", "(sin verificar)": "(not verified)",
+    "■ Terminar grabación": "■ Stop recording", "Recorrido:": "Tour:", "Eliminar paso": "Delete step",
+    "— cualquier pantalla —": "— any screen —", "— no verificar —": "— do not verify —", "— no —": "— no —",
+    "Paso": "Step", "Primero crea las pestañas en «Pestañas y variables».": "First create the tabs in «Tabs and variables».",
+    "El recorrido no tiene pasos": "The tour has no steps", "Recorrido incompleto": "Incomplete tour",
+    "Duplicar": "Duplicate", "Eliminar": "Delete", "Activado ": "Enabled ",
+    "GRABANDO: haz clic en la captura sobre el botón del HMI. El clic se ejecuta en el HMI y la captura se "
+    "actualiza. Pulsa «Terminar grabación» al llegar a la pantalla.":
+        "RECORDING: click on the capture over the HMI button. The click is executed on the HMI and the capture "
+        "is updated. Press «Stop recording» when you reach the screen.",
+    "Activo": "Active",
+    # --- OEE (configuración) ---
+    "<b>OEE = Disponibilidad × Rendimiento × Calidad</b><br>• <b>Disponibilidad</b>: tiempo en marcha / tiempo "
+    "planificado (velocidad ≤ umbral = línea detenida; los paros cortos son microparos y cuentan en el "
+    "rendimiento).<br>• <b>Rendimiento</b>: velocidad real promedio / velocidad nominal.<br>• <b>Calidad</b>: "
+    "longitud producida en condición conforme / longitud total.":
+        "<b>OEE = Availability × Performance × Quality</b><br>• <b>Availability</b>: run time / planned time "
+        "(speed ≤ threshold = line stopped; short stops are microstops and count in performance).<br>• "
+        "<b>Performance</b>: average actual speed / nominal speed.<br>• <b>Quality</b>: length produced in good "
+        "condition / total length.",
+    "Calcular OEE": "Calculate OEE", "Variable de velocidad de línea": "Line speed variable",
+    "Detenida si velocidad ≤": "Stopped if speed ≤", "Velocidad nominal": "Nominal speed", "Valor fijo": "Fixed value",
+    " % de la nominal": " % of nominal", "Marcha lenta por debajo de": "Slow below", "Microparo: paro menor a":
+        "Microstop: stop shorter than", "Unidad de la velocidad": "Speed unit",
+    "Tiempo sin datos cuenta como productivo si al volver todo está en parámetros":
+        "Time without data counts as productive if everything is within parameters on return",
+    "…hasta un hueco de": "…up to a gap of", "Conforme cuando": "Good when", "Indicador": "Indicator",
+    "Estado bueno": "Good state", "Los avisos también cuentan como no conforme (por defecto solo alarmas)":
+        "Warnings also count as not good (by default only alarms)", "Inicio de turnos": "Shift start times",
+    "— elegir —": "— choose —", "— ninguno —": "— none —", "Nominal de la receta": "Recipe nominal",
+    "Consigna leída del HMI": "Setpoint read from the HMI", "Todas las mediciones dentro de especificación":
+        "All measurements within specification", "Indicador visual (selector) en estado bueno":
+        "Visual indicator (selector) in good state", "Ambos": "Both",
+    "OEE: elige la variable de velocidad de línea": "OEE: choose the line speed variable",
+    "OEE: indica la velocidad nominal fija": "OEE: enter the fixed nominal speed",
+    "OEE: elige el indicador de calidad y su estado bueno": "OEE: choose the quality indicator and its good state",
+    "Meta de OEE": "OEE target",
+    # --- recetas ---
+    "Nominal": "Nominal", "Modo": "Mode", "Aviso ±": "Warning ±", "Alarma ±": "Alarm ±", "Aviso mín": "Warning min",
+    "Aviso máx": "Warning max", "Alarma mín": "Alarm min", "Alarma máx": "Alarm max", "Comparar contra": "Compare against",
+    "Datos del producto": "Product data",
+    "Modo <b>±</b>: nominal y tolerancias de aviso/alarma (en unidades o en %). Modo <b>mín / máx</b>: límites "
+    "absolutos; deja vacío un lado para un límite de un solo lado (p. ej. solo máximo). Sin nominal ni límites la "
+    "variable no se verifica. «Comparar contra consigna» evalúa el valor real frente a la consigna leída del HMI "
+    "(modo ±).":
+        "Mode <b>±</b>: nominal and warning/alarm tolerances (in units or %). Mode <b>min / max</b>: absolute "
+        "limits; leave one side empty for a one-sided limit (e.g. maximum only). Without a nominal or limits the "
+        "variable is not checked. «Compare against setpoint» evaluates the actual value against the setpoint "
+        "read from the HMI (± mode).",
+    "Tomar valores actuales del HMI como nominales": "Take current HMI values as nominals",
+    "📦 Guardar la configuración actual en esta receta": "📦 Save the current configuration in this recipe",
+    "La receta guarda todo: variables, pantallas, recorridos, OEE, reportes y comportamientos. Al cargarla se "
+    "restaura esa configuración.": "The recipe stores everything: variables, screens, tours, OEE, reports and "
+                                   "behaviors. Loading it restores that configuration.",
+    "Guardar": "Save", "Cancelar": "Cancel", "Nombre de la receta (igual al que muestra el HMI):":
+        "Recipe name (the same one shown by the HMI):", "Nueva receta": "New recipe", "Duplicar receta": "Duplicate recipe",
+    "Renombrar receta": "Rename recipe", "Importar receta": "Import recipe", "Exportar receta": "Export recipe",
+    "Nueva": "New", "Renombrar": "Rename", "Importar CSV…": "Import CSV…", "Exportar CSV…": "Export CSV…",
+    "± absoluta": "± absolute", "± % de la referencia": "± % of reference", "mín / máx": "min / max",
+    "Nombre en uso": "Name in use", "Inicia el monitoreo para tener valores actuales.": "Start monitoring to get current values.",
+    "consigna del HMI": "HMI setpoint", "Tolerancias": "Tolerances", "Error al importar": "Import error",
+    "Valor inválido": "Invalid value", "Descripción ": "Description ",
+    # --- comportamiento ---
+    "Entrenar comportamiento normal": "Train normal behavior",
+    "Elige un periodo en que el proceso trabajó bien. La app aprende la <b>variación normal</b> de cada variable "
+    "y, si eliges 2 o más, <b>cómo se mueven juntas</b> (correlación). En vivo avisa cuando una variable o una "
+    "relación entre ellas se sale de lo aprendido, aunque siga dentro de tolerancia.":
+        "Choose a period in which the process ran well. The app learns the <b>normal variation</b> of each "
+        "variable and, if you choose 2 or more, <b>how they move together</b> (correlation). Live, it warns when a "
+        "variable or a relationship between them departs from what was learned, even if still within tolerance.",
+    "Activo (evaluar en el monitoreo)": "Active (evaluate during monitoring)",
+    "Periodo de entrenamiento (del historial)": "Training period (from history)", "Últimos": "Last", "días": "days",
+    "Rango": "Range", "Resolución": "Resolution", "Sensibilidad": "Sensitivity",
+    "1 = umbral aprendido; mayor = menos avisos; menor = más sensible":
+        "1 = learned threshold; higher = fewer warnings; lower = more sensitive",
+    "Margen del umbral": "Threshold margin", "Variación normal por variable": "Normal variation per variable",
+    "Solo con la receta": "Only with recipe", "🧠 Entrenar": "🧠 Train", "Sin entrenar": "Untrained",
+    "Guardar modelo": "Save model", "Cerrar": "Close", "Modelos": "Models", "Nuevo": "New",
+    "Variables de referencia": "Reference variables", "Variación normal aprendida": "Learned normal variation",
+    "Media": "Mean", "Mín": "Min", "Máx": "Max", "Rango normal": "Normal range",
+    "Correlación entre variables (rojo = suben juntas, azul = una sube y otra baja)":
+        "Correlation between variables (red = rise together, blue = one rises and the other falls)",
+    "sin entrenar": "untrained", "(no hay receta activa)": "(no active recipe)", "Variables": "Variables",
+    "Marca al menos una variable.": "Check at least one variable.", "Periodo": "Period",
+    "El inicio debe ser anterior al fin.": "The start must be before the end.",
+    "Sin entrenar: elige variables y periodo y pulsa «Entrenar».": "Untrained: choose variables and period and press «Train».",
+    "Entrena el modelo antes de guardarlo.": "Train the model before saving it.", "Guardado.": "Saved.",
+    "Comportamiento normal": "Normal behavior", "No se pudo entrenar": "Could not train",
+    "<br>Sin relaciones fuertes entre las variables.": "<br>No strong relationships between the variables.",
+    "horas": "hours", "minutos": "minutes",
+    # --- diagnóstico OCR ---
+    "Diagnóstico de lectura": "Reading diagnosis", "Valor": "Value", "Acuerdo": "Agreement",
+    "Otras lecturas": "Other readings", "Recomendación": "Recommendation", "Débil": "Weak", "Falla": "Fails",
+    "Cada variable visible se lee con todas las variantes de preprocesado. Un acuerdo alto significa lectura "
+    "estable; bajo, que conviene ajustar la región.":
+        "Each visible variable is read with every preprocessing variant. High agreement means a stable reading; "
+        "low means the region should be adjusted.",
+    "Ninguna variante leyó un número: revisa que la región cubra el número.":
+        "No variant read a number: check that the region covers the number.",
+    "Define un rango válido para descartar lecturas imposibles.": "Set a valid range to discard impossible readings.",
+    "Ajusta la región solo al número (sin unidad ni marco).": "Fit the region to the number only (no unit or frame).",
+    # --- configurador ---
+    "Configuración de variables y lectura del HMI": "Variables and HMI reading setup",
+    "fórmula": "formula", "Medición (valor real)": "Measurement (actual value)",
+    "Consigna (parámetro establecido)": "Setpoint (set parameter)", "Texto (p. ej. nombre de receta)":
+        "Text (e.g. recipe name)", "Selector / indicador (estado por imagen)": "Selector / indicator (state by image)",
+    "Fórmula (calculada de otras variables)": "Formula (calculated from other variables)",
+    "Arrastra con el botón izquierdo para marcar una región · rueda = zoom · botón central = desplazar · clic en "
+    "una región para seleccionarla":
+        "Drag with the left button to mark a region · wheel = zoom · middle button = pan · click a region to select it",
+    "Crear serie": "Create series", "Copias a crear": "Copies to create", "Desplazamiento X por copia": "X offset per copy",
+    "Desplazamiento Y por copia": "Y offset per copy", "Texto del nombre a numerar": "Name text to number",
+    "Primer número": "First number", "Crear": "Create", "Pestaña seleccionada": "Selected tab", "Dentro de": "Inside",
+    "sin ancla (carpeta: visible si su padre lo es)": "no anchor (folder: visible if its parent is)", "Ancla": "Anchor",
+    "Usar selección como ancla": "Use selection as anchor", "Quitar ancla": "Remove anchor",
+    "Umbral de coincidencia": "Match threshold", "Probar en la captura": "Test on capture",
+    "Variable seleccionada": "Selected variable", "Reinsertar punto decimal si el OCR lo pierde":
+        "Reinsert the decimal point if OCR loses it", "Quitar marco del campo": "Remove field frame",
+    "Lectura automática robusta (recomendado: sin umbral manual)": "Robust automatic reading (recommended: no manual threshold)",
+    "Prueba varias formas de preparar la imagen y acepta el valor cuando coinciden. Recuerda la que funciona para "
+    "esta variable.": "Tries several ways to prepare the image and accepts the value when they agree. It remembers "
+                      "the one that works for this variable.",
+    "Analizar tendencia": "Analyze trend",
+    "p. ej. vel / rpm   ·   {z1} - {z1_sp}   ·   max(z1, z2) - min(z1, z2)":
+        "e.g. vel / rpm   ·   {z1} - {z1_sp}   ·   max(z1, z2) - min(z1, z2)",
+    "Usa los ID de las variables. Funciones: abs, min, max, avg, round, sqrt, log, exp, pow, clamp, si(cond, a, "
+    "b). Operadores + - * / ** % y comparaciones.":
+        "Use the variable IDs. Functions: abs, min, max, avg, round, sqrt, log, exp, pow, clamp, si(cond, a, b). "
+        "Operators + - * / ** % and comparisons.",
+    "Estados del selector": "Selector states", "Capturar estado actual como…": "Capture current state as…",
+    "Eliminar estado": "Delete state", "Coincidencia mínima": "Minimum match", "Prueba de lectura": "Reading test",
+    "Nombre de la máquina": "Machine name", "1 = monitor principal, 0 = todos los monitores":
+        "1 = main monitor, 0 = all monitors", "Monitor a capturar": "Monitor to capture",
+    "Intervalo de muestreo": "Sampling interval", "Motor OCR": "OCR engine", "Ruta a tesseract.exe (opcional)":
+        "Path to tesseract.exe (optional)", "Tesseract": "Tesseract", " ciclos": " cycles",
+    "Confirmación de hallazgos": "Finding confirmation", "Fallos de lectura para avisar": "Read failures before warning",
+    "Dato viejo después de": "Data is stale after", "Ventana de tendencia": "Trend window",
+    "Horizonte de predicción": "Prediction horizon", "Subgrupo SPC": "SPC subgroup",
+    "Variable con nombre de receta": "Recipe name variable", "Sonido al activarse una alarma": "Sound when an alarm is raised",
+    "Abrir captura del HMI": "Open HMI capture", "Imágenes (*.png *.jpg *.jpeg *.bmp *.webp)":
+        "Images (*.png *.jpg *.jpeg *.bmp *.webp)", "Guardar captura": "Save capture",
+    "medición + consigna": "measurement + setpoint", "— siempre visible —": "— always visible —",
+    "— ninguna —": "— none —", "Nueva pestaña": "New tab", "— raíz —": "— root —", " (siempre visible)": " (always visible)",
+    "Nuevo par consigna / medición": "New setpoint / measurement pair", "Estado del selector": "Selector state",
+    "Nombre del estado que se ve ahora (p. ej. ON, OFF, AUTO, MAN):": "Name of the state shown now (e.g. ON, OFF, AUTO, MAN):",
+    "Nueva fórmula": "New formula", "Nombre de la variable calculada:": "Name of the calculated variable:",
+    "Fórmula": "Formula", "<br>El motor de plantillas aún no conoce caracteres: usa «Enseñar caracteres…».":
+        "<br>The template engine does not know any characters yet: use «Teach characters…».",
+    "Enseñar caracteres": "Teach characters", "Escribe exactamente lo que muestra la región:":
+        "Type exactly what the region shows:",
+    "Se copian las variables seleccionadas desplazando sus regiones.\nConsejo: marca en la captura la posición del "
+    "segundo elemento antes de abrir este diálogo y el desplazamiento se calcula solo.":
+        "The selected variables are copied by offsetting their regions.\nTip: mark the position of the second "
+        "element on the capture before opening this dialog and the offset is calculated automatically.",
+    "📷 Capturar pantalla del HMI": "📷 Capture HMI screen", "Abrir imagen…": "Open image…",
+    "Guardar captura…": "Save capture…", "Ajustar vista": "Fit view", "+ Pestaña / componente": "+ Tab / component",
+    "Nuevo nodo raíz (p. ej. EXT1, GAS, MEAS)": "New root node (e.g. EXT1, GAS, MEAS)", "+ Sub-pestaña": "+ Sub-tab",
+    "Nodo dentro de la pestaña seleccionada (p. ej. Overview)": "Node inside the selected tab (e.g. Overview)",
+    "+ Par consigna / medición": "+ Setpoint / measurement pair",
+    "Marca primero la consigna y después el valor medido; quedan vinculados":
+        "Mark the setpoint first and then the measured value; they are linked",
+    "+ Medición": "+ Measurement", "Variable medida sin consigna": "Measured variable without setpoint",
+    "+ Consigna": "+ Setpoint", "Parámetro establecido sin medición": "Set parameter without measurement",
+    "+ Texto": "+ Text", "Texto, p. ej. el nombre de la receta": "Text, e.g. the recipe name", "+ Fórmula": "+ Formula",
+    "Variable calculada con otras, p. ej. «vel / rpm» o «max(z1, z2, z3) - min(z1, z2, z3)»":
+        "Variable calculated from others, e.g. «vel / rpm» or «max(z1, z2, z3) - min(z1, z2, z3)»",
+    "+ Selector": "+ Selector", "Selector, interruptor o indicador: se reconoce su estado por imagen (ON/OFF, AUTO/MAN…)":
+        "Selector, switch or indicator: its state is recognized by image (ON/OFF, AUTO/MAN…)",
+    "Crear serie…": "Create series…", "🩺 Diagnóstico de lectura": "🩺 Reading diagnosis",
+    "Selecciona una pestaña o una variable del árbol.": "Select a tab or a variable in the tree.",
+    "El ancla es una parte de la pantalla que solo se ve cuando la pestaña está activa,\np. ej. el botón de la "
+    "pestaña resaltado o el título. Sin ancla, el nodo solo agrupa.":
+        "The anchor is a part of the screen that is only visible when the tab is active,\ne.g. the highlighted tab "
+        "button or the title. Without an anchor, the node only groups.",
+    "automático": "automatic", "sin límite": "no limit", "texto claro sobre fondo oscuro": "light text on dark background",
+    "texto oscuro sobre fondo claro": "dark text on light background", "Pestaña": "Tab",
+    "Consigna vinculada": "Linked setpoint", "Decimales": "Decimals", "Separador decimal": "Decimal separator",
+    "Valor mínimo válido": "Minimum valid value", "Valor máximo válido": "Maximum valid value",
+    "Salto máx. entre lecturas": "Max. jump between readings", "Contraste": "Contrast", "Escala OCR": "OCR scale",
+    "Umbral binario": "Binary threshold", "Región": "Region",
+    "Pon el selector en cada estado en el HMI, captura la pantalla y pulsa «Capturar estado actual». Se reconoce "
+    "por imagen: sirve para cualquier color o forma.":
+        "Put the selector in each state on the HMI, capture the screen and press «Capture current state». It is "
+        "recognized by image: it works with any color or shape.",
+    "Asignar selección como región": "Assign selection as region", "Probar OCR": "Test OCR",
+    "Enseñar caracteres…": "Teach characters…", "OCR de Windows (recomendado)": "Windows OCR (recommended)",
+    "Plantillas enseñadas (más preciso para fuentes fijas)": "Taught templates (more accurate for fixed fonts)",
+    "Tesseract (requiere tesseract.exe)": "Tesseract (requires tesseract.exe)",
+    "Siempre visible (sin pestaña)": "Always visible (no tab)", "Sub-pestaña": "Sub-tab",
+    "Selecciona primero la pestaña o componente padre.": "First select the parent tab or component.",
+    "Selección": "Selection", "Primero captura la pantalla y marca una región.": "First capture the screen and mark a region.",
+    "ID duplicado": "Duplicate ID", "Captura": "Capture", "Primero captura la pantalla del HMI.":
+        "First capture the HMI screen.", "Selecciona en el árbol las variables a replicar.":
+        "Select the variables to replicate in the tree.", "Revisa la configuración": "Check the configuration",
+    "¿Usar la región marcada como ancla de la pestaña?\n(Debe verse solo cuando la pestaña está activa, p. ej. su "
+    "botón resaltado)": "Use the marked region as the tab anchor?\n(It must only be visible when the tab is active, "
+                       "e.g. its highlighted button)",
+    " (copia)": " (copy)", " copia": " copy", "Captura al menos un estado del selector.": "Capture at least one selector state.",
+    "<br>Lectura débil: ajusta la región (solo el número, sin la unidad).":
+        "<br>Weak reading: adjust the region (the number only, without the unit).",
+    "No se pudo enseñar": "Could not teach", "Error": "Error", "pestaña": "tab", "VISIBLE": "VISIBLE",
+    "no válido": "invalid", "no numérico": "not numeric", "no reconocido": "not recognized",
+    "Selector": "Selector", "Texto": "Text", "Serie": "Series", "texto": "text", "selector": "selector",
+    "carpeta": "folder", "ancla de pestaña": "tab anchor", "consigna": "setpoint", "Sin lectura válida": "No valid reading",
+}

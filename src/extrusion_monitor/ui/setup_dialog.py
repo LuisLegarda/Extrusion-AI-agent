@@ -21,6 +21,7 @@ from ..capture import ImageFileSource, ScreenSource, crop, load_png, save_png
 from ..config import AppConfig, OcrOptions, Page, Rect, Variable
 from ..ocr import OcrUnavailable, TemplateOcr, create_engine, parse_number, preprocess
 from ..pages import PageDetector
+from ..i18n import tr, translate_widget
 from .common import to_pixmap
 from .region_view import RegionView
 
@@ -147,8 +148,8 @@ class SetupDialog(QDialog):
         self.view.rectDrawn.connect(self._rect_drawn)
         self.view.regionClicked.connect(self._region_clicked)
         ll.addWidget(self.view)
-        legend = QLabel(" ".join(f"<span style='color:{c}'>■</span> {KIND_SHORT[k]}" for k, c in KIND_COLORS.items())
-                        + f" <span style='color:{PAGE_COLOR}'>■</span> ancla de pestaña")
+        legend = QLabel(" ".join(f"<span style='color:{c}'>■</span> {tr(KIND_SHORT[k])}" for k, c in KIND_COLORS.items())
+                        + f" <span style='color:{PAGE_COLOR}'>■</span> {tr('ancla de pestaña')}")
         ll.addWidget(legend)
         split.addWidget(left)
 
@@ -543,7 +544,7 @@ class SetupDialog(QDialog):
         nodes[None] = none
 
         def add_page(p: Page, parent_item: Optional[QTreeWidgetItem]):
-            it = QTreeWidgetItem([p.name, "pestaña" if p.anchor else "carpeta", p.id])
+            it = QTreeWidgetItem([p.name, tr("pestaña") if p.anchor else tr("carpeta"), p.id])
             it.setData(0, ROLE, ("page", p.id))
             it.setFont(0, bold)
             it.setForeground(0, QBrush(QColor(PAGE_COLOR)))
@@ -578,9 +579,9 @@ class SetupDialog(QDialog):
             self._redraw()
 
     def _var_item(self, v: Variable) -> QTreeWidgetItem:
-        kind = KIND_SHORT[v.kind]
+        kind = tr(KIND_SHORT[v.kind])
         if v.kind == "actual" and v.setpoint_var:
-            kind = "medición + consigna"
+            kind = tr("medición + consigna")
         it = QTreeWidgetItem([f"{v.name}" + (f" [{v.unit}]" if v.unit else ""), kind, v.id])
         it.setData(0, ROLE, ("var", v.id))
         it.setForeground(1, QBrush(QColor(KIND_COLORS[v.kind])))

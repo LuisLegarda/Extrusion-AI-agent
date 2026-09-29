@@ -13,6 +13,7 @@ from PySide6.QtWidgets import (
 )
 
 from ..bootstrap import AppContext
+from . import theme
 from ..recipes import Limit, Recipe, recipe_from_csv, recipe_to_csv
 
 COLS = ["Variable", "Tipo", "Nominal", "Modo", "Aviso ±", "Alarma ±", "Aviso mín", "Aviso máx", "Alarma mín",
@@ -183,7 +184,7 @@ class RecipeDialog(QDialog):
                     continue
                 flags = Qt.ItemIsEnabled | Qt.ItemIsSelectable | (Qt.ItemIsEditable if on else Qt.NoItemFlags)
                 it.setFlags(flags)
-                it.setForeground(QBrush(QColor("#000000" if on else "#b0b0b0")))
+                it.setForeground(QBrush(QColor(theme.c("text") if on else theme.c("muted"))))
         ref = self.table.cellWidget(row, C_REF)
         if ref is not None:
             ref.setEnabled(not is_range)

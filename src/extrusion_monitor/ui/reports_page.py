@@ -12,6 +12,9 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from ..i18n import tr
+from . import theme
+
 if TYPE_CHECKING:
     from ..bootstrap import AppContext
 
@@ -39,7 +42,7 @@ class ReportsPage(QWidget):
             row.addWidget(b)
         lay.addLayout(row)
         self.lbl = QLabel()
-        self.lbl.setStyleSheet("color:#5f6b7a;")
+        self.lbl.setStyleSheet(f"color:{theme.c('muted')};")
         lay.addWidget(self.lbl)
         self.table = QTableWidget(0, 4)
         self.table.setHorizontalHeaderLabels(["Fecha", "Archivo", "Tipo", "Carpeta"])
@@ -83,8 +86,8 @@ class ReportsPage(QWidget):
                 it = QTableWidgetItem(v)
                 it.setData(Qt.UserRole, str(f))
                 self.table.setItem(i, c, it)
-        self.lbl.setText(f"{len(files)} archivos · doble clic para abrir · carpetas: "
-                         + ", ".join(str(d) for d in self.dirs()))
+        self.lbl.setText(tr("{n} archivos · doble clic para abrir · carpetas: {d}", n=len(files),
+                            d=", ".join(str(d) for d in self.dirs())))
 
     def _open_row(self, row: int, _col: int) -> None:
         it = self.table.item(row, 0)

@@ -14,6 +14,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from ..i18n import translate_widget
 from ..config import ReportDef, ReportTrigger, ReportVar
 
 if TYPE_CHECKING:
@@ -251,6 +252,7 @@ class ReportTab(QWidget):
                 self._trigger_row(tr)
             for rv in r.variables:
                 self._var_row(rv)
+        translate_widget(self)  # filas creadas después de mostrar el diálogo
         self._loading = False
 
     def _var_combo(self, kinds: Optional[tuple], value: Optional[str]) -> QComboBox:

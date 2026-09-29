@@ -13,21 +13,20 @@ from PySide6.QtWidgets import (
 from ..analysis.oee import STATE_LABELS, OeeResult, compute, human_factors
 from ..analysis.rules import Level
 from ..engine import MonitorEngine, Snapshot
+from ..i18n import tr, translate_text
+from . import theme
 from .common import level_color
 from .kpi_dashboard import STATE_COLORS, Gauge, OeeSample, fmt_duration, shift_start
 
-CARD_STYLE = ("QFrame#card { background: palette(base); border: 1px solid #d5dbe3; border-radius: 8px; }"
-              "QFrame#card QLabel { border: none; background: transparent; }")
 STABILITY_WINDOW_S = 1800.0  # estabilidad: % del tiempo normal en los últimos 30 min
 
 
 def make_card(title: str) -> tuple[QFrame, QVBoxLayout]:
     fr = QFrame()
     fr.setObjectName("card")
-    fr.setStyleSheet(CARD_STYLE)
     lay = QVBoxLayout(fr)
     lay.setContentsMargins(12, 10, 12, 10)
-    lb = QLabel(f"<span style='font-size:14px; color:#1f3b57'><b>{title}</b></span>")
+    lb = QLabel(f"<span style='font-size:14px; color:{theme.c('title')}'><b>{tr(title)}</b></span>")
     lay.addWidget(lb)
     return fr, lay
 
@@ -41,12 +40,11 @@ class GaugeCard(QFrame):
         super().__init__()
         self.key = key
         self.setObjectName("card")
-        self.setStyleSheet(CARD_STYLE)
-        self.setToolTip(tooltip + "\n(clic para ver el detalle)")
+        self.setToolTip(tr(tooltip) + tr("\n(clic para ver el detalle)"))
         self.setCursor(Qt.PointingHandCursor)
         lay = QVBoxLayout(self)
         lay.setContentsMargins(10, 8, 10, 8)
-        lb = QLabel(f"<span style='font-size:14px; color:#1f3b57'><b>{title}</b></span>")
+        lb = QLabel(f"<span style='font-size:14px; color:{theme.c('title')}'><b>{tr(title)}</b></span>")
         lb.setAlignment(Qt.AlignCenter)
         lay.addWidget(lb)
         self.gauge = gauge
@@ -55,12 +53,12 @@ class GaugeCard(QFrame):
         self.sub = QLabel("—")
         self.sub.setAlignment(Qt.AlignCenter)
         self.sub.setWordWrap(True)
-        self.sub.setStyleSheet("color:#5f6b7a;")
+        self.sub.setStyleSheet(f"color:{theme.c('muted')};")
         lay.addWidget(self.sub)
 
     def set(self, value: Optional[float], sub: str) -> None:
         self.gauge.set_value(value)
-        self.sub.setText(sub)
+        self.sub.setText(translate_text(sub))
 
     def mousePressEvent(self, event) -> None:
         self.clicked.emit(self.key)
@@ -84,14 +82,14 @@ class StateStrip(QWidget):
     def paintEvent(self, _event) -> None:
         p = QPainter(self)
         w, h = self.width(), self.height() - 14
-        p.fillRect(0, 0, w, h, QColor("#eceff1"))
+        p.fillRect(0, 0, w, h, QColor(theme.c("track")))
         span = (self.b - self.a) or 1.0
         for iv in self.intervals:
             x0 = w * (max(iv.start, self.a) - self.a) / span
             x1 = w * (min(iv.end, self.b) - self.a) / span
             if x1 > x0:
-                p.fillRect(QRectF(x0, 0, max(1.0, x1 - x0), h), QColor(STATE_COLORS.get(iv.state, "#9e9e9e")))
-        p.setPen(QPen(QColor("#5f6b7a")))
+                p.fillRect(QRectF(x0, 0, max(1.0, x1 - x0), h), QColor(STATE_COLORS.get(iv.state, theme.c("neutral"))))
+        p.setPen(QPen(QColor(theme.c("muted"))))
         f = p.font()
         f.setPointSizeF(8)
         p.setFont(f)
@@ -122,9 +120,9 @@ class BarList(QWidget):
         p = QPainter(self)
         p.setRenderHint(QPainter.Antialiasing)
         if not self.rows:
-            p.setPen(QColor("#8a94a3"))
+            p.setPen(QColor(theme.c("muted")))
             p.drawText(self.rect(), Qt.AlignCenter | Qt.TextWordWrap,
-                       "Sin datos: se necesitan límites en la receta y lecturas en la ventana de tendencia.")
+                       tr("Sin datos: se necesitan límites en la receta y lecturas en la ventana de tendencia."))
             p.end()
             return
         w = self.width()
@@ -132,16 +130,17 @@ class BarList(QWidget):
         label_w = w * 0.45
         for i, (name, v) in enumerate(self.rows):
             y = i * row_h
-            p.setPen(QColor("#33415c"))
+            p.setPen(QColor(theme.c("text")))
             p.drawText(QRectF(0, y, label_w - 6, row_h), Qt.AlignRight | Qt.AlignVCenter,
                        p.fontMetrics().elidedText(name, Qt.ElideLeft, int(label_w - 8)))
             bar_w = w - label_w - 48
-            p.fillRect(QRectF(label_w, y + row_h * 0.25, bar_w, row_h * 0.5), QColor("#eceff1"))
+            p.fillRect(QRectF(label_w, y + row_h * 0.25, bar_w, row_h * 0.5), QColor(theme.c("track")))
             if v is not None:
                 frac = max(0.0, min(1.0, v / self.vmax))
-                color = QColor("#e53935") if v < self.low else (QColor("#fbc02d") if v < self.high else QColor("#43a047"))
+                color = QColor(theme.c("critical") if v < self.low else
+                               (theme.c("warning") if v < self.high else theme.c("good")))
                 p.fillRect(QRectF(label_w, y + row_h * 0.25, bar_w * frac, row_h * 0.5), color)
-            p.setPen(QColor("#33415c"))
+            p.setPen(QColor(theme.c("text")))
             p.drawText(QRectF(w - 46, y, 46, row_h), Qt.AlignRight | Qt.AlignVCenter,
                        "—" if v is None else f"{v:.2f}")
         p.end()
@@ -208,8 +207,8 @@ class HomePage(QWidget):
         self.strip = StateStrip()
         tll.addWidget(self.strip)
         self.lbl_legend = QLabel(" ".join(
-            f"<span style='color:{STATE_COLORS[s]}'>■</span> {STATE_LABELS[s]}&nbsp;&nbsp;" for s in STATE_COLORS))
-        self.lbl_legend.setStyleSheet("color:#5f6b7a;")
+            f"<span style='color:{STATE_COLORS[s]}'>■</span> {tr(STATE_LABELS[s])}&nbsp;&nbsp;" for s in STATE_COLORS))
+        self.lbl_legend.setStyleSheet(f"color:{theme.c('muted')};")
         tll.addWidget(self.lbl_legend)
         root.addWidget(tl)
 
@@ -243,13 +242,13 @@ class HomePage(QWidget):
                    and (st.bounds.any or st.expected)]
         if checked:
             ok = sum(st.level < Level.WARN for st in checked)
-            self.cards["conform"].set(100.0 * ok / len(checked), f"{ok} de {len(checked)} variables")
+            self.cards["conform"].set(100.0 * ok / len(checked), tr("{ok} de {n} variables", ok=ok, n=len(checked)))
         else:
             self.cards["conform"].set(None, "Sin receta o sin límites")
         # Calidad de lectura
         if snap.read_total:
             self.cards["read"].set(100.0 * snap.read_ok / snap.read_total,
-                                   f"{snap.read_ok} de {snap.read_total} leídas" +
+                                   tr("{ok} de {n} leídas", ok=snap.read_ok, n=snap.read_total) +
                                    (f" · {snap.error}" if snap.error else ""))
         else:
             self.cards["read"].set(None, snap.error or "Sin variables visibles")
@@ -282,8 +281,8 @@ class HomePage(QWidget):
             it.setForeground(level_color(f.level))
             self.lst_alarms.addItem(it)
         if not self.lst_alarms.count():
-            it = QListWidgetItem("✔ Sin alarmas ni avisos activos")
-            it.setForeground(QColor("#2e7d32"))
+            it = QListWidgetItem(tr("✔ Sin alarmas ni avisos activos"))
+            it.setForeground(QColor(theme.c("good_text")))
             self.lst_alarms.addItem(it)
 
     # --- OEE e índice 5.0 (historial, cada 10 s) ------------------------------------------
@@ -312,8 +311,8 @@ class HomePage(QWidget):
         self.cards["oee"].set(None if res.oee is None else 100 * res.oee,
                               f"D {pc(res.availability)} · R {pc(res.performance)} · C {pc(res.quality)}")
         hf = human_factors(eng.historian.events_between(a, now), res)
-        self.cards["i5"].set(hf.index, f"{hf.alarms_per_hour:.1f} alarmas/h · "
-                                       f"normal {'—' if res.normal_pct is None else f'{res.normal_pct:.0f} %'}")
+        self.cards["i5"].set(hf.index, tr("{a} alarmas/h · normal {p}", a=f"{hf.alarms_per_hour:.1f}",
+                                          p="—" if res.normal_pct is None else f"{res.normal_pct:.0f} %"))
         self.strip.set_data(res.intervals, a, now)
         self.lbl_state.setText(self._state_text(res))
 
@@ -326,27 +325,29 @@ class HomePage(QWidget):
         cur = res.intervals[-1] if res is not None and res.intervals else None
         if cur is not None:
             color = STATE_COLORS[cur.state]
-            lines.append(f"<span style='font-size:22px; color:{color}'><b>● {STATE_LABELS[cur.state]}</b></span>"
-                         f"&nbsp;&nbsp;desde hace {fmt_duration(cur.duration)}")
+            lines.append(f"<span style='font-size:22px; color:{color}'><b>● {tr(STATE_LABELS[cur.state])}</b></span>"
+                         "&nbsp;&nbsp;" + tr("desde hace {d}", d=fmt_duration(cur.duration)))
         elif not eng.running:
-            lines.append("<span style='font-size:22px; color:#757575'><b>● Monitoreo detenido</b></span>")
+            lines.append(f"<span style='font-size:22px; color:{theme.c('muted')}'>"
+                         f"<b>{tr('● Monitoreo detenido')}</b></span>")
         if snap is not None and o.speed_var:
             st = snap.statuses.get(o.speed_var)
             if st is not None and st.reading.value is not None:
                 nominal = f" / {res.avg_nominal:.4g}" if res is not None and res.avg_nominal else ""
-                lines.append(f"Velocidad: <b>{st.reading.value:g}</b>{nominal} {st.var.unit}")
-        lines.append(f"Receta: <b>{eng.state.recipe or '—'}</b>")
+                lines.append(tr("Velocidad: <b>{v}</b>{nom} {u}", v=f"{st.reading.value:g}", nom=nominal,
+                                u=st.var.unit))
+        lines.append(tr("Receta: <b>{r}</b>", r=eng.state.recipe or "—"))
         if res is not None:
             u = o.length_unit
-            lines.append(f"Producido en el turno: <b>{res.length_total:,.0f} {u}</b> "
-                         f"(conforme {res.length_good:,.0f} {u})")
-            lines.append(f"Paros: <b>{res.n_stops}</b> · microparos: <b>{res.n_microstops}</b> · "
-                         f"detenido {fmt_duration(res.stop_s)}")
+            lines.append(tr("Producido en el turno: <b>{t}</b> (conforme {g})", t=f"{res.length_total:,.0f} {u}",
+                            g=f"{res.length_good:,.0f} {u}"))
+            lines.append(tr("Paros: <b>{s}</b> · microparos: <b>{m}</b> · detenido {d}", s=res.n_stops,
+                            m=res.n_microstops, d=fmt_duration(res.stop_s)))
         if snap is not None:
             n_alarm = sum(f.level >= Level.ALARM for f in snap.findings)
             n_warn = sum(f.level == Level.WARN for f in snap.findings)
-            lines.append(f"Hallazgos: <b style='color:#c62828'>{n_alarm} alarmas</b> · "
-                         f"<b style='color:#b28704'>{n_warn} avisos</b>")
+            lines.append(tr("Hallazgos: <b style='color:{ca}'>{a} alarmas</b> · <b style='color:{cw}'>{w} avisos</b>",
+                            ca=theme.c("critical"), a=n_alarm, cw=theme.c("warning_text"), w=n_warn))
         return "<br>".join(lines)
 
     def showEvent(self, event) -> None:

@@ -271,3 +271,40 @@ def test_navigation_and_home_dashboard(ctx):
     cards["cpk"].clicked.emit("spc")
     assert win.current_page() == "spc"
     win.close()
+
+
+def test_language_and_theme_switch(ctx, tmp_path):
+    from PySide6.QtWidgets import QApplication
+
+    from extrusion_monitor import i18n
+    from extrusion_monitor.ui import theme
+    from extrusion_monitor.ui.main_window import MainWindow, apply_ui_prefs, rebuilt_windows
+    assert i18n.translate_text("Recetas") == "Recetas"  # español por defecto
+    i18n.set_lang("en")
+    try:
+        assert i18n.translate_text("Recetas") == "Recipes"
+        assert i18n.translate_text("📋 Recetas") == "📋 Recipes"
+        assert i18n.translate_text("<b>Estado de la máquina</b>") == "<b>Machine status</b>"
+        assert i18n.tr("{ok} de {n} variables", ok=3, n=4) == "3 of 4 variables"
+        assert i18n.translate_text("texto sin traducción") == "texto sin traducción"
+    finally:
+        i18n.set_lang("es")
+    ctx.engine.sleep = lambda s: None
+    i18n.Translator().install(QApplication.instance())
+    win = MainWindow(ctx)
+    win.show()
+    ctx.engine.step()
+    win._set_ui_pref("lang", "en")
+    new = rebuilt_windows[-1]
+    QApplication.processEvents()
+    assert new.menuBar().actions()[0].text() == "&File"
+    assert "Home" in new.nav.item(0).text()
+    assert ctx.workspace.load_state()["ui"]["lang"] == "en"
+    new._set_ui_pref("theme", "dark")
+    dark = rebuilt_windows[-1]
+    QApplication.processEvents()
+    assert theme.is_dark() and QApplication.instance().palette().window().color().name() == theme.c("page")
+    assert dark.engine.listeners.count(dark.bridge.snapshot.emit) == 1 and len(dark.engine.listeners) == 1
+    dark.on_snapshot(ctx.engine.step())
+    apply_ui_prefs({})  # vuelve a español / claro para las demás pruebas
+    dark.close()

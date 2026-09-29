@@ -4,6 +4,7 @@ from __future__ import annotations
 import datetime as dt
 import math
 import time
+from collections.abc import Mapping
 from typing import Optional
 
 import pyqtgraph as pg
@@ -17,10 +18,31 @@ from PySide6.QtWidgets import (
 from ..analysis.oee import (ASSUMED, MICROSTOP, RUNNING, SLOW, STATE_LABELS, STATE_ORDER, STOPPED, UNKNOWN, OeeResult,
                             OeeSample, compute, human_factors, sparkline)
 from ..engine import MonitorEngine
+from ..i18n import tr
+from . import theme
 
-STATE_COLORS = {RUNNING: "#43a047", ASSUMED: "#a5d6a7", SLOW: "#fbc02d", MICROSTOP: "#fb8c00",
-                STOPPED: "#e53935", UNKNOWN: "#9e9e9e"}
-RED, YELLOW, GREEN = QColor("#e53935"), QColor("#fbc02d"), QColor("#43a047")
+class _ThemeMap(Mapping):
+    """Diccionario de colores que se resuelve con el tema activo al consultarlo."""
+
+    def __init__(self, keys: dict):
+        self._keys = keys
+
+    def __getitem__(self, k):
+        return theme.c(self._keys[k])
+
+    def __iter__(self):
+        return iter(self._keys)
+
+    def __len__(self):
+        return len(self._keys)
+
+
+STATE_COLORS = _ThemeMap({RUNNING: "good", ASSUMED: "good_soft", SLOW: "warning", MICROSTOP: "serious",
+                          STOPPED: "critical", UNKNOWN: "neutral"})
+
+
+def status_color(key: str) -> QColor:
+    return QColor(theme.c(key))
 
 PERIODS = [("shift", "Turno actual"), (3600, "Última hora"), (8 * 3600, "Últimas 8 h"),
            (24 * 3600, "Últimas 24 h"), (7 * 86400, "Últimos 7 días")]
@@ -79,7 +101,8 @@ class Gauge(QWidget):
         return 100.0 * (min(max(v, self.vmin), self.vmax) - self.vmin) / ((self.vmax - self.vmin) or 1.0)
 
     def _color(self, v: float) -> QColor:
-        return RED if v < self.low else (YELLOW if v < self.high else GREEN)
+        return status_color("critical") if v < self.low else (
+            status_color("warning") if v < self.high else status_color("good"))
 
     def paintEvent(self, _event) -> None:
         p = QPainter(self)
@@ -97,9 +120,10 @@ class Gauge(QWidget):
             p.drawArc(rect.adjusted(thick, thick, -thick, -thick),
                       int((start + span * a / 100) * 16), int(span * (b - a) / 100 * 16))
 
-        arc(0, 100, QColor(120, 120, 120, 60), thick)
+        arc(0, 100, QColor(theme.c("track")), thick)
         lo, hi = self._pos(self.low), self._pos(self.high)
-        for a, b, c in ((0, lo, RED), (lo, hi, YELLOW), (hi, 100, GREEN)):
+        for a, b, c in ((0, lo, status_color("critical")), (lo, hi, status_color("warning")),
+                        (hi, 100, status_color("good"))):
             arc(a, b, c, thick * 0.35)
         if self.value is not None:
             v = self._pos(self.value)
@@ -126,10 +150,10 @@ class Gauge(QWidget):
 
 
 class Sparkline(QWidget):
-    def __init__(self, color: str = "#1e88e5", parent=None):
+    def __init__(self, color: Optional[str] = None, parent=None):
         super().__init__(parent)
         self.values: list[Optional[float]] = []
-        self.color = QColor(color)
+        self.color = QColor(color or theme.c("measure"))
         self.setMinimumHeight(34)
 
     def set_values(self, values: list[Optional[float]]) -> None:
@@ -167,8 +191,7 @@ class Sparkline(QWidget):
 def card(title: str) -> tuple[QFrame, QVBoxLayout]:
     fr = QFrame()
     fr.setFrameShape(QFrame.StyledPanel)
-    fr.setStyleSheet("QFrame { border: 1px solid #c8ccd2; border-radius: 6px; }"
-                     "QLabel { border: none; }")
+    fr.setObjectName("card")
     lay = QVBoxLayout(fr)
     lay.setContentsMargins(10, 8, 10, 8)
     lb = QLabel(f"<b>{title}</b>")
@@ -180,7 +203,7 @@ class KpiCard(QFrame):
     def __init__(self, title: str, low: float, high: float, tooltip: str):
         super().__init__()
         self.setFrameShape(QFrame.StyledPanel)
-        self.setStyleSheet("QFrame { border: 1px solid #c8ccd2; border-radius: 6px; } QLabel { border: none; }")
+        self.setObjectName("card")
         self.setToolTip(tooltip)
         lay = QVBoxLayout(self)
         lay.setContentsMargins(10, 8, 10, 8)
@@ -195,7 +218,8 @@ class KpiCard(QFrame):
     def set(self, value: Optional[float], previous: Optional[float], spark: list[Optional[float]]) -> None:
         self.gauge.set_value(None if value is None else 100 * value)
         self.spark.set_values(spark)
-        self.prev.setText(f"<span style='color:#757575'>Periodo anterior</span><br><b>{pct(previous)}</b>")
+        self.prev.setText(f"<span style='color:{theme.c('muted')}'>{tr('Periodo anterior')}</span><br>"
+                          f"<b>{pct(previous)}</b>")
 
 
 class KpiDashboard(QWidget):
@@ -251,7 +275,7 @@ class KpiDashboard(QWidget):
         self.timeline = pg.PlotWidget(axisItems={"bottom": pg.DateAxisItem()})
         self.timeline.setMouseEnabled(y=False)
         self.timeline.showGrid(x=True, y=False, alpha=0.2)
-        rows = ["Resumen"] + [STATE_LABELS[s] for s in STATE_ORDER]
+        rows = [tr("Resumen")] + [tr(STATE_LABELS[s]) for s in STATE_ORDER]
         self.timeline.getAxis("left").setTicks([[(-i, r) for i, r in enumerate(rows)]])
         self.timeline.setYRange(-len(rows) + 0.4, 0.6)
         sl.addWidget(self.timeline, 1)
@@ -310,9 +334,9 @@ class KpiDashboard(QWidget):
         o = self.engine.config.oee
         speed_var = self.engine.config.variable(o.speed_var) if o.speed_var else None
         if not (o.enabled and speed_var):
-            self.lbl_config.setText("<b>Configura el OEE</b> en ⚙ Configurar variables → pestaña «KPI / OEE»: "
-                                    "elige la variable de velocidad de línea, la velocidad nominal y cómo se "
-                                    "mide la calidad.")
+            self.lbl_config.setText(tr("<b>Configura el OEE</b> en ⚙ Configurar variables → pestaña «KPI / OEE»: "
+                                       "elige la variable de velocidad de línea, la velocidad nominal y cómo se "
+                                       "mide la calidad."))
             return
         now = self.engine.clock()
         a, b = self._period(now)
@@ -326,9 +350,10 @@ class KpiDashboard(QWidget):
         self.lbl_range.setText(f"{time.strftime(fmt, time.localtime(a))} → {time.strftime(fmt, time.localtime(b))}  ")
         qmode = {"spec": "variables en especificación", "selector": "indicador visual",
                  "both": "variables en especificación e indicador visual"}[o.quality_mode]
-        self.lbl_config.setText(
-            f"<span style='color:#757575'>Velocidad: {self.engine.config.var_label(speed_var)} · paro si ≤ "
-            f"{o.stop_threshold:g} · microparo &lt; {o.microstop_s:g} s · calidad por {qmode}</span>")
+        self.lbl_config.setText(f"<span style='color:{theme.c('muted')}'>" + tr(
+            "Velocidad: {v} · paro si ≤ {s} · microparo &lt; {m} s · calidad por {q}",
+            v=self.engine.config.var_label(speed_var), s=f"{o.stop_threshold:g}", m=f"{o.microstop_s:g}",
+            q=tr(qmode)) + "</span>")
         for k, c in self.cards.items():
             c.set(getattr(res, k), getattr(prev, k), spark[k])
         self._fill_other(res, prev, speed_var.unit)
@@ -357,6 +382,7 @@ class KpiDashboard(QWidget):
         ]
         self.tbl_other.setRowCount(len(rows))
         for i, row in enumerate(rows):
+            row = (tr(row[0]),) + tuple(row[1:])
             for c, v in enumerate(row):
                 it = QTableWidgetItem(v)
                 if c:
@@ -380,17 +406,17 @@ class KpiDashboard(QWidget):
         cur = res.intervals[-1] if res.intervals else None
         if cur is not None:
             color = STATE_COLORS[cur.state]
-            self.lbl_state.setText(f"Estado actual: <b style='color:{color}'>{STATE_LABELS[cur.state]}</b> "
-                                   f"desde hace {fmt_duration(cur.duration)}")
+            self.lbl_state.setText(tr("Estado actual: <b style='color:{c}'>{s}</b> desde hace {d}", c=color,
+                                      s=tr(STATE_LABELS[cur.state]), d=fmt_duration(cur.duration)))
         else:
-            self.lbl_state.setText("Sin datos en el periodo.")
+            self.lbl_state.setText(tr("Sin datos en el periodo."))
 
     def _fill_distribution(self, res: OeeResult) -> None:
         states = [s for s in STATE_ORDER if s in res.distribution]
         self.tbl_dist.setRowCount(len(states))
         for i, s in enumerate(states):
             d, n = res.distribution[s]
-            it = QTableWidgetItem(f"● {STATE_LABELS[s]}")
+            it = QTableWidgetItem(f"● {tr(STATE_LABELS[s])}")
             it.setForeground(QColor(STATE_COLORS[s]))
             self.tbl_dist.setItem(i, 0, it)
             self.tbl_dist.setItem(i, 1, QTableWidgetItem(fmt_duration(d)))
@@ -403,18 +429,19 @@ class KpiDashboard(QWidget):
         self.g_resil.set_value(hf.resilience_score)
         self.g_sust.set_value(hf.sustainability_score)
         idx = "—" if hf.index is None else f"{hf.index:.0f}"
-        color = "#757575" if hf.index is None else ("#43a047" if hf.index >= 80 else
-                                                     ("#fbc02d" if hf.index >= 60 else "#e53935"))
+        color = theme.c("muted") if hf.index is None else (theme.c("good_text") if hf.index >= 80 else
+                                                            (theme.c("warning_text") if hf.index >= 60
+                                                             else theme.c("critical")))
         scrap = 100 * (1 - res.quality) if res.quality is not None else None
-        self.lbl_i5.setText(
-            f"<b>Índice 5.0: <span style='color:{color}; font-size:16px'>{idx}</span></b> / 100<br>"
-            f"Alarmas y avisos: {hf.alarms_per_hour:.1f}/h (ISA-18.2 recomienda ≤ 6/h) · "
-            f"intervenciones del operador: {hf.interventions_per_hour:.1f}/h<br>"
-            f"Tiempo en condición normal: {'—' if res.normal_pct is None else f'{res.normal_pct:.0f} %'} · "
-            f"recuperación media: {fmt_duration(hf.mean_recovery_s)}<br>"
-            f"Desperdicio: {'—' if scrap is None else f'{scrap:.1f} %'} "
-            f"({res.length_scrap:,.0f} {self.engine.config.oee.length_unit}) · tiempo detenido: "
-            f"{fmt_duration(res.stop_s)}")
+        self.lbl_i5.setText(tr(
+            "<b>Índice 5.0: <span style='color:{color}; font-size:16px'>{idx}</span></b> / 100<br>"
+            "Alarmas y avisos: {aph}/h (ISA-18.2 recomienda ≤ 6/h) · intervenciones del operador: {iph}/h<br>"
+            "Tiempo en condición normal: {normal} · recuperación media: {rec}<br>"
+            "Desperdicio: {scrap} ({slen} {unit}) · tiempo detenido: {stop}",
+            color=color, idx=idx, aph=f"{hf.alarms_per_hour:.1f}", iph=f"{hf.interventions_per_hour:.1f}",
+            normal="—" if res.normal_pct is None else f"{res.normal_pct:.0f} %", rec=fmt_duration(hf.mean_recovery_s),
+            scrap="—" if scrap is None else f"{scrap:.1f} %", slen=f"{res.length_scrap:,.0f}",
+            unit=self.engine.config.oee.length_unit, stop=fmt_duration(res.stop_s)))
 
     def showEvent(self, event) -> None:
         super().showEvent(event)

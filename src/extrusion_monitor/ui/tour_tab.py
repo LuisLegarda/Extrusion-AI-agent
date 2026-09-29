@@ -11,6 +11,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from ..i18n import translate_widget
 from ..capture import crop, load_png
 from ..config import Click, TourDef, TourStep
 from ..navigation import TourAborted, TourRunner, click_rect
@@ -325,6 +326,7 @@ class TourTab(QWidget):
         else:
             self.lst.setCurrentRow(0)
         self._selected()
+        translate_widget(self)
 
     def setEnabledAll(self, on: bool) -> None:
         for w in self.findChildren(QGroupBox):
