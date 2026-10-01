@@ -41,6 +41,9 @@ class StationDialog(QDialog):
         self.ed_name = QLineEdit(s.line_name)
         self.ed_name.setPlaceholderText(machine)
         form.addRow("Nombre de la línea:", self.ed_name)
+        self.ed_area = QLineEdit(s.area)
+        self.ed_area.setPlaceholderText("p. ej. Nave 2")
+        form.addRow("Área / nave:", self.ed_area)
         self.ed_id = QLineEdit(s.line_id)
         self.ed_id.setPlaceholderText(line_slug(machine))
         self.ed_name.textChanged.connect(lambda t: self.ed_id.setPlaceholderText(line_slug(t or machine)))
@@ -76,6 +79,7 @@ class StationDialog(QDialog):
     def settings(self) -> StationSettings:
         return StationSettings(enabled=self.chk.isChecked(), export_dir=self.ed_dir.text().strip(),
                                line_name=self.ed_name.text().strip(), line_id=self.ed_id.text().strip(),
+                               area=self.ed_area.text().strip(),
                                interval_s=self.sp_int.value(), trend_interval_s=self.sp_trend.value(),
                                retention_days=self.sp_ret.value())
 

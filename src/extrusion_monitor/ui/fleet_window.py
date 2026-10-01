@@ -1,47 +1,43 @@
-"""Dashboard global: estado de todas las líneas a partir de la carpeta compartida."""
+"""Dashboard global: estado de todas las líneas a partir de la carpeta compartida.
+
+Cada línea se muestra en una tarjeta con 1 a 5 indicadores configurables (plantilla común con excepciones
+por línea), agrupadas por área. Avisa con sonido y parpadeo cuando una línea entra en alarma, se detiene o
+pierde comunicación. Tiene modo TV (pantalla completa con páginas que rotan) y exportación a CSV.
+"""
 from __future__ import annotations
 
+import csv
 import json
 import time
 from pathlib import Path
 from typing import Optional
 
 import pyqtgraph as pg
-from PySide6.QtCore import Qt, QTimer, Signal
-from PySide6.QtGui import QBrush, QColor
+from PySide6.QtCore import Qt, QTimer
+from PySide6.QtGui import QBrush, QColor, QKeySequence, QShortcut
 from PySide6.QtWidgets import (
     QApplication, QComboBox, QFileDialog, QFrame, QGridLayout, QHBoxLayout, QHeaderView, QLabel, QLineEdit,
-    QListWidget, QListWidgetItem, QMainWindow, QPushButton, QScrollArea, QSplitter, QTableWidget, QTableWidgetItem,
-    QTabWidget, QVBoxLayout, QWidget,
+    QListWidget, QListWidgetItem, QMainWindow, QMessageBox, QPushButton, QScrollArea, QSplitter, QTableWidget,
+    QTableWidgetItem, QTabWidget, QVBoxLayout, QWidget,
 )
 
-from ..analysis.oee import STATE_LABELS
-from ..fleet import FleetReader, LineState
+from ..fleet import FleetReader, FleetSettings, LineState, load_fleet_settings, save_fleet_settings
 from ..i18n import tr
 from . import theme
+from .fleet_tiles import (CONN_TEXT, LEVEL_KEYS, LineCard, blink_timer, fmt_age, period_since, severity,
+                          trend_key)
 
-POLL_MS = 5000
-CARD_W = 270
-LEVEL_KEYS = {"ALARM": "critical", "WARN": "warning", "OK": "good", "INFO": "info"}
-STATE_KEYS = {"running": "good", "assumed": "good_soft", "slow": "warning", "microstop": "serious",
-              "stopped": "critical", "unknown": "neutral"}
-CONN_TEXT = {"online": "En línea", "stale": "Retrasada", "offline": "Sin comunicación", "closed": "Programa cerrado"}
 FILTERS = [("all", "Todas"), ("alarm", "Con alarma o aviso"), ("stopped", "Detenidas"),
            ("offline", "Sin comunicación")]
 SORTS = [("name", "Nombre"), ("status", "Gravedad"), ("oee", "OEE (menor primero)")]
 TREND_RANGES = [("1 h", 3600), ("8 h", 8 * 3600), ("24 h", 86400), ("7 días", 7 * 86400)]
+NO_AREA = "Sin área"
 
 
-def fmt_age(s: Optional[float]) -> str:
-    if s is None:
-        return "—"
-    if s < 90:
-        return tr("hace {n} s", n=int(s))
-    if s < 5400:
-        return tr("hace {n} min", n=int(s / 60))
-    if s < 172800:
-        return tr("hace {n} h", n=int(s / 3600))
-    return tr("hace {n} días", n=int(s / 86400))
+def natural(text: str) -> list:
+    """Orden natural: «Línea 2» antes que «Línea 10»."""
+    import re
+    return [int(p) if p.isdigit() else p for p in re.split(r"(\d+)", text.lower())]
 
 
 def pct(v) -> str:
@@ -56,110 +52,6 @@ def fmt_val(v: dict) -> str:
         return "—"
     d = v.get("decimals")
     return f"{x:.{d}f}" if isinstance(d, int) else f"{x:.4g}"
-
-
-def natural(text: str) -> list:
-    """Orden natural: «Línea 2» antes que «Línea 10»."""
-    import re
-    return [int(p) if p.isdigit() else p for p in re.split(r"(\d+)", text.lower())]
-
-
-def severity(line: LineState, now: float) -> int:
-    """0 = sin comunicación … 4 = alarma (para ordenar: lo más grave primero)."""
-    conn = line.connection(now)
-    st = line.status
-    if conn in ("offline", "closed"):
-        return 3
-    if st.get("n_alarms"):
-        return 4
-    if (st.get("machine") or {}).get("state") in ("stopped", "microstop"):
-        return 3
-    if st.get("n_warnings"):
-        return 2
-    return 1
-
-
-class LineCard(QFrame):
-    clicked = Signal(str)
-
-    def __init__(self, line_id: str):
-        super().__init__()
-        self.line_id = line_id
-        self.setObjectName("card")
-        self.setFixedWidth(CARD_W)
-        self.setMinimumHeight(150)
-        self.setCursor(Qt.PointingHandCursor)
-        lay = QVBoxLayout(self)
-        lay.setContentsMargins(10, 8, 10, 8)
-        lay.setSpacing(3)
-        self.lbl_name = QLabel()
-        self.lbl_state = QLabel()
-        self.lbl_recipe = QLabel()
-        self.lbl_kpi = QLabel()
-        self.lbl_alarm = QLabel()
-        self.lbl_age = QLabel()
-        for w in (self.lbl_name, self.lbl_state, self.lbl_recipe, self.lbl_kpi, self.lbl_alarm, self.lbl_age):
-            w.setTextFormat(Qt.RichText)
-            lay.addWidget(w)
-        self.lbl_recipe.setStyleSheet(f"color:{theme.c('text2')};")
-        self.lbl_age.setStyleSheet(f"color:{theme.c('muted')}; font-size:11px;")
-        self._sel = False
-
-    def set_selected(self, on: bool) -> None:
-        self._sel = on
-
-    def update_line(self, line: LineState, now: float) -> None:
-        st = line.status
-        conn = line.connection(now)
-        sev = severity(line, now)
-        border = {4: "critical", 3: "neutral" if conn in ("offline", "closed") else "critical", 2: "warning",
-                  1: "good"}[sev]
-        width = 3 if self._sel else 2
-        style = f"#card {{ border: {width}px solid {theme.c(border)}; border-radius: 8px; }}"
-        if style != self.styleSheet():  # solo si cambió (recalcular estilos de 100 tarjetas es costoso)
-            self.setStyleSheet(style)
-        dot = theme.c({"online": "good", "stale": "warning"}.get(conn, "neutral"))
-        self.lbl_name.setText(f"<span style='color:{dot}'>●</span> <span style='font-size:15px; "
-                              f"color:{theme.c('title')}'><b>{line.name}</b></span>")
-        machine = st.get("machine") or {}
-        if conn in ("offline", "closed"):
-            state = f"<span style='font-size:18px; color:{theme.c('muted')}'><b>{tr(CONN_TEXT[conn])}</b></span>"
-        elif machine.get("state"):
-            color = theme.c(STATE_KEYS.get(machine["state"], "neutral"))
-            since = machine.get("since")
-            dur = f" · {fmt_age(now - since).replace(tr('hace') + ' ', '')}" if since else ""
-            state = (f"<span style='font-size:18px; color:{color}'><b>{tr(STATE_LABELS.get(machine['state'], ''))}"
-                     f"</b></span><span style='color:{theme.c('muted')}'>{dur}</span>")
-        else:
-            mon = tr("Monitoreando") if st.get("monitoring") else tr("Monitoreo detenido")
-            state = f"<span style='font-size:16px'><b>{mon}</b></span>"
-        self.lbl_state.setText(state)
-        self.lbl_recipe.setText(tr("Receta: {r}", r=st.get("recipe") or "—"))
-        o = st.get("oee") or {}
-        if o:
-            self.lbl_kpi.setText(f"OEE <b style='font-size:15px'>{pct(o.get('oee'))}</b> &nbsp; "
-                                 f"<span style='color:{theme.c('muted')}; font-size:11px'>"
-                                 f"D {pct(o.get('availability'))} · R {pct(o.get('performance'))} · "
-                                 f"C {pct(o.get('quality'))}</span>")
-        else:
-            self.lbl_kpi.setText(f"<span style='color:{theme.c('muted')}'>{tr('OEE sin configurar')}</span>")
-        na, nw = st.get("n_alarms") or 0, st.get("n_warnings") or 0
-        if na or nw:
-            first = (st.get("alarms") or [{}])[0].get("msg", "")
-            self.lbl_alarm.setText(
-                f"<b style='color:{theme.c('critical')}'>{tr('{n} alarmas', n=na)}</b> · "
-                f"<b style='color:{theme.c('warning_text')}'>{tr('{n} avisos', n=nw)}</b><br>"
-                f"<span style='font-size:11px'>{first[:70]}</span>")
-        else:
-            self.lbl_alarm.setText(f"<span style='color:{theme.c('good_text')}'>{tr('✔ Sin alarmas')}</span>"
-                                   if conn == "online" else "")
-        self.lbl_age.setText(tr("Actualizado {a}", a=fmt_age(line.age(now))) +
-                             (f" · {st.get('error')}" if st.get("error") else ""))
-        self.setToolTip(f"{line.line_id}\n{line.path}")
-
-    def mousePressEvent(self, event) -> None:
-        self.clicked.emit(self.line_id)
-        super().mousePressEvent(event)
 
 
 class SummaryTile(QFrame):
@@ -340,26 +232,42 @@ class LineDetail(QWidget):
 class FleetWindow(QMainWindow):
     def __init__(self, folder: Optional[str], settings_file: Path):
         super().__init__()
-        self.settings_file = settings_file
+        self.settings_file = Path(settings_file)
+        self.settings: FleetSettings = load_fleet_settings(self.settings_file)
+        if folder:
+            self.settings.dir = folder
         self.setWindowTitle(tr("Dashboard global de líneas"))
         self.resize(1500, 900)
-        self.reader = FleetReader(folder or "")
+        self.reader = FleetReader(self.settings.dir)
         self.cards: dict[str, LineCard] = {}
         self.selected: Optional[str] = None
         self.plant_events: list[dict] = []
         self._order: list[str] = []
-        self._cols = 0
+        self._layout_key = None
+        self._headers: list = []
+        self._flags: dict[str, tuple] = {}  # id -> (alarma, detenida, sin comunicación) del ciclo anterior
+        self._first_scan = True
+        self.tv = False
+        self._page = 0
 
         central = QWidget()
         root = QVBoxLayout(central)
-        top = QHBoxLayout()
+        self.top = QWidget()
+        top = QHBoxLayout(self.top)
+        top.setContentsMargins(0, 0, 0, 0)
         self.lbl_dir = QLabel()
         top.addWidget(self.lbl_dir, 1)
-        b = QPushButton("📂 Carpeta compartida…")
-        b.clicked.connect(self.choose_folder)
-        top.addWidget(b)
+        for text, slot, tip in (("⚙ Configuración", self.open_setup, "Carpeta de datos, indicadores, áreas y avisos"),
+                                ("✔ Reconocer avisos", self.acknowledge_all, "Detiene el parpadeo de las tarjetas"),
+                                ("⤓ Exportar CSV", self.export_csv, "Estado y OEE de todas las líneas"),
+                                ("📺 Modo TV (F11)", self.toggle_tv, "Pantalla completa con páginas que rotan")):
+            b = QPushButton(text)
+            b.setToolTip(tip)
+            b.clicked.connect(slot)
+            top.addWidget(b)
         self.ed_search = QLineEdit()
         self.ed_search.setPlaceholderText("Buscar línea…")
+        self.ed_search.setMinimumWidth(150)
         self.ed_search.setMaximumWidth(220)
         self.ed_search.textChanged.connect(lambda _: self.refresh(rescan=False))
         top.addWidget(self.ed_search)
@@ -368,13 +276,13 @@ class FleetWindow(QMainWindow):
             self.cmb_filter.addItem(label, k)
         self.cmb_filter.currentIndexChanged.connect(lambda _: self.refresh(rescan=False))
         top.addWidget(self.cmb_filter)
+        top.addWidget(QLabel("Orden:"))
         self.cmb_sort = QComboBox()
         for k, label in SORTS:
             self.cmb_sort.addItem(label, k)
         self.cmb_sort.currentIndexChanged.connect(lambda _: self.refresh(rescan=False))
-        top.addWidget(QLabel("Orden:"))
         top.addWidget(self.cmb_sort)
-        root.addLayout(top)
+        root.addWidget(self.top)
 
         summary = QHBoxLayout()
         self.tiles = {k: SummaryTile(t) for k, t in (
@@ -382,9 +290,11 @@ class FleetWindow(QMainWindow):
             ("offline", "Sin comunicación"), ("oee", "OEE promedio (turno)"))}
         for t in self.tiles.values():
             summary.addWidget(t)
+        self.lbl_page = QLabel()
+        summary.addWidget(self.lbl_page)
         root.addLayout(summary)
 
-        split = QSplitter(Qt.Horizontal)
+        self.split = QSplitter(Qt.Horizontal)
         self.scroll = QScrollArea()
         self.scroll.setWidgetResizable(True)
         self.grid_host = QWidget()
@@ -400,83 +310,124 @@ class FleetWindow(QMainWindow):
         ll.setContentsMargins(0, 0, 0, 0)
         ll.addWidget(self.empty)
         ll.addWidget(self.scroll, 1)
-        vsplit = QSplitter(Qt.Vertical)
-        vsplit.addWidget(left)
-        ev = QWidget()
-        el = QVBoxLayout(ev)
+        self.vsplit = QSplitter(Qt.Vertical)
+        self.vsplit.addWidget(left)
+        self.events_box = QWidget()
+        el = QVBoxLayout(self.events_box)
         el.setContentsMargins(0, 0, 0, 0)
         el.addWidget(QLabel("<b>Alarmas y avisos recientes de la planta</b>"))
         self.lst_plant = QListWidget()
         self.lst_plant.itemDoubleClicked.connect(lambda it: self.select(it.data(Qt.UserRole)))
         el.addWidget(self.lst_plant, 1)
-        vsplit.addWidget(ev)
-        vsplit.setSizes([650, 200])
-        split.addWidget(vsplit)
+        self.vsplit.addWidget(self.events_box)
+        self.vsplit.setSizes([650, 200])
+        self.split.addWidget(self.vsplit)
         self.detail = LineDetail(self.reader)
-        split.addWidget(self.detail)
-        split.setSizes([950, 550])
-        root.addWidget(split, 1)
+        self.split.addWidget(self.detail)
+        self.split.setSizes([1000, 500])
+        root.addWidget(self.split, 1)
         self.setCentralWidget(central)
 
         self.timer = QTimer(self)
         self.timer.timeout.connect(self.refresh)
-        self.timer.start(POLL_MS)
+        self.timer.start(int(self.settings.poll_s * 1000))
         self.trend_timer = QTimer(self)
         self.trend_timer.timeout.connect(self.detail.refresh_trend)
         self.trend_timer.start(60000)  # la tendencia llega por minuto
+        self.tv_timer = QTimer(self)
+        self.tv_timer.timeout.connect(self._next_page)
+        self.blink = blink_timer(self, lambda: self.cards.values())
+        QShortcut(QKeySequence("F11"), self, activated=self.toggle_tv)
+        QShortcut(QKeySequence("Esc"), self, activated=lambda: self.tv and self.toggle_tv())
         self._set_dir_label()
+        self.detail.show_line(None)
         QTimer.singleShot(0, self.refresh)
 
-    # --- carpeta ---------------------------------------------------------------------------
+    # --- configuración ---------------------------------------------------------------------
     def _set_dir_label(self) -> None:
-        d = str(self.reader.root) if str(self.reader.root) not in ("", ".") else ""
+        d = self.settings.dir
         self.lbl_dir.setText(f"<b>{tr('Carpeta')}:</b> {d or tr('(sin elegir)')}")
 
-    def choose_folder(self) -> None:
-        d = QFileDialog.getExistingDirectory(self, tr("Carpeta compartida de las líneas"), str(self.reader.root))
-        if not d:
+    def _save_settings(self) -> None:
+        try:
+            save_fleet_settings(self.settings_file, self.settings)
+        except OSError:
+            pass
+
+    def open_setup(self) -> None:
+        from .fleet_setup import FleetSetupDialog
+        dlg = FleetSetupDialog(self.settings, self.reader.lines, self)
+        if not dlg.exec():
             return
-        self.set_folder(d)
+        new = dlg.result_settings()
+        folder_changed = new.dir != self.settings.dir
+        self.settings = new
+        self._save_settings()
+        self.timer.start(int(new.poll_s * 1000))
+        if folder_changed:
+            self.set_folder(new.dir)
+        else:
+            self._rebuild_cards()
+            self.refresh()
+
+    def choose_folder(self) -> None:
+        d = QFileDialog.getExistingDirectory(self, tr("Carpeta de datos de las líneas"), self.settings.dir)
+        if d:
+            self.set_folder(d)
 
     def set_folder(self, d: str) -> None:
+        self.settings.dir = d
         self.reader = FleetReader(d)
         self.detail.reader = self.reader
         self.plant_events.clear()
+        self.lst_plant.clear()
+        self._flags.clear()
+        self._first_scan = True
+        self._rebuild_cards()
+        self._set_dir_label()
+        self._save_settings()
+        self.refresh()
+
+    def _rebuild_cards(self) -> None:
         for c in self.cards.values():
             c.deleteLater()
         self.cards.clear()
         self._order = []
-        self._set_dir_label()
-        try:
-            self.settings_file.write_text(json.dumps({"dir": d}, ensure_ascii=False), encoding="utf-8")
-        except OSError:
-            pass
-        self.refresh()
+        self._layout_key = None
 
     # --- actualización ---------------------------------------------------------------------
     def refresh(self, rescan: bool = True) -> None:
         now = time.time()
-        if str(self.reader.root) in ("", "."):
-            self.empty.setText(tr("Elige la carpeta compartida donde escriben las líneas (📂 Carpeta compartida…)."))
+        s = self.settings
+        if not s.dir:
+            self.empty.setText(tr("Elige la carpeta donde escriben las líneas (⚙ Configuración)."))
             self.empty.setVisible(True)
             return
         if rescan:
             new = self.reader.scan()
-            self.plant_events = (self.plant_events + [e for e in new if e.get("level") in ("WARN", "ALARM")])[-500:]
-            if new:
+            alarms = [e for e in new if e.get("level") in ("WARN", "ALARM")]
+            if alarms:
+                self.plant_events = (self.plant_events + alarms)[-500:]
                 self._fill_plant_events()
         lines = self.reader.lines
-        for lid in lines:
+        for lid, ln in lines.items():
+            tiles = s.tiles_for(lid)
+            keys = {k for k in (trend_key(t, ln.status) for t in tiles) if k}
+            if keys:
+                since = min(period_since(t, ln.status, now) for t in tiles if trend_key(t, ln.status))
+                self.reader.update_series(ln, keys, since)
             if lid not in self.cards:
-                card = LineCard(lid)
+                card = LineCard(lid, tiles, s.card_columns)
                 card.clicked.connect(self.select)
+                card.selected = lid == self.selected
                 self.cards[lid] = card
         for lid in [k for k in self.cards if k not in lines]:
             self.cards.pop(lid).deleteLater()
+        self._notify(now)
         shown = self._visible(now)
         for lid in shown:
-            self.cards[lid].update_line(lines[lid], now)
-        self._layout(shown)
+            self.cards[lid].update_line(lines[lid], now, s.offline_s, s.area_of(lines[lid]))
+        self._layout(shown, now)
         self._summary(now)
         if self.reader.error:
             self.empty.setText(tr("No se puede leer la carpeta: {e}", e=self.reader.error))
@@ -486,16 +437,55 @@ class FleetWindow(QMainWindow):
         if self.selected:
             self.detail.refresh(now)
 
+    def _notify(self, now: float) -> None:
+        """Aviso (sonido y parpadeo) cuando una línea pasa a alarma, se detiene o pierde comunicación."""
+        s = self.settings
+        beep = False
+        for lid, ln in self.reader.lines.items():
+            st = ln.status
+            conn = ln.connection(now, s.offline_s)
+            flags = (bool(st.get("n_alarms")) and conn in ("online", "stale"),
+                     (st.get("machine") or {}).get("state") in ("stopped",) and conn in ("online", "stale"),
+                     conn == "offline")
+            old = self._flags.get(lid)
+            self._flags[lid] = flags
+            if old is None or self._first_scan:
+                continue
+            reasons = []
+            if s.notify_alarm and flags[0] and not old[0]:
+                reasons.append(tr("entró en alarma"))
+            if s.notify_stop and flags[1] and not old[1]:
+                reasons.append(tr("se detuvo"))
+            if s.notify_offline and flags[2] and not old[2]:
+                reasons.append(tr("perdió comunicación"))
+            if reasons:
+                card = self.cards.get(lid)
+                if card is not None:
+                    card.blinking = True
+                beep = True
+                self.plant_events.append({"ts": now, "level": "ALARM", "line_id": lid,
+                                          "msg": tr("{n} {r}", n=ln.name, r=", ".join(reasons))})
+                self._fill_plant_events()
+        self._first_scan = False
+        if beep and s.sound:
+            QApplication.beep()
+            QApplication.alert(self)
+
+    def acknowledge_all(self) -> None:
+        for c in self.cards.values():
+            c.acknowledge()
+
     def _visible(self, now: float) -> list[str]:
         lines = self.reader.lines
+        s = self.settings
         q = self.ed_search.text().strip().lower()
         flt = self.cmb_filter.currentData()
         out = []
         for lid, ln in lines.items():
-            if q and q not in ln.name.lower() and q not in lid.lower():
+            if q and q not in ln.name.lower() and q not in lid.lower() and q not in s.area_of(ln).lower():
                 continue
             st = ln.status
-            conn = ln.connection(now)
+            conn = ln.connection(now, s.offline_s)
             if flt == "alarm" and not (st.get("n_alarms") or st.get("n_warnings")):
                 continue
             if flt == "stopped" and (st.get("machine") or {}).get("state") not in ("stopped", "microstop"):
@@ -505,67 +495,182 @@ class FleetWindow(QMainWindow):
             out.append(lid)
         key = self.cmb_sort.currentData()
         if key == "status":
-            out.sort(key=lambda k: (-severity(lines[k], now), natural(lines[k].name)))
+            out.sort(key=lambda k: (-severity(lines[k], now, s.offline_s), natural(lines[k].name)))
         elif key == "oee":
-            out.sort(key=lambda k: ((lines[k].status.get("oee") or {}).get("oee") is None,
-                                    (lines[k].status.get("oee") or {}).get("oee") or 0, natural(lines[k].name)))
+            def oee(k):
+                v = (lines[k].status.get("kpis") or {}).get("oee")
+                return (v is None, v or 0, natural(lines[k].name))
+            out.sort(key=oee)
         else:
             out.sort(key=lambda k: natural(lines[k].name))
+        if s.group_by_area:
+            out.sort(key=lambda k: natural(s.area_of(lines[k]) or "￿"))  # estable: conserva el orden
         return out
 
-    def _layout(self, order: list[str]) -> None:
-        cols = max(1, (self.scroll.viewport().width() - 10) // (CARD_W + 10))
-        if order == self._order and cols == self._cols:
+    def _columns(self) -> int:
+        w = next(iter(self.cards.values())).width() if self.cards else 280
+        return max(1, (self.scroll.viewport().width() - 10) // (w + 10))
+
+    def _layout(self, order: list[str], now: float) -> None:
+        s = self.settings
+        lines = self.reader.lines
+        cols = self._columns()
+        pages = [order]
+        if self.tv and order:
+            card_h = max(c.sizeHint().height() for c in self.cards.values()) + 10
+            rows = max(1, (self.scroll.viewport().height() - 10) // card_h)
+            per = rows * cols
+            pages = [order[i:i + per] for i in range(0, len(order), per)]
+            self._page %= len(pages)
+            self.lbl_page.setText(tr("Página {p} de {n}", p=self._page + 1, n=len(pages)) if len(pages) > 1 else "")
+        else:
+            self.lbl_page.setText("")
+        shown = pages[self._page] if self.tv else order
+        area_of = {k: s.area_of(lines[k]) or tr(NO_AREA) for k in order} if s.group_by_area else {}
+        areas = [area_of.get(k) for k in shown]
+        key = (tuple(shown), tuple(areas), cols)
+        if key == self._layout_key:
+            for hdr, area, group in self._headers:  # mismo acomodo: solo se actualizan los resúmenes
+                hdr.setText(self._area_header(area, group, now))
             return
-        self._order, self._cols = list(order), cols
+        self._layout_key = key
+        self._headers = []
+        self._order = list(shown)
         while self.grid.count():
-            self.grid.takeAt(0)
+            it = self.grid.takeAt(0)
+            w = it.widget()
+            if w is not None and not isinstance(w, LineCard):
+                w.hide()  # que no quede encimado mientras se borra
+                w.setParent(None)
+                w.deleteLater()
         for c in self.cards.values():
             c.setVisible(False)
-        for i, lid in enumerate(order):
+        row, col, current = 0, 0, object()
+        for lid, area in zip(shown, areas):
+            if area != current and area is not None:
+                if col:
+                    row, col = row + 1, 0
+                group = [k for k in order if area_of.get(k) == area]  # el resumen cuenta toda el área
+                hdr = QLabel(self._area_header(area, group, now))
+                hdr.setTextFormat(Qt.RichText)
+                self._headers.append((hdr, area, group))
+                self.grid.addWidget(hdr, row, 0, 1, cols)
+                row += 1
+            current = area
             card = self.cards[lid]
-            self.grid.addWidget(card, i // cols, i % cols)
+            self.grid.addWidget(card, row, col)
             card.setVisible(True)
+            col += 1
+            if col >= cols:
+                row, col = row + 1, 0
+
+    def _area_header(self, area: str, ids: list[str], now: float) -> str:
+        lines = self.reader.lines
+        s = self.settings
+        on = [lines[k] for k in ids if lines[k].connection(now, s.offline_s) in ("online", "stale")]
+        alarms = sum(bool(ln.status.get("n_alarms")) for ln in on)
+        oees = [(ln.status.get("kpis") or {}).get("oee") for ln in on]
+        oees = [x for x in oees if x is not None]
+        oee = f"{sum(oees) / len(oees):.0f} %" if oees else "—"
+        return (f"<span style='font-size:16px; color:{theme.c('title')}'><b>{area}</b></span> "
+                f"<span style='color:{theme.c('muted')}'>· {tr('{n} líneas', n=len(ids))} · OEE {oee}"
+                + (f" · <b style='color:{theme.c('critical')}'>{tr('{n} con alarma', n=alarms)}</b>" if alarms else "")
+                + "</span>")
 
     def _summary(self, now: float) -> None:
+        s = self.settings
         lines = list(self.reader.lines.values())
-        conn = [ln.connection(now) for ln in lines]
+        conn = [ln.connection(now, s.offline_s) for ln in lines]
         online = [ln for ln, c in zip(lines, conn) if c in ("online", "stale")]
         states = [(ln.status.get("machine") or {}).get("state") for ln in online]
         self.tiles["lines"].set(str(len(lines)))
-        self.tiles["running"].set(str(sum(s in ("running", "slow", "assumed") for s in states)), theme.c("good"))
-        self.tiles["stopped"].set(str(sum(s in ("stopped", "microstop") for s in states)), theme.c("critical"))
+        self.tiles["running"].set(str(sum(x in ("running", "slow", "assumed") for x in states)), theme.c("good"))
+        self.tiles["stopped"].set(str(sum(x in ("stopped", "microstop") for x in states)), theme.c("critical"))
         self.tiles["alarm"].set(str(sum(bool(ln.status.get("n_alarms")) for ln in online)), theme.c("critical"))
         off = sum(c in ("offline", "closed") for c in conn)
         self.tiles["offline"].set(str(off), theme.c("neutral") if off else None)
-        oees = [(ln.status.get("oee") or {}).get("oee") for ln in online]
+        oees = [(ln.status.get("kpis") or {}).get("oee") for ln in online]
         oees = [x for x in oees if x is not None]
-        self.tiles["oee"].set(pct(sum(oees) / len(oees)) if oees else "—")
+        self.tiles["oee"].set(f"{sum(oees) / len(oees):.0f} %" if oees else "—")
 
     def _fill_plant_events(self) -> None:
         self.lst_plant.clear()
         lines = self.reader.lines
         for e in reversed(self.plant_events[-200:]):
             name = lines[e["line_id"]].name if e["line_id"] in lines else e["line_id"]
-            it = QListWidgetItem(f"{time.strftime('%d/%m %H:%M:%S', time.localtime(e.get('ts', 0)))}  "
-                                 f"{name}  ·  {e.get('msg', '')}")
+            msg = e.get("msg", "")
+            text = msg if msg.startswith(name) else f"{name}  ·  {msg}"
+            it = QListWidgetItem(f"{time.strftime('%d/%m %H:%M:%S', time.localtime(e.get('ts', 0)))}  {text}")
             it.setData(Qt.UserRole, e["line_id"])
             it.setForeground(QBrush(QColor(theme.c(LEVEL_KEYS.get(e.get("level"), "neutral")))))
             self.lst_plant.addItem(it)
 
     def select(self, line_id: str) -> None:
         if self.selected in self.cards:
-            self.cards[self.selected].set_selected(False)
+            self.cards[self.selected].selected = False
         self.selected = line_id
         if line_id in self.cards:
-            self.cards[line_id].set_selected(True)
+            self.cards[line_id].selected = True
+            self.cards[line_id].acknowledge()
         self.detail.show_line(line_id)
         self.refresh(rescan=False)
 
+    # --- modo TV y exportación ---------------------------------------------------------------
+    def toggle_tv(self) -> None:
+        self.tv = not self.tv
+        for w in (self.top, self.detail, self.events_box):
+            w.setVisible(not self.tv)
+        if self.tv:
+            self.showFullScreen()
+            self.tv_timer.start(int(self.settings.tv_rotate_s * 1000))
+        else:
+            self.showNormal()
+            self.tv_timer.stop()
+            self._page = 0
+        self._layout_key = None
+        QTimer.singleShot(50, lambda: self.refresh(rescan=False))
+
+    def _next_page(self) -> None:
+        self._page += 1
+        self._layout_key = None
+        self.refresh(rescan=False)
+
+    def export_csv(self, path: Optional[str] = None) -> Optional[str]:
+        if not path:
+            path, _ = QFileDialog.getSaveFileName(self, tr("Exportar resumen de líneas"),
+                                                  f"lineas_{time.strftime('%Y%m%d_%H%M')}.csv", "CSV (*.csv)")
+        if not path:
+            return None
+        now = time.time()
+        s = self.settings
+        cols = ["linea", "id", "area", "comunicacion", "estado", "receta", "oee_%", "disponibilidad_%",
+                "rendimiento_%", "calidad_%", "producido", "conforme", "unidad", "paros", "alarmas", "avisos",
+                "actualizado"]
+        with open(path, "w", newline="", encoding="utf-8-sig") as f:
+            w = csv.writer(f, delimiter=";")
+            w.writerow(cols)
+            for lid in sorted(self.reader.lines, key=lambda k: natural(self.reader.lines[k].name)):
+                ln = self.reader.lines[lid]
+                st = ln.status
+                k = st.get("kpis") or {}
+                o = st.get("oee") or {}
+
+                def num(v, d=1):
+                    return "" if v is None else f"{v:.{d}f}".replace(".", ",")
+
+                w.writerow([ln.name, lid, s.area_of(ln), tr(CONN_TEXT[ln.connection(now, s.offline_s)]),
+                            (st.get("machine") or {}).get("label", ""), st.get("recipe") or "",
+                            num(k.get("oee")), num(k.get("availability")), num(k.get("performance")),
+                            num(k.get("quality")), num(o.get("length_total"), 0), num(o.get("length_good"), 0),
+                            o.get("unit", ""), o.get("n_stops", ""), st.get("n_alarms", 0), st.get("n_warnings", 0),
+                            time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(st["ts"])) if st.get("ts") else ""])
+        return path
+
     def resizeEvent(self, event) -> None:
         super().resizeEvent(event)
-        if self._order:
-            self._layout(list(self._order))
+        self._layout_key = None
+        if self.cards:
+            QTimer.singleShot(0, lambda: self.refresh(rescan=False))
 
 
 def run_fleet(folder: Optional[str], home: Optional[Path] = None) -> int:
@@ -580,12 +685,6 @@ def run_fleet(folder: Optional[str], home: Optional[Path] = None) -> int:
     home_dir.mkdir(parents=True, exist_ok=True)
     logging.basicConfig(level=logging.INFO, filename=str(home_dir / "fleet.log"),
                         format="%(asctime)s %(levelname)s %(name)s: %(message)s")
-    settings = home_dir / "fleet.json"
-    if folder is None:
-        try:
-            folder = json.loads(settings.read_text(encoding="utf-8")).get("dir")
-        except (OSError, ValueError):
-            folder = None
     app = QApplication.instance() or QApplication(sys.argv[:1])
     app.setApplicationName("Dashboard global de líneas")
     try:
@@ -594,11 +693,10 @@ def run_fleet(folder: Optional[str], home: Optional[Path] = None) -> int:
         state = {}
     apply_ui_prefs(state.get("ui", {}))
     Translator().install(app)
-    win = FleetWindow(folder, settings)
+    win = FleetWindow(folder, home_dir / "fleet.json")
     if folder:
-        try:
-            settings.write_text(json.dumps({"dir": folder}, ensure_ascii=False), encoding="utf-8")
-        except OSError:
-            pass
+        win._save_settings()
     win.show()
+    if not win.settings.dir:
+        QTimer.singleShot(300, win.open_setup)  # primera vez: pedir la carpeta de datos
     return app.exec()

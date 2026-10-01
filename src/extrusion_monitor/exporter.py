@@ -180,9 +180,11 @@ class FleetExporter:
                 return
             acc, self._acc = self._acc, {}
             start, self._acc_start = self._acc_start, now
-            if acc:
+            kpis = {k: round(v, 4) for k, v in (self.engine.kpis or {}).items() if v is not None}
+            if acc or kpis:
                 v = {vid: [round(sum(xs) / len(xs), 6), min(xs), max(xs), xs[-1]] for vid, xs in acc.items()}
-                self._trend.append((now, dumps({"ts": round(now, 1), "from": round(start, 1), "v": v})))
+                self._trend.append((now, dumps({"ts": round(now, 1), "from": round(start, 1), "v": v,
+                                                "k": kpis})))
                 self._trend = self._trend[-MAX_PENDING:]
 
     def _purge(self, d: Path, now: float) -> None:
@@ -216,7 +218,7 @@ class FleetExporter:
         s = self.settings
         out = {
             "schema": SCHEMA_VERSION, "line_id": self.line_id, "line_name": s.line_name or cfg.machine_name,
-            "machine_name": cfg.machine_name, "app_version": __version__, "ts": round(now, 3),
+            "machine_name": cfg.machine_name, "area": s.area, "app_version": __version__, "ts": round(now, 3),
             "interval_s": s.interval_s, "closed": closed, "monitoring": bool(eng.running) and not closed,
             "recipe": eng.state.recipe, "auto_recipe": eng.state.auto_recipe,
         }
@@ -247,6 +249,13 @@ class FleetExporter:
                 "n_microstops", "stop_s", "run_s", "avg_speed", "avg_nominal", "mtbf_s", "mttr_s")}
             out["oee"]["shift_start"] = res.start
             out["oee"]["unit"] = cfg.oee.length_unit
+        kpis = {k: v for k, v in (eng.kpis or {}).items() if v is not None}
+        if res is not None:  # el OEE del momento (no el de hace hasta 30 s)
+            for k in ("oee", "availability", "performance", "quality"):
+                v = getattr(res, k)
+                if v is not None:
+                    kpis[k] = 100.0 * v
+        out["kpis"] = kpis
         return out
 
     @staticmethod

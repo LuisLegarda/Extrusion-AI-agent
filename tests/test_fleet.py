@@ -144,3 +144,122 @@ def test_fleet_window(ctx, tmp_path):
     w.set_folder(str(tmp_path / "otra"))
     assert not w.cards and json.loads((tmp_path / "fleet.json").read_text("utf-8"))["dir"].endswith("otra")
     w.close()
+
+
+def _status(tmp, lid, **kw):
+    d = tmp / lid
+    d.mkdir(parents=True, exist_ok=True)
+    st = {"ts": time.time(), "interval_s": 5, "line_name": kw.pop("name", lid), "monitoring": True,
+          "variables": [{"id": "diam", "name": "Diámetro", "unit": "mm", "kind": "actual", "value": 3.2,
+                         "limits": [3.17, 3.23, 3.15, 3.25], "level": "OK", "fresh": True}],
+          "kpis": {"oee": 80.0}, "machine": {"state": "running", "since": time.time() - 60}}
+    st.update(kw)
+    (d / "status.json").write_text(json.dumps(st), encoding="utf-8")
+    return d
+
+
+def test_fleet_settings_template_overrides_and_areas(tmp_path):
+    from extrusion_monitor.fleet import FleetTile, load_fleet_settings, save_fleet_settings
+    from extrusion_monitor.fleet import FleetSettings
+    own = [FleetTile(id="x", kind="var", var="diam", chart="trend")]
+    s = FleetSettings(dir="x", overrides={"L2": own}, areas={"L1": "Nave A"})
+    p = tmp_path / "fleet.json"
+    save_fleet_settings(p, s)
+    s2 = load_fleet_settings(p)
+    assert [t.id for t in s2.tiles_for("L1")] == [t.id for t in s.tiles] and s2.tiles_for("L2")[0].var == "diam"
+    assert s2.area_of(LineState("L1", None, status={"area": "Nave B"})) == "Nave A"  # la del dashboard manda
+    assert s2.area_of(LineState("L3", None, status={"area": "Nave B"})) == "Nave B"
+    with pytest.raises(ValueError):
+        FleetSettings(tiles=[FleetTile(id=str(i)) for i in range(6)])  # máximo 5 por línea
+
+
+def test_trend_series_incremental(tmp_path):
+    from extrusion_monitor.fleet import day_name
+    d = _status(tmp_path, "L1")
+    (d / "trend").mkdir()
+    f = d / "trend" / day_name(time.time())
+    now = time.time()
+    f.write_text("".join(json.dumps({"ts": now - 600 + i * 60, "v": {"diam": [3.2 + i / 100, 0, 0, 0]},
+                                     "k": {"oee": 70 + i}}) + "\n" for i in range(5)), encoding="utf-8")
+    r = FleetReader(tmp_path)
+    r.scan()
+    line = r.lines["L1"]
+    keys = {("v", "diam"), ("k", "oee")}
+    r.update_series(line, keys, now - 3600)
+    assert line.series[("k", "oee")][1] == [70, 71, 72, 73, 74]
+    with open(f, "a", encoding="utf-8") as fh:
+        fh.write(json.dumps({"ts": now, "v": {"diam": [3.3, 0, 0, 0]}, "k": {"oee": 90}}) + "\n")
+    r.update_series(line, keys, now - 3600)
+    assert line.series[("k", "oee")][1][-1] == 90 and len(line.series[("v", "diam")][0]) == 6  # solo lo nuevo
+    r.update_series(line, keys, now - 500)  # el periodo avanza: se descarta lo viejo
+    assert line.series[("k", "oee")][1] == [72, 73, 74, 90]
+
+
+def test_fleet_cards_notify_and_export(tmp_path, monkeypatch):
+    pytest.importorskip("PySide6")
+    from PySide6.QtWidgets import QApplication
+
+    from extrusion_monitor.fleet import FleetSettings, FleetTile, save_fleet_settings
+    from extrusion_monitor.ui.fleet_window import FleetWindow
+    QApplication.instance() or QApplication([])
+    shared = tmp_path / "planta"
+    _status(shared, "L1", name="Línea 1", area="Nave A")
+    _status(shared, "L2", name="Línea 2", area="Nave B")
+    tiles = [FleetTile(id="g", kind="kpi", kpi="oee", chart="gauge"),
+             FleetTile(id="t", kind="var", var="Diámetro", chart="trend", width=2),  # por nombre
+             FleetTile(id="v", kind="var", var="no_existe", chart="value")]
+    own = [FleetTile(id="p", kind="production", chart="value")]
+    cfg = tmp_path / "fleet.json"
+    save_fleet_settings(cfg, FleetSettings(dir=str(shared), tiles=tiles, overrides={"L2": own}))
+    beeps = []
+    monkeypatch.setattr(QApplication, "beep", lambda: beeps.append(1))
+    w = FleetWindow(None, cfg)
+    w.refresh()
+    assert len(w.cards["L1"].tiles) == 3 and len(w.cards["L2"].tiles) == 1
+    assert "80" in str(w.cards["L1"].tiles[0].body.value)
+    assert "No existe" in w.cards["L1"].tiles[2].lbl.text()
+    assert [h[1] for h in w._headers] == ["Nave A", "Nave B"]
+    # la línea 1 entra en alarma: parpadeo, sonido y evento de planta
+    _status(shared, "L1", name="Línea 1", area="Nave A", n_alarms=1,
+            alarms=[{"since": time.time(), "level": "ALARM", "msg": "Diámetro fuera de alarma"}])
+    time.sleep(0.02)
+    w.refresh()
+    assert w.cards["L1"].blinking and beeps and "entró en alarma" in w.lst_plant.item(0).text()
+    w.select("L1")
+    assert not w.cards["L1"].blinking  # clic = reconocido
+    out = w.export_csv(str(tmp_path / "x.csv"))
+    rows = open(out, encoding="utf-8-sig").read().splitlines()
+    assert len(rows) == 3 and rows[1].startswith("Línea 1;L1;Nave A")
+    w.toggle_tv()
+    assert w.tv and not w.top.isVisible()
+    w.toggle_tv()
+    w.close()
+
+
+def test_fleet_setup_dialog(tmp_path, monkeypatch):
+    pytest.importorskip("PySide6")
+    from PySide6.QtWidgets import QApplication, QMessageBox
+
+    from extrusion_monitor.fleet import FleetSettings
+    from extrusion_monitor.ui.fleet_setup import FleetSetupDialog
+    QApplication.instance() or QApplication([])
+    _status(tmp_path, "L1")
+    r = FleetReader(tmp_path)
+    r.scan()
+    monkeypatch.setattr(QMessageBox, "information", lambda *a, **k: None)
+    dlg = FleetSetupDialog(FleetSettings(dir=str(tmp_path)), r.lines)
+    ed = dlg.template
+    for _ in range(4):
+        ed._add()
+    assert len(ed.tiles) == 5  # 3 por defecto + 2: el máximo es 5
+    ed.lst.setCurrentRow(4)
+    ed.cmb_kind.setCurrentIndex(ed.cmb_kind.findData("var"))
+    ed.cmb_var.setCurrentIndex(ed.cmb_var.findData("diam"))
+    ed.cmb_chart.setCurrentIndex(ed.cmb_chart.findData("bar"))
+    assert ed.tiles[4].kind == "var" and ed.tiles[4].var == "diam" and ed.tiles[4].chart == "bar"
+    dlg.lst_lines.setCurrentRow(0)
+    dlg.ed_area.setText("Nave 9")
+    dlg.chk_own.setChecked(True)
+    dlg._own_editors["L1"].tiles = dlg._own_editors["L1"].tiles[:1]
+    s = dlg.result_settings()
+    assert len(s.tiles) == 5 and len(s.overrides["L1"]) == 1 and s.areas["L1"] == "Nave 9"
