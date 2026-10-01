@@ -389,6 +389,12 @@ class AppConfig(BaseModel):
                     stack.append(c.id)
         return out
 
+    def critical_problems(self) -> list[str]:
+        """Problemas que impiden guardar: con ellos el monitoreo no puede funcionar."""
+        keys = ("IDs de página duplicados", "IDs de variable duplicados", "el árbol tiene un ciclo", "Fórmula «",
+                "Referencia circular")
+        return [p for p in self.validate_references() if any(k in p for k in keys)]
+
     def validate_references(self) -> list[str]:
         """Devuelve una lista de problemas de coherencia (vacía si todo está bien)."""
         problems: list[str] = []

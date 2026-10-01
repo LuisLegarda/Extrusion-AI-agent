@@ -177,22 +177,23 @@ class MonitorEngine:
                     msg += " (configuración completa de la receta cargada)"
             self._pending_events.append(Event(self.clock(), "recipe_change", Level.INFO, "RECETA", "", msg))
 
-    def save_profile(self) -> None:
-        """Guarda la configuración activa en el perfil de la receta activa."""
+    def save_profile(self) -> Optional[str]:
+        """Guarda la configuración activa en el perfil de la receta activa. Devuelve el error, si lo hubo."""
         if self.state.recipe:
             try:
                 save_profile(self.workspace, self.state.recipe, self.config)
             except OSError as exc:
                 log.exception("No se pudo guardar el perfil")
-                self._pending_events.append(Event(
-                    self.clock(), "profile", Level.WARN, "RECETA", "",
-                    f"No se pudo guardar la configuración en la receta «{self.state.recipe}»: {exc}"))
+                msg = f"No se pudo guardar la configuración en la receta «{self.state.recipe}»: {exc}"
+                self._pending_events.append(Event(self.clock(), "profile", Level.WARN, "RECETA", "", msg))
+                return msg
         else:
             # Sin receta activa: la próxima receta que se active tomará esta configuración.
             try:
                 self.workspace.unassigned_config_flag.touch()
             except OSError:
                 log.exception("No se pudo marcar la configuración")
+        return None
 
     def _auto_select_recipe(self, readings) -> None:
         var_id = self.config.general.recipe_name_var

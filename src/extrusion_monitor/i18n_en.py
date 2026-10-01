@@ -476,4 +476,17 @@ EN: dict[str, str] = {
     "Hay mosaicos de variable sin variable elegida.": "Some variable tiles have no variable selected.",
     "La escala máxima debe ser mayor que la mínima.": "The scale maximum must be greater than the minimum.",
     "✎ Personalizar tablero de Inicio…": "✎ Customize Home dashboard…",
+    # --- guardar configuración ---
+    "Cambios sin guardar": "Unsaved changes",
+    "Hay cambios sin guardar (recorridos, variables u otros ajustes).\n\n¿Salir sin guardar? Se perderán los cambios.":
+        "There are unsaved changes (tours, variables or other settings).\n\nLeave without saving? The changes will be lost.",
+    "No se puede guardar": "Cannot save", "Corrige primero:": "Fix first:",
+    "Se encontraron estos puntos pendientes:": "These items are pending:",
+    "¿Guardar de todos modos? Lo que esté incompleto no funcionará hasta corregirlo.":
+        "Save anyway? Anything incomplete will not work until it is fixed.",
+    "Receta no actualizada": "Recipe not updated",
+    "La configuración quedó guardada, pero si cambias de receta y vuelves se cargará la versión anterior. Cierra "
+    "programas que tengan abierta la carpeta de datos y vuelve a guardar.":
+        "The configuration was saved, but if you switch recipes and come back the previous version will be loaded. "
+        "Close programs that have the data folder open and save again.",
 }

@@ -627,11 +627,19 @@ class MainWindow(QMainWindow):
                 self.engine.clicker = make_clicker(self.engine.source)
             self.ctx.config = dlg.config
             self.engine.reconfigure(dlg.config, make_ocr(self.ctx))
-            self.engine.save_profile()  # la receta activa guarda la configuración completa
+            self._save_profile()  # la receta activa guarda la configuración completa
             self.rebuild_table()
             self._update_title()
         if was_running:
             self.engine.start()
+
+    def _save_profile(self) -> None:
+        err = self.engine.save_profile()
+        if err:
+            QMessageBox.warning(self, tr("Receta no actualizada"),
+                                err + "\n\n" + tr("La configuración quedó guardada, pero si cambias de receta y vuelves "
+                                                   "se cargará la versión anterior. Cierra programas que tengan abierta "
+                                                   "la carpeta de datos y vuelve a guardar."))
 
     def open_home_config(self) -> None:
         from .home_config_dialog import HomeConfigDialog
@@ -641,7 +649,7 @@ class MainWindow(QMainWindow):
         self.engine.config.home = dlg.home
         self.ctx.config = self.engine.config
         self.ctx.workspace.save_config(self.engine.config)
-        self.engine.save_profile()  # el tablero es parte de la configuración de la receta activa
+        self._save_profile()  # el tablero es parte de la configuración de la receta activa
         self.home.rebuild()
         self.show_page("home")
 
@@ -787,7 +795,7 @@ class MainWindow(QMainWindow):
     def open_behavior(self) -> None:
         from .behavior_dialog import BehaviorDialog
         BehaviorDialog(self.ctx, self, preselect=[v for v in self._plotted]).exec()
-        self.engine.save_profile()
+        self._save_profile()
         self.behavior_panel.set_models()
 
     def _refresh_analysis(self, force: bool = False) -> None:

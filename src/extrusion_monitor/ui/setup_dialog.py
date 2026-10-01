@@ -125,6 +125,8 @@ class SetupDialog(QDialog):
             self._set_frame(ctx.engine.grab_frame())
         except Exception:
             pass
+        self._commit_all()
+        self._baseline = self._fingerprint()  # para avisar al salir con cambios sin guardar
 
     # --- construcción ----------------------------------------------------------
     def _build(self) -> None:
@@ -1294,9 +1296,36 @@ class SetupDialog(QDialog):
         self.lbl_result.setText(f"Se aprendieron {n} caracteres. Conocidos: {self.ctx.template_ocr.known_chars}")
 
     # --- guardar -------------------------------------------------------------------------
-    def _save(self) -> None:
+    def _commit_all(self) -> list[str]:
+        """Pasa a la configuración lo que está en los formularios; devuelve los problemas de las pestañas."""
         self._commit_general()
-        problems = self.tour_tab.commit() + self.oee_tab.commit() + self.report_tab.commit()
+        return self.tour_tab.commit() + self.oee_tab.commit() + self.report_tab.commit()
+
+    def _fingerprint(self) -> tuple:
+        return (self.config.model_dump_json(), sorted(self.tour_tab.patches), sorted(self.anchors),
+                sorted((vid, tuple(sorted(imgs))) for vid, imgs in self.selector_images.items()),
+                sorted(self.removed_pages))
+
+    def has_changes(self) -> bool:
+        self._commit_all()
+        return self._fingerprint() != self._baseline
+
+    def reject(self) -> None:
+        """Cancelar / cerrar la ventana: si hay cambios sin guardar se pregunta antes de descartarlos."""
+        if self.tour_tab.recording is not None:
+            self.tour_tab.stop_recording()
+        if self.has_changes():
+            ans = QMessageBox.question(
+                self, tr("Cambios sin guardar"),
+                tr("Hay cambios sin guardar (recorridos, variables u otros ajustes).\n\n"
+                   "¿Salir sin guardar? Se perderán los cambios."),
+                QMessageBox.Discard | QMessageBox.Cancel, QMessageBox.Cancel)
+            if ans != QMessageBox.Discard:
+                return
+        super().reject()
+
+    def _save(self) -> None:
+        problems = self._commit_all()
         problems = self.config.validate_references() + problems
         missing = [p.name for p in self.config.pages if p.anchor is not None and p.id not in self.anchors]
         if missing:
@@ -1304,9 +1333,21 @@ class SetupDialog(QDialog):
         no_patch = [c for c in self.config.all_tour_clicks() if c.id not in self.tour_tab.patches]
         if no_patch:
             problems.append(f"Recorrido: {len(no_patch)} clics sin imagen del botón; vuelve a grabarlos")
-        if problems:
-            QMessageBox.warning(self, "Revisa la configuración", "\n".join(problems))
+        critical = self.config.critical_problems()
+        if critical:
+            # Con estos errores el monitoreo no puede funcionar: hay que corregirlos antes de guardar.
+            QMessageBox.warning(self, tr("No se puede guardar"), tr("Corrige primero:") + "\n\n" + "\n".join(critical))
             return
+        if problems:
+            # El resto no impide guardar: lo incompleto (p. ej. un recorrido sin regreso) no funciona
+            # hasta corregirlo, pero no se pierde el trabajo.
+            ans = QMessageBox.question(
+                self, tr("Revisa la configuración"),
+                tr("Se encontraron estos puntos pendientes:") + "\n\n• " + "\n• ".join(problems) + "\n\n" +
+                tr("¿Guardar de todos modos? Lo que esté incompleto no funcionará hasta corregirlo."),
+                QMessageBox.Save | QMessageBox.Cancel, QMessageBox.Save)
+            if ans != QMessageBox.Save:
+                return
         ws = self.ctx.workspace
         for pid in self.removed_pages:
             f = ws.page_anchor_file(pid)

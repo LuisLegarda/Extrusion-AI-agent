@@ -65,10 +65,15 @@ def save_profile(ws: Workspace, recipe_name: str, config: Optional[AppConfig] = 
     old = dest.with_name(dest.name + ".old")
     if old.exists():
         shutil.rmtree(old, ignore_errors=True)
+    if old.exists():
+        # Restos que Windows no dejó borrar (archivo abierto): se usa otro nombre para no bloquear el guardado.
+        old = dest.with_name(f"{dest.name}.old{int(time.time() * 1000)}")
     if dest.exists():
         dest.rename(old)
     tmp.rename(dest)
     shutil.rmtree(old, ignore_errors=True)
+    for stale in dest.parent.glob(dest.name + ".old*"):
+        shutil.rmtree(stale, ignore_errors=True)
     return dest
 
 
