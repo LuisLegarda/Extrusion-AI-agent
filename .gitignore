@@ -8,3 +8,6 @@ dist/
 *.sqlite
 *.sqlite-wal
 *.sqlite-shm
+
+# graphify: grafo local de cada equipo (se regenera; no se sube)
+graphify-out/
