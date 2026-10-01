@@ -7,7 +7,8 @@ from typing import Callable, Optional
 from PySide6.QtCore import QRectF, Qt, QTimer, Signal
 from PySide6.QtGui import QColor, QPainter, QPen
 from PySide6.QtWidgets import (
-    QFrame, QGridLayout, QHBoxLayout, QLabel, QListWidget, QListWidgetItem, QSizePolicy, QVBoxLayout, QWidget,
+    QFrame, QGridLayout, QHBoxLayout, QLabel, QListWidget, QListWidgetItem, QPushButton, QScrollArea, QSizePolicy,
+    QVBoxLayout, QWidget,
 )
 
 from ..analysis.oee import STATE_LABELS, OeeResult, compute, human_factors
@@ -15,7 +16,8 @@ from ..analysis.rules import Level
 from ..engine import MonitorEngine, Snapshot
 from ..i18n import tr, translate_text
 from . import theme
-from .common import level_color
+from .common import SeriesCache, level_color
+from .home_tiles import make_var_tile
 from .kpi_dashboard import STATE_COLORS, Gauge, OeeSample, fmt_duration, shift_start
 
 STABILITY_WINDOW_S = 1800.0  # estabilidad: % del tiempo normal en los últimos 30 min
@@ -146,75 +148,162 @@ class BarList(QWidget):
         p.end()
 
 
+BUILTIN_TILES = {
+    "oee": "OEE (turno)", "i5": "Índice 5.0", "stability": "Estabilidad", "cpk": "Cpk mínimo (proceso)",
+    "conform": "En especificación", "read": "Calidad de lectura", "machine": "Estado de la máquina",
+    "alarms": "Alarmas y avisos activos", "cpk_bars": "Cpk por variable (las 6 más bajas)", "shift": "Estado del turno",
+}
+GAUGE_TILES = ("oee", "i5", "stability", "cpk", "conform", "read")
+ROW_MIN_H = 170  # alto mínimo de una fila del tablero
+
+
+def pack_tiles(tiles, columns: int) -> list[tuple[int, int, int, int]]:
+    """Posición (fila, columna, alto, ancho) de cada mosaico: se colocan en orden en el primer hueco libre."""
+    used: set[tuple[int, int]] = set()
+    out = []
+    for t in tiles:
+        w, h = min(t.width, columns), t.height
+        r = 0
+        while True:
+            col = next((c for c in range(columns - w + 1)
+                        if all((r + i, c + j) not in used for i in range(h) for j in range(w))), None)
+            if col is not None:
+                break
+            r += 1
+        used |= {(r + i, col + j) for i in range(h) for j in range(w)}
+        out.append((r, col, h, w))
+    return out
+
+
 class HomePage(QWidget):
-    """Dashboard general: OEE, índice 5.0, estabilidad, Cpk mínimo, conformidad y lectura."""
+    """Dashboard general configurable: indicadores del sistema y variables con el gráfico elegido."""
 
     navigate = Signal(str)
+    customize = Signal()
 
     def __init__(self, engine: MonitorEngine):
         super().__init__()
         self.engine = engine
         self._last_fast = 0.0
         self.oee: Optional[OeeResult] = None
+        self.series = SeriesCache(engine)
         root = QVBoxLayout(self)
-        root.setContentsMargins(14, 10, 14, 10)
-        root.setSpacing(10)
-
-        grid = QGridLayout()
-        grid.setSpacing(10)
-        self.cards = {
-            "oee": GaugeCard("kpi", "OEE (turno)", Gauge(60, 85, needle=False),
-                             "Disponibilidad × Rendimiento × Calidad del turno en curso"),
-            "i5": GaugeCard("kpi", "Índice 5.0", Gauge(60, 80, decimals=0, unit="/ 100", needle=False),
-                            "Factor humano (carga de alarmas), resiliencia y sostenibilidad del turno"),
-            "stability": GaugeCard("behavior", "Estabilidad", Gauge(80, 95, decimals=0, needle=False),
-                                   "% del tiempo (últimos 30 min) en que el comportamiento aprendido fue normal"),
-            "cpk": GaugeCard("spc", "Cpk mínimo (proceso)", Gauge(1.0, 1.33, vmin=0, vmax=2.0, unit="Cpk", decimals=2, needle=False),
-                             "El Cpk más bajo de las variables con límites (ventana de tendencia)"),
-            "conform": GaugeCard("variables", "En especificación", Gauge(90, 99, decimals=0, needle=False),
-                                 "% de las variables verificadas que están dentro de tolerancia ahora"),
-            "read": GaugeCard("variables", "Calidad de lectura", Gauge(90, 98, decimals=0, needle=False),
-                              "% de las variables visibles leídas correctamente en el último ciclo"),
-        }
-        for i, c in enumerate(self.cards.values()):
-            c.clicked.connect(self.navigate.emit)
-            grid.addWidget(c, 0, i)
-            grid.setColumnStretch(i, 1)
-        root.addLayout(grid, 3)
-
-        mid = QHBoxLayout()
-        mid.setSpacing(10)
-        st, sl = make_card("Estado de la máquina")
-        self.lbl_state = QLabel("—")
-        self.lbl_state.setTextFormat(Qt.RichText)
-        self.lbl_state.setAlignment(Qt.AlignTop | Qt.AlignLeft)
-        self.lbl_state.setWordWrap(True)
-        sl.addWidget(self.lbl_state, 1)
-        mid.addWidget(st, 3)
-        al, all_ = make_card("Alarmas y avisos activos")
-        self.lst_alarms = QListWidget()
-        self.lst_alarms.setStyleSheet("QListWidget { border: none; }")
-        self.lst_alarms.itemDoubleClicked.connect(lambda _: self.navigate.emit("events"))
-        all_.addWidget(self.lst_alarms, 1)
-        mid.addWidget(al, 4)
-        cp, cl = make_card("Cpk por variable (las 6 más bajas)")
-        self.bars = BarList(1.0, 1.33, 2.0)
-        cl.addWidget(self.bars, 1)
-        mid.addWidget(cp, 4)
-        root.addLayout(mid, 4)
-
-        tl, tll = make_card("Estado del turno")
-        self.strip = StateStrip()
-        tll.addWidget(self.strip)
-        self.lbl_legend = QLabel(" ".join(
-            f"<span style='color:{STATE_COLORS[s]}'>■</span> {tr(STATE_LABELS[s])}&nbsp;&nbsp;" for s in STATE_COLORS))
-        self.lbl_legend.setStyleSheet(f"color:{theme.c('muted')};")
-        tll.addWidget(self.lbl_legend)
-        root.addWidget(tl)
+        root.setContentsMargins(14, 6, 14, 10)
+        root.setSpacing(6)
+        bar = QHBoxLayout()
+        bar.addStretch(1)
+        self.btn_custom = QPushButton("✎ Personalizar tablero")
+        self.btn_custom.setToolTip("Elige qué indicadores y variables se muestran y con qué tipo de gráfico")
+        self.btn_custom.clicked.connect(self.customize.emit)
+        bar.addWidget(self.btn_custom)
+        root.addLayout(bar)
+        self.scroll = QScrollArea()
+        self.scroll.setWidgetResizable(True)
+        self.scroll.setFrameShape(QFrame.NoFrame)
+        root.addWidget(self.scroll, 1)
+        self.rebuild()
 
         self.timer = QTimer(self)
         self.timer.timeout.connect(self.refresh_oee)
         self.timer.start(10000)
+
+    # --- construcción ---------------------------------------------------------------------
+    def rebuild(self) -> None:
+        """Vuelve a armar el tablero con la configuración actual."""
+        home = self.engine.config.home
+        self.cards: dict[str, GaugeCard] = {}
+        self.var_tiles: list = []
+        self.lbl_state = self.lst_alarms = self.bars = self.strip = None
+        content = QWidget()
+        content.setObjectName("content")
+        grid = QGridLayout(content)
+        grid.setContentsMargins(0, 0, 0, 0)
+        grid.setSpacing(10)
+        cols = home.columns
+        places = pack_tiles(home.tiles, cols)
+        rows: dict[int, bool] = {}
+        for tile, (r, c, h, w) in zip(home.tiles, places):
+            widget = self._make_tile(tile)
+            grid.addWidget(widget, r, c, h, w)
+            fixed = tile.kind == "shift"
+            for i in range(h):
+                rows[r + i] = rows.get(r + i, False) or not fixed
+        for c in range(cols):
+            grid.setColumnStretch(c, 1)
+        for r, grows in rows.items():
+            grid.setRowStretch(r, 1 if grows else 0)
+            if grows:
+                grid.setRowMinimumHeight(r, ROW_MIN_H)
+        if not home.tiles:
+            empty = QLabel(tr("El tablero está vacío: usa «✎ Personalizar tablero» para agregar indicadores."))
+            empty.setAlignment(Qt.AlignCenter)
+            grid.addWidget(empty, 0, 0)
+        elif not any(rows.values()):
+            grid.setRowStretch(max(rows) + 1, 1)
+        old = self.scroll.takeWidget()
+        if old is not None:
+            old.deleteLater()
+        self.scroll.setWidget(content)
+        if self.isVisible():
+            QTimer.singleShot(0, lambda: self.refresh_oee(force=True))
+            if self.engine.last is not None:
+                QTimer.singleShot(0, lambda: self.update_snapshot(self.engine.last, force=True))
+
+    def _make_tile(self, tile) -> QWidget:
+        title = tile.title or BUILTIN_TILES.get(tile.kind, "")
+        k = tile.kind
+        if k == "var":
+            w = make_var_tile(tile, self.engine.config, self.series)
+            w.clicked.connect(self.navigate.emit)
+            self.var_tiles.append(w)
+            return w
+        if k in GAUGE_TILES:
+            spec = {
+                "oee": ("kpi", Gauge(60, 85, needle=False), "Disponibilidad × Rendimiento × Calidad del turno en curso"),
+                "i5": ("kpi", Gauge(60, 80, decimals=0, unit="/ 100", needle=False),
+                       "Factor humano (carga de alarmas), resiliencia y sostenibilidad del turno"),
+                "stability": ("behavior", Gauge(80, 95, decimals=0, needle=False),
+                              "% del tiempo (últimos 30 min) en que el comportamiento aprendido fue normal"),
+                "cpk": ("spc", Gauge(1.0, 1.33, vmin=0, vmax=2.0, unit="Cpk", decimals=2, needle=False),
+                        "El Cpk más bajo de las variables con límites (ventana de tendencia)"),
+                "conform": ("variables", Gauge(90, 99, decimals=0, needle=False),
+                            "% de las variables verificadas que están dentro de tolerancia ahora"),
+                "read": ("variables", Gauge(90, 98, decimals=0, needle=False),
+                         "% de las variables visibles leídas correctamente en el último ciclo"),
+            }[k]
+            card = GaugeCard(spec[0], title, spec[1], spec[2])
+            card.clicked.connect(self.navigate.emit)
+            self.cards[k] = card
+            return card
+        fr, lay = make_card(title)
+        if k == "machine":
+            self.lbl_state = QLabel("—")
+            self.lbl_state.setTextFormat(Qt.RichText)
+            self.lbl_state.setAlignment(Qt.AlignTop | Qt.AlignLeft)
+            self.lbl_state.setWordWrap(True)
+            lay.addWidget(self.lbl_state, 1)
+        elif k == "alarms":
+            self.lst_alarms = QListWidget()
+            self.lst_alarms.setStyleSheet("QListWidget { border: none; }")
+            self.lst_alarms.itemDoubleClicked.connect(lambda _: self.navigate.emit("events"))
+            lay.addWidget(self.lst_alarms, 1)
+        elif k == "cpk_bars":
+            self.bars = BarList(1.0, 1.33, 2.0)
+            lay.addWidget(self.bars, 1)
+        elif k == "shift":
+            self.strip = StateStrip()
+            lay.addWidget(self.strip)
+            legend = QLabel(" ".join(
+                f"<span style='color:{STATE_COLORS[s]}'>■</span> {tr(STATE_LABELS[s])}&nbsp;&nbsp;" for s in STATE_COLORS))
+            legend.setStyleSheet(f"color:{theme.c('muted')};")
+            lay.addWidget(legend)
+            fr.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Maximum)
+        return fr
+
+    def _set(self, key: str, value, sub: str) -> None:
+        card = self.cards.get(key)
+        if card is not None:
+            card.set(value, sub)
 
     # --- datos rápidos (cada ciclo, máx. 1 vez por segundo) -------------------------------
     def update_snapshot(self, snap: Snapshot, force: bool = False) -> None:
@@ -233,27 +322,30 @@ class HomePage(QWidget):
         cpks.sort(key=lambda r: r[1])
         if cpks:
             worst = cpks[0]
-            self.cards["cpk"].set(worst[1], worst[2])
+            self._set("cpk", worst[1], worst[2])
         else:
-            self.cards["cpk"].set(None, "Sin límites o sin datos suficientes")
-        self.bars.set_rows([(label, v) for _, v, label in cpks[:6]])
+            self._set("cpk", None, "Sin límites o sin datos suficientes")
+        if self.bars is not None:
+            self.bars.set_rows([(label, v) for _, v, label in cpks[:6]])
         # Conformidad actual
         checked = [st for st in snap.statuses.values() if st.fresh and st.level is not None
                    and (st.bounds.any or st.expected)]
         if checked:
             ok = sum(st.level < Level.WARN for st in checked)
-            self.cards["conform"].set(100.0 * ok / len(checked), tr("{ok} de {n} variables", ok=ok, n=len(checked)))
+            self._set("conform", 100.0 * ok / len(checked), tr("{ok} de {n} variables", ok=ok, n=len(checked)))
         else:
-            self.cards["conform"].set(None, "Sin receta o sin límites")
+            self._set("conform", None, "Sin receta o sin límites")
         # Calidad de lectura
         if snap.read_total:
-            self.cards["read"].set(100.0 * snap.read_ok / snap.read_total,
-                                   tr("{ok} de {n} leídas", ok=snap.read_ok, n=snap.read_total) +
-                                   (f" · {snap.error}" if snap.error else ""))
+            self._set("read", 100.0 * snap.read_ok / snap.read_total,
+                      tr("{ok} de {n} leídas", ok=snap.read_ok, n=snap.read_total) +
+                      (f" · {snap.error}" if snap.error else ""))
         else:
-            self.cards["read"].set(None, snap.error or "Sin variables visibles")
+            self._set("read", None, snap.error or "Sin variables visibles")
         self._stability(snap.ts)
         self._alarms(snap)
+        for tile in self.var_tiles:
+            tile.update_snapshot(snap)
 
     def _stability(self, now: float) -> None:
         mons = self.engine.behaviors
@@ -265,13 +357,15 @@ class HomePage(QWidget):
         if scores:
             worst = min(scores)
             sub = f"«{worst[1]}»" if len(scores) > 1 else "comportamiento normal"
-            self.cards["stability"].set(worst[0], sub)
+            self._set("stability", worst[0], sub)
         elif mons.store.models:
-            self.cards["stability"].set(None, "Sin datos frescos de los modelos")
+            self._set("stability", None, "Sin datos frescos de los modelos")
         else:
-            self.cards["stability"].set(None, "Entrena un comportamiento (menú Entrenamiento)")
+            self._set("stability", None, "Entrena un comportamiento (menú Entrenamiento)")
 
     def _alarms(self, snap: Snapshot) -> None:
+        if self.lst_alarms is None:
+            return
         self.lst_alarms.clear()
         findings = sorted(snap.findings, key=lambda f: (-int(f.level), f.since))
         for f in findings[:30]:
@@ -294,8 +388,9 @@ class HomePage(QWidget):
         speed_var = eng.config.variable(o.speed_var) if o.speed_var else None
         if not (o.enabled and speed_var and eng.historian):
             for k in ("oee", "i5"):
-                self.cards[k].set(None, "Configura el OEE (Configuración → KPI / OEE)")
-            self.lbl_state.setText(self._state_text(None))
+                self._set(k, None, "Configura el OEE (Configuración → KPI / OEE)")
+            if self.lbl_state is not None:
+                self.lbl_state.setText(self._state_text(None))
             return
         now = eng.clock()
         a = shift_start(now, o.shift_starts)
@@ -308,13 +403,15 @@ class HomePage(QWidget):
         def pc(v):
             return "—" if v is None else f"{100 * v:.0f}"
 
-        self.cards["oee"].set(None if res.oee is None else 100 * res.oee,
-                              f"D {pc(res.availability)} · R {pc(res.performance)} · C {pc(res.quality)}")
+        self._set("oee", None if res.oee is None else 100 * res.oee,
+                  f"D {pc(res.availability)} · R {pc(res.performance)} · C {pc(res.quality)}")
         hf = human_factors(eng.historian.events_between(a, now), res)
-        self.cards["i5"].set(hf.index, tr("{a} alarmas/h · normal {p}", a=f"{hf.alarms_per_hour:.1f}",
-                                          p="—" if res.normal_pct is None else f"{res.normal_pct:.0f} %"))
-        self.strip.set_data(res.intervals, a, now)
-        self.lbl_state.setText(self._state_text(res))
+        self._set("i5", hf.index, tr("{a} alarmas/h · normal {p}", a=f"{hf.alarms_per_hour:.1f}",
+                                     p="—" if res.normal_pct is None else f"{res.normal_pct:.0f} %"))
+        if self.strip is not None:
+            self.strip.set_data(res.intervals, a, now)
+        if self.lbl_state is not None:
+            self.lbl_state.setText(self._state_text(res))
 
     def _state_text(self, res: Optional[OeeResult]) -> str:
         eng = self.engine

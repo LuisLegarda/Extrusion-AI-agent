@@ -14,7 +14,7 @@ from typing import Callable, Optional
 import numpy as np
 from PIL import Image, ImageDraw, ImageFont
 
-from .config import AppConfig, Click, GeneralSettings, OeeSettings, OcrOptions, Page, Rect, ReportDef, ReportTrigger, ReportVar, TourDef, TourStep, Variable
+from .config import AppConfig, Click, GeneralSettings, HomeSettings, HomeTile, OeeSettings, OcrOptions, Page, Rect, ReportDef, ReportTrigger, ReportVar, TourDef, TourStep, Variable
 from .recipes import Limit, Recipe
 
 W, H = 1280, 800
@@ -323,6 +323,19 @@ def demo_config() -> AppConfig:
                        ReportVar(var_id="vel"), ReportVar(var_id="z3"), ReportVar(var_id="inyeccion", chart=False)])],
         oee=OeeSettings(enabled=True, speed_var="vel", nominal_source="recipe", microstop_s=60,
                         quality_mode="both", quality_selector="inyeccion", quality_good_state="ON"),
+        home=HomeSettings(columns=6, tiles=[
+            *[HomeTile(id=k, kind=k) for k in ("oee", "i5", "stability", "cpk", "conform", "read")],
+            HomeTile(id="g_diam", kind="var", var_ids=["diam"], chart="gauge"),
+            HomeTile(id="v_vel", kind="var", var_ids=["vel"], chart="value"),
+            HomeTile(id="s_iny", kind="var", var_ids=["inyeccion"], chart="value"),
+            HomeTile(id="b_exc", kind="var", var_ids=["exc"], chart="bar"),
+            HomeTile(id="h_diam", kind="var", var_ids=["diam"], chart="histogram", width=2),
+            HomeTile(id="t_z", kind="var", var_ids=["z1", "z2", "z3"], chart="trend", width=3, height=2,
+                     title="Temperaturas de zona"),
+            HomeTile(id="machine", kind="machine", width=3),
+            HomeTile(id="alarms", kind="alarms", width=3),
+            HomeTile(id="shift", kind="shift", width=6),
+        ]),
     )
 
 

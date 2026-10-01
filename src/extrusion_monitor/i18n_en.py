@@ -442,4 +442,38 @@ EN: dict[str, str] = {
     "no válido": "invalid", "no numérico": "not numeric", "no reconocido": "not recognized",
     "Selector": "Selector", "Texto": "Text", "Serie": "Series", "texto": "text", "selector": "selector",
     "carpeta": "folder", "ancla de pestaña": "tab anchor", "consigna": "setpoint", "Sin lectura válida": "No valid reading",
+    # --- tablero de Inicio configurable ---
+    "✎ Personalizar tablero": "✎ Customize dashboard",
+    "Elige qué indicadores y variables se muestran y con qué tipo de gráfico":
+        "Choose which indicators and variables are shown and with which chart type",
+    "El tablero está vacío: usa «✎ Personalizar tablero» para agregar indicadores.":
+        "The dashboard is empty: use “✎ Customize dashboard” to add indicators.",
+    "Valor actual": "Current value", "Gauge": "Gauge", "Barra con límites": "Bar with limits", "Tendencia": "Trend",
+    "Histograma (distribución)": "Histogram (distribution)",
+    "{chart}\n(clic para ver el detalle)": "{chart}\n(click for details)",
+    "Elige una variable (✎ Personalizar)": "Choose a variable (✎ Customize)",
+    "La variable ya no existe": "The variable no longer exists", "Ref {v} ({src})": "Ref {v} ({src})",
+    "dato viejo": "stale data", "Esperado: {s}": "Expected: {s}", "Datos insuficientes": "Not enough data",
+    "n = {n}": "n = {n}", "media {m}": "mean {m}",
+    "Personalizar tablero de Inicio": "Customize Home dashboard", "Columnas del tablero:": "Dashboard columns:",
+    "<b>Mosaicos</b> (en orden: de izquierda a derecha y de arriba abajo)":
+        "<b>Tiles</b> (in order: left to right, top to bottom)",
+    "+ Variable": "+ Variable", "+ Indicador": "+ Indicator", "Restablecer tablero por defecto": "Reset to default dashboard",
+    "Contenido:": "Content:", "Variables:": "Variables:", "Gráfico:": "Chart:", "Título:": "Title:",
+    " col.": " col.", " filas": " rows", "Tamaño (ancho × alto):": "Size (width × height):",
+    "Rango de tiempo:": "Time range:", "Escala (mín. / máx.):": "Scale (min / max):", "auto": "auto",
+    "Vacío = automática: límites de la receta con margen y datos recientes.":
+        "Empty = automatic: recipe limits with margin and recent data.",
+    "indicador": "indicator", "texto/selector": "text/selector", "Indicadores": "Indicators",
+    "Todos los indicadores del sistema ya están en el tablero.": "All system indicators are already on the dashboard.",
+    "Restablecer": "Reset", "¿Reemplazar el tablero por el diseño por defecto?": "Replace the dashboard with the default layout?",
+    "Tendencia: hasta {n} variables en la misma gráfica.": "Trend: up to {n} variables in the same chart.",
+    "Una variable. Los gráficos disponibles dependen de su tipo: las de texto y los selectores muestran su estado actual.":
+        "One variable. The available charts depend on its type: text variables and selectors show their current state.",
+    "Ese indicador ya está en el tablero.": "That indicator is already on the dashboard.",
+    "La tendencia solo admite variables numéricas.": "Trends only accept numeric variables.",
+    "Revisa el tablero": "Check the dashboard",
+    "Hay mosaicos de variable sin variable elegida.": "Some variable tiles have no variable selected.",
+    "La escala máxima debe ser mayor que la mínima.": "The scale maximum must be greater than the minimum.",
+    "✎ Personalizar tablero de Inicio…": "✎ Customize Home dashboard…",
 }

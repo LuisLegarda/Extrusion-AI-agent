@@ -22,7 +22,9 @@ from ..engine import Snapshot
 from ..recipes import Bounds
 from ..i18n import LANGS, lang as i18n_lang, tr
 from . import theme
-from .common import SnapshotBridge, level_color, level_text, level_text_color
+from .common import (  # noqa: F401 (y_range se reexporta)
+    SeriesCache, SnapshotBridge, level_color, level_text, level_text_color, y_range,
+)
 from .variable_tree import VariableTree
 from .kpi_dashboard import KpiDashboard
 from .analysis_panels import BehaviorPanel, CorrelationPanel, StatsPanel
@@ -33,27 +35,6 @@ MAX_PLOTS = 4
 
 RANGES = [("5 min", 300), ("15 min", 900), ("30 min", 1800), ("1 h", 3600), ("4 h", 4 * 3600),
           ("8 h", 8 * 3600), ("24 h", 86400), ("7 días", 7 * 86400)]
-
-
-def y_range(y, limits) -> Optional[tuple[float, float]]:
-    """Escala Y: los límites de la variable (con margen) más los datos visibles.
-
-    Un pico amplía la escala solo mientras está dentro del rango de tiempo mostrado; al salir,
-    la escala vuelve a los límites.
-    """
-    y = np.asarray(y, float)
-    y = y[np.isfinite(y)]
-    vals = [float(v) for v in limits if v is not None]
-    lo, hi = (min(vals), max(vals)) if vals else (None, None)
-    if len(y):
-        dlo, dhi = float(y.min()), float(y.max())
-        lo = dlo if lo is None else min(lo, dlo)
-        hi = dhi if hi is None else max(hi, dhi)
-    if lo is None:
-        return None
-    span = hi - lo
-    pad = span * 0.1 if span > 0 else max(abs(hi) * 0.05, 1.0)
-    return lo - pad, hi + pad
 
 
 NAV_ITEMS = [("home", "Inicio", "🏠"), ("variables", "Variables en vivo", "📟"), ("trends", "Tendencias", "📈"),
@@ -191,7 +172,7 @@ class MainWindow(QMainWindow):
         self.engine = ctx.engine
         self._config_version = ctx.engine.config_version
         self._prompts: dict = {}
-        self._hist_cache: dict = {}
+        self._series = SeriesCache(ctx.engine)
         self.bridge = SnapshotBridge()
         self.bridge.snapshot.connect(self.on_snapshot, Qt.QueuedConnection)
         self.engine.listeners.append(self.bridge.snapshot.emit)
@@ -227,6 +208,7 @@ class MainWindow(QMainWindow):
         from .home_page import HomePage
         self.home = HomePage(self.engine)
         self.home.navigate.connect(self.show_page)
+        self.home.customize.connect(self.open_home_config)
 
         self.table = VariableTree()
         self.table.quality_fn = lambda vid: self.engine.acquirer.quality(vid)
@@ -346,6 +328,8 @@ class MainWindow(QMainWindow):
         for i, (key, label, _icon) in enumerate(NAV_ITEMS, 1):
             act = m.addAction(label, lambda key=key: self.show_page(key))
             act.setShortcut(f"Ctrl+{i}")
+        m.addSeparator()
+        m.addAction("✎ Personalizar tablero de Inicio…", self.open_home_config)
         m.addSeparator()
         lm = m.addMenu("🌐 Idioma / Language")
         grp = QActionGroup(lm)
@@ -545,6 +529,7 @@ class MainWindow(QMainWindow):
         self.stats_panel.set_variables(cfg)
         self.corr_panel.set_variables(cfg, self._plotted)
         self.behavior_panel.set_models()
+        self.home.rebuild()
 
     def _sync_plots(self) -> None:
         cfg = self.ctx.config
@@ -647,6 +632,18 @@ class MainWindow(QMainWindow):
             self._update_title()
         if was_running:
             self.engine.start()
+
+    def open_home_config(self) -> None:
+        from .home_config_dialog import HomeConfigDialog
+        dlg = HomeConfigDialog(self.engine.config, self)
+        if not dlg.exec():
+            return
+        self.engine.config.home = dlg.home
+        self.ctx.config = self.engine.config
+        self.ctx.workspace.save_config(self.engine.config)
+        self.engine.save_profile()  # el tablero es parte de la configuración de la receta activa
+        self.home.rebuild()
+        self.show_page("home")
 
     def open_recipes(self) -> None:
         from .recipe_dialog import RecipeDialog
@@ -812,24 +809,7 @@ class MainWindow(QMainWindow):
 
     def _plot_series(self, vid: str):
         """Serie para el rango elegido: memoria (ventana de tendencia) o historial (rangos largos)."""
-        rng = self.trends.range_s
-        t, y = self.engine.series(vid)
-        window = self.ctx.config.general.trend_window_min * 60
-        if rng <= window or self.engine.historian is None:
-            return t, y
-        now = time.time()
-        cached = self._hist_cache.get(vid)
-        # El historial se consulta como máximo cada 15 s por variable (no carga la PC).
-        if cached is None or cached[0] != rng or now - cached[1] > 15:
-            rows = [r for r in self.engine.historian.samples(vid, now - rng, now + 60) if r[1] is not None]
-            arr = np.asarray(rows, float) if rows else np.empty((0, 2))
-            cached = (rng, now, arr[:, 0] if len(arr) else np.empty(0), arr[:, 1] if len(arr) else np.empty(0))
-            self._hist_cache[vid] = cached
-        ht, hy = cached[2], cached[3]
-        if len(t):
-            keep = ht < t[0]
-            ht, hy = np.concatenate([ht[keep], t]), np.concatenate([hy[keep], y])
-        return ht, hy
+        return self._series.get(vid, self.trends.range_s)
 
     def _update_plots(self, snap: Snapshot) -> None:
         for vid in self._plotted:

@@ -264,6 +264,46 @@ class ReportDef(BaseModel):
     max_period_h: float = Field(24.0, gt=0, le=24 * 31)  # primer reporte / periodo máximo
 
 
+# Mosaicos del tablero de Inicio: indicadores del sistema o una variable con el gráfico elegido.
+HomeTileKind = Literal["oee", "i5", "stability", "cpk", "conform", "read", "machine", "alarms", "cpk_bars", "shift",
+                       "var"]
+HomeChart = Literal["value", "gauge", "bar", "trend", "histogram"]
+NUMERIC_CHARTS: tuple[str, ...] = ("value", "gauge", "bar", "trend", "histogram")
+TEXT_CHARTS: tuple[str, ...] = ("value",)  # texto y selectores: estado actual
+MAX_TREND_VARS = 4
+
+
+class HomeTile(BaseModel):
+    id: str
+    kind: HomeTileKind = "var"
+    var_ids: list[str] = Field(default_factory=list)  # tendencia: hasta MAX_TREND_VARS; otros gráficos: 1
+    chart: HomeChart = "value"
+    title: str = ""  # vacío = nombre de la variable o del indicador
+    width: int = Field(1, ge=1, le=12)  # columnas que ocupa
+    height: int = Field(1, ge=1, le=4)  # filas que ocupa
+    range_s: float = Field(900.0, ge=60, le=7 * 86400)  # tendencia / histograma: tiempo mostrado
+    scale_min: Optional[float] = None  # gauge / barra: escala fija (None = automática según límites)
+    scale_max: Optional[float] = None
+
+
+def default_home_tiles() -> list[HomeTile]:
+    """Tablero por defecto: indicadores generales, estado, alarmas, Cpk y franja del turno."""
+    kpis = ["oee", "i5", "stability", "cpk", "conform", "read"]
+    tiles = [HomeTile(id=k, kind=k) for k in kpis]
+    tiles += [HomeTile(id="machine", kind="machine", width=2, height=2),
+              HomeTile(id="alarms", kind="alarms", width=2, height=2),
+              HomeTile(id="cpk_bars", kind="cpk_bars", width=2, height=2),
+              HomeTile(id="shift", kind="shift", width=6)]
+    return tiles
+
+
+class HomeSettings(BaseModel):
+    """Tablero de Inicio configurable."""
+
+    columns: int = Field(6, ge=1, le=12)
+    tiles: list[HomeTile] = Field(default_factory=default_home_tiles)
+
+
 class AppConfig(BaseModel):
     version: int = CONFIG_VERSION
     machine_name: str = "Línea de extrusión"
@@ -275,6 +315,7 @@ class AppConfig(BaseModel):
     tours_paused: bool = False
     oee: OeeSettings = Field(default_factory=OeeSettings)
     reports: list[ReportDef] = Field(default_factory=list)
+    home: HomeSettings = Field(default_factory=HomeSettings)
 
     @model_validator(mode="after")
     def _migrate_tour(self) -> "AppConfig":
