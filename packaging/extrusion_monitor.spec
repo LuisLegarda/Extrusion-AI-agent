@@ -19,4 +19,11 @@ exe = EXE(
     name="ExtrusionMonitor",
     console=False,
 )
-coll = COLLECT(exe, a.binaries, a.datas, name="ExtrusionMonitor")
+# Segundo ejecutable en la misma carpeta (comparte bibliotecas): abre el dashboard global de líneas.
+fleet = EXE(
+    pyz, a.scripts, [],
+    exclude_binaries=True,
+    name="DashboardGlobal",
+    console=False,
+)
+coll = COLLECT(exe, fleet, a.binaries, a.datas, name="ExtrusionMonitor")

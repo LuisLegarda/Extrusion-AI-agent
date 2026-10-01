@@ -21,7 +21,7 @@ class StationDialog(QDialog):
         root = QVBoxLayout(self)
         intro = QLabel(
             "Esta línea escribe su estado, alarmas, eventos y tendencias en una carpeta compartida. "
-            "El dashboard global (ExtrusionMonitor.exe --fleet) lee esa carpeta y muestra todas las líneas.\n"
+            "El dashboard global (DashboardGlobal.exe) lee esa carpeta y muestra todas las líneas.\n"
             "La escritura va en un proceso aparte: si la red falla, el monitoreo sigue y los datos se envían "
             "al volver.")
         intro.setWordWrap(True)

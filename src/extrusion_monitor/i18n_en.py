@@ -493,10 +493,10 @@ EN: dict[str, str] = {
     "🌐 Dashboard global (exportación)…": "🌐 Global dashboard (export)…",
     "Dashboard global (exportación)": "Global dashboard (export)",
     "Esta línea escribe su estado, alarmas, eventos y tendencias en una carpeta compartida. El dashboard global "
-    "(ExtrusionMonitor.exe --fleet) lee esa carpeta y muestra todas las líneas.\nLa escritura va en un proceso "
+    "(DashboardGlobal.exe) lee esa carpeta y muestra todas las líneas.\nLa escritura va en un proceso "
     "aparte: si la red falla, el monitoreo sigue y los datos se envían al volver.":
         "This line writes its status, alarms, events and trends to a shared folder. The global dashboard "
-        "(ExtrusionMonitor.exe --fleet) reads that folder and shows every line.\nWriting runs separately: if the "
+        "(DashboardGlobal.exe) reads that folder and shows every line.\nWriting runs separately: if the "
         "network fails, monitoring continues and the data is sent when it comes back.",
     "Exportar al dashboard global": "Export to the global dashboard", "Carpeta compartida:": "Shared folder:",
     "Examinar…": "Browse…", "Nombre de la línea:": "Line name:", "ID de la línea (carpeta):": "Line ID (folder):",
