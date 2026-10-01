@@ -28,6 +28,8 @@ jobs:
         run: |
           pyinstaller --noconfirm --distpath dist --workpath build packaging/extrusion_monitor.spec
           New-Item -ItemType Directory -Force dist/ExtrusionMonitor/data | Out-Null
+          # Acceso directo al dashboard global (varias líneas)
+          Set-Content -Encoding ascii -Path "dist/ExtrusionMonitor/Dashboard global.bat" -Value '@start "" "%~dp0ExtrusionMonitor.exe" --fleet %*'
           Compress-Archive -Path dist/ExtrusionMonitor -DestinationPath ExtrusionMonitor-windows.zip
       - uses: actions/upload-artifact@v4
         with:

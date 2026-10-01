@@ -489,4 +489,42 @@ EN: dict[str, str] = {
     "programas que tengan abierta la carpeta de datos y vuelve a guardar.":
         "The configuration was saved, but if you switch recipes and come back the previous version will be loaded. "
         "Close programs that have the data folder open and save again.",
+    # --- dashboard global ---
+    "🌐 Dashboard global (exportación)…": "🌐 Global dashboard (export)…",
+    "Dashboard global (exportación)": "Global dashboard (export)",
+    "Esta línea escribe su estado, alarmas, eventos y tendencias en una carpeta compartida. El dashboard global "
+    "(ExtrusionMonitor.exe --fleet) lee esa carpeta y muestra todas las líneas.\nLa escritura va en un proceso "
+    "aparte: si la red falla, el monitoreo sigue y los datos se envían al volver.":
+        "This line writes its status, alarms, events and trends to a shared folder. The global dashboard "
+        "(ExtrusionMonitor.exe --fleet) reads that folder and shows every line.\nWriting runs separately: if the "
+        "network fails, monitoring continues and the data is sent when it comes back.",
+    "Exportar al dashboard global": "Export to the global dashboard", "Carpeta compartida:": "Shared folder:",
+    "Examinar…": "Browse…", "Nombre de la línea:": "Line name:", "ID de la línea (carpeta):": "Line ID (folder):",
+    "Nombre de la carpeta de esta línea; debe ser único en la planta.":
+        "Folder name for this line; it must be unique in the plant.",
+    "Actualizar el estado cada:": "Update the status every:", "Un punto de tendencia cada:": "One trend point every:",
+    "Conservar eventos y tendencias:": "Keep events and trends for:", " días": " days", " s": " s",
+    "Probar escritura": "Test write", "Exportación desactivada.": "Export disabled.",
+    "Escribiendo en: {p}": "Writing to: {p}", "Indica la carpeta compartida.": "Enter the shared folder.",
+    "Carpeta compartida": "Shared folder", "Dashboard global: OK": "Global dashboard: OK",
+    "Dashboard global: sin acceso": "Global dashboard: no access",
+    "Dashboard global de líneas": "Global line dashboard", "📂 Carpeta compartida…": "📂 Shared folder…",
+    "Carpeta compartida de las líneas": "Shared folder of the lines", "Buscar línea…": "Search line…",
+    "Todas": "All", "Con alarma o aviso": "With alarm or warning", "Detenidas": "Stopped",
+    "Sin comunicación": "No communication", "Gravedad": "Severity", "OEE (menor primero)": "OEE (lowest first)",
+    "Orden:": "Sort:", "Líneas": "Lines", "Con alarma": "In alarm", "OEE promedio (turno)": "Average OEE (shift)",
+    "En línea": "Online", "Retrasada": "Delayed", "Programa cerrado": "Program closed",
+    "Monitoreando": "Monitoring", "Monitoreo detenido": "Monitoring stopped", "OEE sin configurar": "OEE not set up",
+    "✔ Sin alarmas": "✔ No alarms", "{n} alarmas": "{n} alarms", "{n} avisos": "{n} warnings",
+    "Actualizado {a}": "Updated {a}", "hace": "ago", "hace {n} s": "{n} s ago", "hace {n} min": "{n} min ago",
+    "hace {n} h": "{n} h ago", "hace {n} días": "{n} days ago", "(sin elegir)": "(not chosen)",
+    "Alarmas activas": "Active alarms", "Elige una línea para ver su detalle.": "Choose a line to see its details.",
+    "<b>Alarmas y avisos recientes de la planta</b>": "<b>Recent plant alarms and warnings</b>",
+    "Elige la carpeta compartida donde escriben las líneas (📂 Carpeta compartida…).":
+        "Choose the shared folder the lines write to (📂 Shared folder…).",
+    "Ninguna línea ha escrito todavía en esta carpeta.": "No line has written to this folder yet.",
+    "No se puede leer la carpeta: {e}": "Cannot read the folder: {e}",
+    "Paros: <b>{s}</b> · microparos: <b>{m}</b>": "Stops: <b>{s}</b> · microstops: <b>{m}</b>",
+    "{n} puntos (media por minuto; la banda es el mínimo y máximo)":
+        "{n} points (per-minute mean; the band is the minimum and maximum)",
 }

@@ -1,7 +1,6 @@
 """Dashboard KPI: OEE, estado de la máquina e indicadores de Industria 5.0."""
 from __future__ import annotations
 
-import datetime as dt
 import math
 import time
 from collections.abc import Mapping
@@ -16,7 +15,7 @@ from PySide6.QtWidgets import (
 )
 
 from ..analysis.oee import (ASSUMED, MICROSTOP, RUNNING, SLOW, STATE_LABELS, STATE_ORDER, STOPPED, UNKNOWN, OeeResult,
-                            OeeSample, compute, human_factors, sparkline)
+                            OeeSample, compute, human_factors, shift_start, sparkline)
 from ..engine import MonitorEngine
 from ..i18n import tr
 from . import theme
@@ -60,22 +59,6 @@ def fmt_duration(s: Optional[float]) -> str:
 
 def pct(v: Optional[float]) -> str:
     return "—" if v is None else f"{100 * v:.1f} %"
-
-
-def shift_start(now: float, starts: list[str]) -> float:
-    """Inicio del turno en curso según las horas de inicio configuradas (p. ej. 06:00, 14:00, 22:00)."""
-    t = dt.datetime.fromtimestamp(now)
-    cands = []
-    for s in starts:
-        try:
-            hh, mm = (int(x) for x in s.strip().split(":"))
-        except ValueError:
-            continue
-        for day in (0, -1):
-            c = (t + dt.timedelta(days=day)).replace(hour=hh, minute=mm, second=0, microsecond=0)
-            if c <= t:
-                cands.append(c)
-    return max(cands).timestamp() if cands else now - 8 * 3600
 
 
 class Gauge(QWidget):

@@ -42,6 +42,24 @@ Por eso sirve para cualquier línea de extrusión.
 - Solo se actualiza la página visible, para no cargar la PC.
 - **Idioma y tema:** en *Ver* se elige español o inglés y tema claro u oscuro. La ventana se reconstruye al momento, sin detener el monitoreo, y la elección se recuerda. Las gráficas usan una paleta validada para daltonismo y contraste, con tonos propios para cada tema. Los mensajes de hallazgos y eventos del motor se mantienen en español.
 
+## Dashboard global (varias líneas)
+
+Cada línea puede publicar su estado en una **carpeta compartida de red** (p. ej. `\\SERVIDOR\lineas`) y un dashboard global muestra todas las líneas a la vez (pensado para 1 a 100 líneas).
+
+**En cada línea:** *Configuración → 🌐 Dashboard global (exportación)…*: activar, elegir la carpeta compartida, el nombre y el ID de la línea (único en la planta) y el intervalo (5 s por defecto). *Probar escritura* comprueba el acceso. La barra de estado muestra «Dashboard global: OK» o «sin acceso».
+
+**Dashboard global:** `Dashboard global.bat` (o `ExtrusionMonitor.exe --fleet \\SERVIDOR\lineas`). Muestra una tarjeta por línea (estado de la máquina, receta, OEE, alarmas, antigüedad del dato), un resumen de la planta (en marcha, detenidas, con alarma, sin comunicación, OEE promedio), las alarmas recientes de todas las líneas y el detalle de la línea elegida (variables con sus límites, alarmas activas, tendencia por minuto de hasta 7 días y eventos). Se puede buscar, filtrar y ordenar por gravedad u OEE. Recuerda la última carpeta usada.
+
+**Formato de la carpeta** (`<carpeta>/<ID de línea>/`):
+
+| Archivo | Contenido | Escritura |
+|---|---|---|
+| `status.json` | Estado actual: receta, estado de la máquina, OEE del turno, cada variable (valor, referencia, límites, nivel, Cpk), alarmas activas, hora de la última actualización | Se reemplaza cada 5 s (temporal + renombrar: nunca se lee a medias) |
+| `events/AAAA-MM-DD.jsonl` | Un evento por renglón: alarmas, cambios de receta, recorridos, reportes | Se agregan renglones |
+| `trend/AAAA-MM-DD.jsonl` | Un renglón por minuto: media, mínimo, máximo y último valor de cada variable | Se agregan renglones |
+
+**Consumo de recursos:** la escritura corre en un hilo aparte; si la red está lenta o caída el monitoreo no se detiene y los eventos y tendencias esperan en memoria hasta que vuelva. `status.json` pesa unos 10 KB. El dashboard global solo vuelve a leer un `status.json` cuando cambia y lee los eventos de forma incremental: con 100 líneas cada ciclo tarda unos milisegundos. Una línea sin actualizar en más de 30 s aparece como «Sin comunicación»; al cerrar el programa queda como «Programa cerrado». Los eventos y tendencias se borran después de 30 días (configurable).
+
 ## Uso
 
 ```

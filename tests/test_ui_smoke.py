@@ -304,7 +304,8 @@ def test_language_and_theme_switch(ctx, tmp_path):
     dark = rebuilt_windows[-1]
     QApplication.processEvents()
     assert theme.is_dark() and QApplication.instance().palette().window().color().name() == theme.c("page")
-    assert dark.engine.listeners.count(dark.bridge.snapshot.emit) == 1 and len(dark.engine.listeners) == 1
+    others = [cb for cb in dark.engine.listeners if cb != ctx.exporter.offer]  # el exportador escucha aparte
+    assert dark.engine.listeners.count(dark.bridge.snapshot.emit) == 1 and len(others) == 1
     dark.on_snapshot(ctx.engine.step())
     apply_ui_prefs({})  # vuelve a español / claro para las demás pruebas
     dark.close()

@@ -12,7 +12,12 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--demo", action="store_true", help="usar un HMI simulado")
     parser.add_argument("--home", type=Path, help="carpeta de datos (config, recetas, historial)")
     parser.add_argument("--autostart", action="store_true", help="iniciar el monitoreo al abrir")
+    parser.add_argument("--fleet", nargs="?", const="", metavar="CARPETA",
+                        help="abrir el dashboard global de varias líneas (carpeta compartida opcional)")
     args = parser.parse_args(argv)
+    if args.fleet is not None:
+        from .ui.fleet_window import run_fleet
+        return run_fleet(args.fleet or None, args.home)
 
     from PySide6.QtWidgets import QApplication
 
@@ -35,6 +40,8 @@ def main(argv: list[str] | None = None) -> int:
     apply_ui_prefs(ctx.workspace.load_state().get("ui", {}))  # idioma y tema guardados
     translator = Translator()
     translator.install(app)
+    if ctx.exporter is not None:
+        ctx.exporter.start()  # no hace nada hasta que se configure la carpeta compartida
     win = MainWindow(ctx)
     win.show()
     if args.autostart or args.demo:

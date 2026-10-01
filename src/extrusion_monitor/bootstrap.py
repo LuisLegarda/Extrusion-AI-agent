@@ -3,7 +3,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Optional
+from typing import TYPE_CHECKING, Optional
 
 from .capture import FrameSource, ScreenSource, crop, save_png
 from .config import AppConfig, Workspace
@@ -12,6 +12,9 @@ from .ocr import TemplateOcr, create_engine
 from .profiles import ensure_profiles
 from .recipes import RecipeStore
 from .storage import Historian
+
+if TYPE_CHECKING:
+    from .exporter import FleetExporter
 
 
 @dataclass
@@ -22,6 +25,7 @@ class AppContext:
     engine: MonitorEngine
     template_ocr: TemplateOcr  # siempre disponible para enseñar caracteres
     demo: bool = False
+    exporter: Optional["FleetExporter"] = None  # estado de la línea para el dashboard global
 
 
 def build(home: Optional[Path] = None, demo: bool = False, source: Optional[FrameSource] = None,
@@ -43,7 +47,8 @@ def build(home: Optional[Path] = None, demo: bool = False, source: Optional[Fram
     engine.state.auto_recipe = bool(state.get("auto_recipe", True))
     if state.get("recipe") in recipes.names():
         engine.state.recipe = state["recipe"]
-    return AppContext(ws, config, recipes, engine, template, demo)
+    from .exporter import FleetExporter
+    return AppContext(ws, config, recipes, engine, template, demo, FleetExporter(engine, ws))
 
 
 def make_clicker(source: FrameSource):

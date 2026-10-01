@@ -7,6 +7,7 @@ La calidad se mide en longitud: metros producidos en condición conforme / metro
 """
 from __future__ import annotations
 
+import datetime as dt
 from dataclasses import dataclass, field
 from typing import Optional
 
@@ -230,3 +231,19 @@ def human_factors(events: list[tuple], oee: OeeResult) -> HumanFactors:
     parts = [x for x in (hf.human_score, hf.resilience_score, hf.sustainability_score) if x is not None]
     hf.index = float(np.mean(parts)) if parts else None
     return hf
+
+
+def shift_start(now: float, starts: list[str]) -> float:
+    """Inicio del turno en curso según las horas de inicio configuradas (p. ej. 06:00, 14:00, 22:00)."""
+    t = dt.datetime.fromtimestamp(now)
+    cands = []
+    for s in starts:
+        try:
+            hh, mm = (int(x) for x in s.strip().split(":"))
+        except ValueError:
+            continue
+        for day in (0, -1):
+            c = (t + dt.timedelta(days=day)).replace(hour=hh, minute=mm, second=0, microsecond=0)
+            if c <= t:
+                cands.append(c)
+    return max(cands).timestamp() if cands else now - 8 * 3600

@@ -267,7 +267,8 @@ class MainWindow(QMainWindow):
         self.lbl_page = QLabel()
         self.lbl_ocr = QLabel()
         self.lbl_cycle = QLabel()
-        for w in (self.lbl_tour, self.lbl_page, self.lbl_ocr, self.lbl_cycle):
+        self.lbl_export = QLabel()
+        for w in (self.lbl_tour, self.lbl_page, self.lbl_ocr, self.lbl_export, self.lbl_cycle):
             self.statusBar().addPermanentWidget(w)
 
     # --- acciones y menús ---------------------------------------------------------
@@ -323,6 +324,8 @@ class MainWindow(QMainWindow):
                            ("Recorridos…", "Recorrido automático"), ("KPI / OEE…", "KPI / OEE"),
                            ("Reportes…", "Reportes"), ("General…", "General")):
             m.addAction(label, lambda tab=tab: self.open_setup(tab))
+        m.addSeparator()
+        m.addAction("🌐 Dashboard global (exportación)…", self.open_station)
 
         m = mb.addMenu("&Ver")
         for i, (key, label, _icon) in enumerate(NAV_ITEMS, 1):
@@ -641,6 +644,29 @@ class MainWindow(QMainWindow):
                                                    "se cargará la versión anterior. Cierra programas que tengan abierta "
                                                    "la carpeta de datos y vuelve a guardar."))
 
+    def open_station(self) -> None:
+        from .station_dialog import StationDialog
+        ex = self.ctx.exporter
+        if ex is None:
+            return
+        dlg = StationDialog(ex, self)
+        if dlg.exec():
+            ex.reconfigure(dlg.settings())
+            ex.start()
+            self._update_export_label()
+
+    def _update_export_label(self) -> None:
+        ex = self.ctx.exporter
+        if ex is None or ex.line_dir is None:
+            self.lbl_export.setText("")
+            return
+        if ex.last_error:
+            self.lbl_export.setText(f"<span style='color:{theme.c('critical')}'>{tr('Dashboard global: sin acceso')}</span>")
+            self.lbl_export.setToolTip(ex.last_error)
+        elif ex.last_ok is not None:
+            self.lbl_export.setText(tr("Dashboard global: OK"))
+            self.lbl_export.setToolTip(str(ex.line_dir))
+
     def open_home_config(self) -> None:
         from .home_config_dialog import HomeConfigDialog
         dlg = HomeConfigDialog(self.engine.config, self)
@@ -788,6 +814,7 @@ class MainWindow(QMainWindow):
                                 total=snap.read_total))
         stamp = time.strftime('%H:%M:%S', time.localtime(snap.ts))
         self.lbl_cycle.setText(tr("Ciclo: {ms} ms · {time}", ms=f"{snap.cycle_ms:.0f}", time=stamp))
+        self._update_export_label()
         self.lbl_side_status.setText(
             f"{tr('● En monitoreo') if self.engine.running else tr('○ Detenido')}<br>"
             f"{tr('Receta: {r}', r=snap.recipe or '—')}<br>{tr('Última lectura: {t}', t=stamp)}")
@@ -876,6 +903,8 @@ class MainWindow(QMainWindow):
         self._detach()
         if not self._rebuilding:
             self.engine.stop()
+            if self.ctx.exporter is not None:
+                self.ctx.exporter.stop(closed=True)  # el dashboard global muestra «programa cerrado»
             self._save_state()
             if self.engine.historian:
                 self.engine.historian.close()
