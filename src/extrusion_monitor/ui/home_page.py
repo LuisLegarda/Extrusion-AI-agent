@@ -11,13 +11,15 @@ from PySide6.QtWidgets import (
     QVBoxLayout, QWidget,
 )
 
+from ..analysis.kpis import KPIS
 from ..analysis.oee import STATE_LABELS, OeeResult, compute, human_factors
 from ..analysis.rules import Level
+from ..config import KPI_KINDS
 from ..engine import MonitorEngine, Snapshot
 from ..i18n import tr, translate_text
 from . import theme
 from .common import SeriesCache, level_color
-from .home_tiles import make_var_tile
+from .home_tiles import KpiTrendTile, KpiValueTile, make_var_tile
 from .kpi_dashboard import STATE_COLORS, Gauge, OeeSample, fmt_duration, shift_start
 
 STABILITY_WINDOW_S = 1800.0  # estabilidad: % del tiempo normal en los últimos 30 min
@@ -148,12 +150,20 @@ class BarList(QWidget):
         p.end()
 
 
-BUILTIN_TILES = {
-    "oee": "OEE (turno)", "i5": "Índice 5.0", "stability": "Estabilidad", "cpk": "Cpk mínimo (proceso)",
-    "conform": "En especificación", "read": "Calidad de lectura", "machine": "Estado de la máquina",
-    "alarms": "Alarmas y avisos activos", "cpk_bars": "Cpk por variable (las 6 más bajas)", "shift": "Estado del turno",
+BUILTIN_TILES = {**{k: v[0] for k, v in KPIS.items()},
+                 "machine": "Estado de la máquina", "alarms": "Alarmas y avisos activos",
+                 "cpk_bars": "Cpk por variable (las 6 más bajas)", "shift": "Estado del turno"}
+KPI_INFO = {  # clave -> (vista detallada, descripción)
+    "oee": ("kpi", "Disponibilidad × Rendimiento × Calidad del turno en curso"),
+    "availability": ("kpi", "Tiempo en marcha / tiempo planificado del turno"),
+    "performance": ("kpi", "Velocidad real promedio / velocidad nominal del turno"),
+    "quality": ("kpi", "Metros conformes / metros producidos en el turno"),
+    "i5": ("kpi", "Factor humano (carga de alarmas), resiliencia y sostenibilidad del turno"),
+    "stability": ("behavior", "% del tiempo (últimos 30 min) en que el comportamiento aprendido fue normal"),
+    "cpk": ("spc", "El Cpk más bajo de las variables con límites (ventana de tendencia)"),
+    "conform": ("variables", "% de las variables verificadas que están dentro de tolerancia ahora"),
+    "read": ("variables", "% de las variables visibles leídas correctamente en el último ciclo"),
 }
-GAUGE_TILES = ("oee", "i5", "stability", "cpk", "conform", "read")
 ROW_MIN_H = 170  # alto mínimo de una fila del tablero
 
 
@@ -212,6 +222,7 @@ class HomePage(QWidget):
         """Vuelve a armar el tablero con la configuración actual."""
         home = self.engine.config.home
         self.cards: dict[str, GaugeCard] = {}
+        self.kpi_widgets: dict[str, list] = {}  # clave -> gauges, valores y gráficas de ese indicador
         self.var_tiles: list = []
         self.lbl_state = self.lst_alarms = self.bars = self.strip = None
         content = QWidget()
@@ -257,24 +268,20 @@ class HomePage(QWidget):
             w.clicked.connect(self.navigate.emit)
             self.var_tiles.append(w)
             return w
-        if k in GAUGE_TILES:
-            spec = {
-                "oee": ("kpi", Gauge(60, 85, needle=False), "Disponibilidad × Rendimiento × Calidad del turno en curso"),
-                "i5": ("kpi", Gauge(60, 80, decimals=0, unit="/ 100", needle=False),
-                       "Factor humano (carga de alarmas), resiliencia y sostenibilidad del turno"),
-                "stability": ("behavior", Gauge(80, 95, decimals=0, needle=False),
-                              "% del tiempo (últimos 30 min) en que el comportamiento aprendido fue normal"),
-                "cpk": ("spc", Gauge(1.0, 1.33, vmin=0, vmax=2.0, unit="Cpk", decimals=2, needle=False),
-                        "El Cpk más bajo de las variables con límites (ventana de tendencia)"),
-                "conform": ("variables", Gauge(90, 99, decimals=0, needle=False),
-                            "% de las variables verificadas que están dentro de tolerancia ahora"),
-                "read": ("variables", Gauge(90, 98, decimals=0, needle=False),
-                         "% de las variables visibles leídas correctamente en el último ciclo"),
-            }[k]
-            card = GaugeCard(spec[0], title, spec[1], spec[2])
-            card.clicked.connect(self.navigate.emit)
-            self.cards[k] = card
-            return card
+        if k in KPI_KINDS:
+            target, tip = KPI_INFO[k]
+            if tile.kpi_chart == "gauge":
+                _t, unit, (low, high), (vmin, vmax), dec = KPIS[k]
+                w = GaugeCard(target, title, Gauge(low, high, vmin=vmin, vmax=vmax, unit=unit, decimals=dec,
+                                                   needle=False), tip)
+                self.cards.setdefault(k, w)  # el primero de cada clave (vista rápida y pruebas)
+            elif tile.kpi_chart == "value":
+                w = KpiValueTile(tile, tr(title), target)
+            else:
+                w = KpiTrendTile(tile, tr(title), target, self.engine)
+            w.clicked.connect(self.navigate.emit)
+            self.kpi_widgets.setdefault(k, []).append(w)
+            return w
         fr, lay = make_card(title)
         if k == "machine":
             self.lbl_state = QLabel("—")
@@ -301,9 +308,8 @@ class HomePage(QWidget):
         return fr
 
     def _set(self, key: str, value, sub: str) -> None:
-        card = self.cards.get(key)
-        if card is not None:
-            card.set(value, sub)
+        for w in self.kpi_widgets.get(key, ()):
+            w.set(value, sub)
 
     # --- datos rápidos (cada ciclo, máx. 1 vez por segundo) -------------------------------
     def update_snapshot(self, snap: Snapshot, force: bool = False) -> None:
@@ -387,7 +393,7 @@ class HomePage(QWidget):
         o = eng.config.oee
         speed_var = eng.config.variable(o.speed_var) if o.speed_var else None
         if not (o.enabled and speed_var and eng.historian):
-            for k in ("oee", "i5"):
+            for k in ("oee", "availability", "performance", "quality", "i5"):
                 self._set(k, None, "Configura el OEE (Configuración → KPI / OEE)")
             if self.lbl_state is not None:
                 self.lbl_state.setText(self._state_text(None))
@@ -405,6 +411,14 @@ class HomePage(QWidget):
 
         self._set("oee", None if res.oee is None else 100 * res.oee,
                   f"D {pc(res.availability)} · R {pc(res.performance)} · C {pc(res.quality)}")
+        u = o.length_unit
+        for k, sub in (("availability", tr("detenido {d}", d=fmt_duration(res.stop_s))),
+                       ("performance", tr("{v} de {n} promedio", v="—" if res.avg_speed is None else f"{res.avg_speed:.4g}",
+                                          n="—" if res.avg_nominal is None else f"{res.avg_nominal:.4g}")),
+                       ("quality", tr("{g} de {t} conformes", g=f"{res.length_good:,.0f} {u}",
+                                      t=f"{res.length_total:,.0f} {u}"))):
+            v = getattr(res, k)
+            self._set(k, None if v is None else 100 * v, sub)
         hf = human_factors(eng.historian.events_between(a, now), res)
         self._set("i5", hf.index, tr("{a} alarmas/h · normal {p}", a=f"{hf.alarms_per_hour:.1f}",
                                      p="—" if res.normal_pct is None else f"{res.normal_pct:.0f} %"))

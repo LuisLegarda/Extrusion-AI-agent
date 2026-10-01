@@ -265,8 +265,12 @@ class ReportDef(BaseModel):
 
 
 # Mosaicos del tablero de Inicio: indicadores del sistema o una variable con el gráfico elegido.
-HomeTileKind = Literal["oee", "i5", "stability", "cpk", "conform", "read", "machine", "alarms", "cpk_bars", "shift",
-                       "var"]
+HomeTileKind = Literal["oee", "availability", "performance", "quality", "i5", "stability", "cpk", "conform", "read",
+                       "machine", "alarms", "cpk_bars", "shift", "var"]
+KPI_KINDS: tuple[str, ...] = ("oee", "availability", "performance", "quality", "i5", "stability", "cpk", "conform",
+                              "read")  # indicadores con valor numérico: gauge, valor o gráfica de tiempo
+SINGLE_KINDS: tuple[str, ...] = ("machine", "alarms", "cpk_bars", "shift")  # una sola vez en el tablero
+KpiChart = Literal["gauge", "value", "trend"]
 HomeChart = Literal["value", "gauge", "bar", "trend", "histogram"]
 NUMERIC_CHARTS: tuple[str, ...] = ("value", "gauge", "bar", "trend", "histogram")
 TEXT_CHARTS: tuple[str, ...] = ("value",)  # texto y selectores: estado actual
@@ -278,10 +282,11 @@ class HomeTile(BaseModel):
     kind: HomeTileKind = "var"
     var_ids: list[str] = Field(default_factory=list)  # tendencia: hasta MAX_TREND_VARS; otros gráficos: 1
     chart: HomeChart = "value"
+    kpi_chart: KpiChart = "gauge"  # indicadores del sistema
     title: str = ""  # vacío = nombre de la variable o del indicador
     width: int = Field(1, ge=1, le=12)  # columnas que ocupa
     height: int = Field(1, ge=1, le=4)  # filas que ocupa
-    range_s: float = Field(900.0, ge=60, le=7 * 86400)  # tendencia / histograma: tiempo mostrado
+    range_s: float = Field(900.0, ge=0, le=7 * 86400)  # tendencia / histograma: tiempo mostrado (0 = turno actual)
     scale_min: Optional[float] = None  # gauge / barra: escala fija (None = automática según límites)
     scale_max: Optional[float] = None
 

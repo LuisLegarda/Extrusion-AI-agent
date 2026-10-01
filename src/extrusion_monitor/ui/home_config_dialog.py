@@ -11,11 +11,14 @@ from PySide6.QtWidgets import (
     QListWidgetItem, QMessageBox, QPushButton, QSpinBox, QVBoxLayout, QWidget,
 )
 
-from ..config import MAX_TREND_VARS, AppConfig, HomeSettings, HomeTile
+from ..config import KPI_KINDS, MAX_TREND_VARS, SINGLE_KINDS, AppConfig, HomeSettings, HomeTile
 from ..i18n import tr
 from .home_page import BUILTIN_TILES
 from .home_tiles import CHART_LABELS, charts_for, tile_title
 from .main_window import RANGES
+
+KPI_CHARTS = {"gauge": "Gauge", "value": "Valor actual", "trend": "Gráfica de tiempo"}
+PERIODS = [("Turno actual", 0)] + RANGES
 
 
 class HomeConfigDialog(QDialog):
@@ -93,7 +96,7 @@ class HomeConfigDialog(QDialog):
         size.addStretch(1)
         form.addRow("Tamaño (ancho × alto):", size)
         self.cmb_range = QComboBox()
-        for label, secs in RANGES:
+        for label, secs in PERIODS:
             self.cmb_range.addItem(label, secs)
         self.cmb_range.currentIndexChanged.connect(self._store)
         self.lbl_range = QLabel("Rango de tiempo:")
@@ -128,6 +131,9 @@ class HomeConfigDialog(QDialog):
         if t.kind == "var":
             name = tile_title(t, self.config)
             what = tr(CHART_LABELS.get(t.chart, t.chart))
+        elif t.kind in KPI_KINDS:
+            name = t.title or tr(BUILTIN_TILES.get(t.kind, t.kind))
+            what = tr(KPI_CHARTS[t.kpi_chart])
         else:
             name = t.title or tr(BUILTIN_TILES.get(t.kind, t.kind))
             what = tr("indicador")
@@ -163,13 +169,9 @@ class HomeConfigDialog(QDialog):
         self.lst.setCurrentRow(len(self.home.tiles) - 1)
 
     def _add_builtin(self) -> None:
-        used = {t.kind for t in self.home.tiles}
-        free = [k for k in BUILTIN_TILES if k not in used]
-        if not free:
-            QMessageBox.information(self, tr("Indicadores"), tr("Todos los indicadores del sistema ya están en el tablero."))
-            return
-        k = free[0]
-        self.home.tiles.append(HomeTile(id=k, kind=k, width=6 if k == "shift" else 1))
+        # Los indicadores numéricos se pueden repetir (p. ej. OEE en gauge y en gráfica de tiempo).
+        self.home.tiles.append(HomeTile(id=uuid.uuid4().hex[:8], kind="oee", kpi_chart="trend", width=2,
+                                        range_s=0))
         self._fill_list()
         self.lst.setCurrentRow(len(self.home.tiles) - 1)
 
@@ -215,7 +217,7 @@ class HomeConfigDialog(QDialog):
                 self.sp_w.setValue(t.width)
                 self.sp_h.setValue(t.height)
                 idx = self.cmb_range.findData(int(t.range_s))
-                self.cmb_range.setCurrentIndex(idx if idx >= 0 else 1)
+                self.cmb_range.setCurrentIndex(idx if idx >= 0 else self.cmb_range.findData(900))
                 self.ed_min.setText("" if t.scale_min is None else f"{t.scale_min:g}")
                 self.ed_max.setText("" if t.scale_max is None else f"{t.scale_max:g}")
         finally:
@@ -237,6 +239,14 @@ class HomeConfigDialog(QDialog):
         self.lst_vars.blockSignals(False)
 
     def _fill_charts(self, t: HomeTile) -> None:
+        if t.kind in KPI_KINDS:
+            self.cmb_chart.blockSignals(True)
+            self.cmb_chart.clear()
+            for c, label in KPI_CHARTS.items():
+                self.cmb_chart.addItem(tr(label), c)
+            self.cmb_chart.setCurrentIndex(max(0, self.cmb_chart.findData(t.kpi_chart)))
+            self.cmb_chart.blockSignals(False)
+            return
         first = self.config.variable(t.var_ids[0]) if t.var_ids else None
         allowed = charts_for(first)
         self.cmb_chart.blockSignals(True)
@@ -252,11 +262,14 @@ class HomeConfigDialog(QDialog):
         t = self._current()
         self.form_w.setEnabled(t is not None)
         is_var = t is not None and t.kind == "var"
-        chart = t.chart if is_var else ""
-        for w in (self.lbl_vars, self.lst_vars, self.lbl_vars_hint, self.lbl_chart, self.cmb_chart):
+        is_kpi = t is not None and t.kind in KPI_KINDS
+        chart = t.chart if is_var else ("kpi_" + t.kpi_chart if is_kpi else "")
+        for w in (self.lbl_vars, self.lst_vars, self.lbl_vars_hint):
             w.setVisible(is_var)
+        for w in (self.lbl_chart, self.cmb_chart):
+            w.setVisible(is_var or is_kpi)
         for w in (self.lbl_range, self.cmb_range):
-            w.setVisible(chart in ("trend", "histogram", "value"))
+            w.setVisible(chart in ("trend", "histogram", "value", "kpi_trend"))
         for w in (self.lbl_scale, self.ed_min, self.ed_max, self.lbl_scale_hint):
             w.setVisible(chart in ("gauge", "bar"))
         self.lbl_vars_hint.setText(
@@ -269,7 +282,7 @@ class HomeConfigDialog(QDialog):
         if self._loading or t is None:
             return
         kind = self.cmb_kind.currentData()
-        if kind != "var" and any(o is not t and o.kind == kind for o in self.home.tiles):
+        if kind in SINGLE_KINDS and any(o is not t and o.kind == kind for o in self.home.tiles):
             QMessageBox.information(self, tr("Indicadores"), tr("Ese indicador ya está en el tablero."))
             self._loading = True
             self.cmb_kind.setCurrentIndex(max(0, self.cmb_kind.findData(t.kind)))
@@ -321,6 +334,8 @@ class HomeConfigDialog(QDialog):
         t = self._current()
         if self._loading or t is None:
             return
+        if t.kind in KPI_KINDS:
+            t.kpi_chart = self.cmb_chart.currentData() or t.kpi_chart
         if t.kind == "var":
             chart = self.cmb_chart.currentData()
             if chart and chart != t.chart:

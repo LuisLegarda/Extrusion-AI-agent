@@ -129,12 +129,53 @@ def test_home_config_dialog(ctx, monkeypatch):
     dlg.sp_w.setValue(3)
     dlg.ed_title.setText("Gas")
     assert (tile.width, tile.title) == (3, "Gas")
-    # un indicador del sistema no se repite
+    # los indicadores numéricos se pueden repetir (OEE en gauge y en gráfica de tiempo)…
     from PySide6.QtWidgets import QMessageBox
     monkeypatch.setattr(QMessageBox, "information", lambda *a, **k: None)
     dlg.cmb_kind.setCurrentIndex(dlg.cmb_kind.findData("oee"))
-    assert tile.kind == "var"
+    assert tile.kind == "oee"
+    assert [dlg.cmb_chart.itemData(i) for i in range(dlg.cmb_chart.count())] == ["gauge", "value", "trend"]
+    dlg.cmb_chart.setCurrentIndex(dlg.cmb_chart.findData("trend"))
+    dlg.cmb_range.setCurrentIndex(dlg.cmb_range.findData(0))  # turno actual
+    assert tile.kpi_chart == "trend" and tile.range_s == 0
+    # …pero los únicos (estado de la máquina, alarmas…) no
+    dlg.cmb_kind.setCurrentIndex(dlg.cmb_kind.findData("machine"))
+    assert tile.kind == "oee"
     dlg._remove()
     assert len(dlg.home.tiles) == n
     dlg.accept()
     assert dlg.result()
+
+
+def test_kpi_tiles_gauge_value_and_trend(ctx):
+    from PySide6.QtWidgets import QApplication
+
+    from extrusion_monitor.ui.home_tiles import KpiTrendTile, KpiValueTile
+    from extrusion_monitor.ui.main_window import MainWindow
+
+    for _ in range(5):
+        ctx.engine.step()
+    assert ctx.engine.kpis["oee"] is not None and ctx.engine.kpis["read"] == 100
+    ctx.engine.config.home = HomeSettings(columns=4, tiles=[
+        HomeTile(id="g", kind="oee"),
+        HomeTile(id="t", kind="oee", kpi_chart="trend", range_s=0, width=2),
+        HomeTile(id="q", kind="quality", kpi_chart="value"),
+        HomeTile(id="r", kind="read", kpi_chart="trend", range_s=3600),
+    ])
+    ctx.engine.kpis_ts -= 60  # forzar otro registro de indicadores
+    ctx.engine.step()
+    win = MainWindow(ctx)
+    win.show_page("home")
+    win.home.update_snapshot(ctx.engine.last, force=True)
+    win.home.refresh_oee(force=True)
+    QApplication.processEvents()
+    w = win.home.kpi_widgets
+    assert len(w["oee"]) == 2 and win.home.cards["oee"].gauge.value is not None
+    trend = next(x for x in w["oee"] if isinstance(x, KpiTrendTile))
+    xs, _ = trend.curve.getData()
+    assert xs is not None and len(xs) >= 2  # historial guardado + valor actual
+    assert isinstance(w["quality"][0], KpiValueTile) and "%" in w["quality"][0].lbl_value.text()
+    xs, _ = w["read"][0].curve.getData()
+    assert len(xs) >= 2
+    assert len(ctx.engine.historian.samples("kpi:oee", 0)) >= 2
+    win.close()

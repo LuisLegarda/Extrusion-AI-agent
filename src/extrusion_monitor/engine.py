@@ -14,6 +14,7 @@ from .capture import FrameSource
 from .config import AppConfig, Workspace
 from .ocr import OcrEngine
 from .analysis.behavior import BehaviorMonitor, BehaviorStore
+from .analysis.kpis import KPI_EVERY_S, all_kpis, kpi_var
 from .analysis.oee import ASSUMED, RUNNING, SLOW, OeeSample, classify
 from .capture import ScreenUnavailable, load_png
 from .navigation import Clicker, TourResult, TourRunner, UnavailableClicker
@@ -86,6 +87,10 @@ class MonitorEngine:
         self._good_size: Optional[tuple[int, int]] = None
         self._skip_msgs: dict[str, str] = {}
         self.last_tour_result: Optional[TourResult] = None
+        # Indicadores generales (OEE, Cpk, conformidad…) calculados cada KPI_EVERY_S y guardados en el historial
+        self.kpis: dict[str, Optional[float]] = {}
+        self.kpis_ts: Optional[float] = None
+        self.kpi_oee = None  # resultado de OEE del turno del último cálculo
         self.scheduler = TourScheduler(config, clock)
         self.reports = ReportManager(workspace, clock)
         self._report_events: list[Event] = []
@@ -353,6 +358,7 @@ class MonitorEngine:
                 # Sin pantalla no hay observación: queda como hueco (productivo si al volver todo está bien).
                 self._record_oee(snap)
             self._store(snap)
+            self._record_kpis(snap)
             self.last = snap
             self._check_reports(snap, readings)
         for cb in list(self.listeners):
@@ -444,6 +450,22 @@ class MonitorEngine:
                                       None if sample.good is None else int(sample.good), sample.overall))
         except Exception:
             log.exception("No se pudo guardar la muestra OEE")
+
+    def _record_kpis(self, snap: Snapshot) -> None:
+        if self.kpis_ts is not None and snap.ts - self.kpis_ts < KPI_EVERY_S:
+            return
+        try:
+            kpis, res = all_kpis(self, snap, snap.ts)
+        except Exception:
+            log.exception("No se pudieron calcular los indicadores")
+            return
+        self.kpis, self.kpi_oee, self.kpis_ts = kpis, res, snap.ts
+        if self.historian is not None:
+            try:
+                self.historian.write_samples([(snap.ts, kpi_var(k), v, None) for k, v in kpis.items()
+                                              if v is not None])
+            except Exception:
+                log.exception("No se pudieron guardar los indicadores")
 
     def _tour_events(self, tour, res: TourResult) -> None:
         name = f"Recorrido «{tour.name}»"

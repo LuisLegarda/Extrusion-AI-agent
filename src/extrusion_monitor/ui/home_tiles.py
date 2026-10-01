@@ -11,6 +11,8 @@ from PySide6.QtGui import QColor, QFont, QPainter, QPen
 from PySide6.QtWidgets import QFrame, QLabel, QSizePolicy, QVBoxLayout, QWidget
 
 from ..analysis.rules import Level, VarStatus, fmt
+from ..analysis.kpis import KPIS, kpi_var
+from ..analysis.oee import shift_start
 from ..analysis.statistics import capability
 from ..config import NUMERIC_CHARTS, TEXT_CHARTS, AppConfig, HomeTile, Variable
 from ..engine import Snapshot
@@ -246,6 +248,15 @@ class LinearBar(QWidget):
         p.end()
 
 
+def period_s(range_s: float, config: AppConfig, now: Optional[float] = None) -> float:
+    """Segundos mostrados: `range_s`, o desde el inicio del turno si es 0."""
+    if range_s > 0:
+        return range_s
+    import time as _time
+    now = now or _time.time()
+    return max(60.0, now - shift_start(now, config.oee.shift_starts))
+
+
 class VarTile(TileFrame):
     """Mosaico de una o varias variables con el gráfico elegido."""
 
@@ -362,7 +373,7 @@ class VarTile(TileFrame):
         size = 30 + 8 * (self.tile.height - 1)
         self.lbl_value.setText(f"<span style='font-size:{size}px; color:{color}'><b>{text}</b></span>"
                                f"<span style='font-size:13px; color:{theme.c('muted')}'> {st.var.unit}</span>")
-        t, y = self.series.get(st.var.id, self.tile.range_s)
+        t, y = self.series.get(st.var.id, period_s(self.tile.range_s, self.config))
         if self.bar is not None:
             lo, hi = auto_scale(st.bounds, st.reference, y[-200:] if len(y) else None, st.var,
                                 (self.tile.scale_min, self.tile.scale_max))
@@ -380,7 +391,7 @@ class VarTile(TileFrame):
     def _gauge(self, st: VarStatus) -> None:
         v = st.reading.value
         key = self._color_key(st)
-        _t, y = self.series.get(st.var.id, self.tile.range_s)
+        _t, y = self.series.get(st.var.id, period_s(self.tile.range_s, self.config))
         lo, hi = auto_scale(st.bounds, st.reference, y[-200:] if len(y) else None, st.var,
                             (self.tile.scale_min, self.tile.scale_max))
         text = fmt(v, st.var, st.reading.decimals) if v is not None else "—"
@@ -403,13 +414,14 @@ class VarTile(TileFrame):
 
     def _trend(self, snap: Snapshot) -> None:
         now = snap.ts
+        rng = period_s(self.tile.range_s, self.config, now)
         ys = []
         for v, curve in zip(self.vars, self.curves):
-            t, y = self.series.get(v.id, self.tile.range_s)
+            t, y = self.series.get(v.id, rng)
             curve.setData(t, y)
             if len(t):
-                ys.append(np.asarray(y)[np.asarray(t) >= now - self.tile.range_s])
-        self.plot.setXRange(now - self.tile.range_s, now, padding=0.01)
+                ys.append(np.asarray(y)[np.asarray(t) >= now - rng])
+        self.plot.setXRange(now - rng, now, padding=0.01)
         limits = []
         if len(self.vars) == 1:
             st = snap.statuses.get(self.vars[0].id)
@@ -430,7 +442,7 @@ class VarTile(TileFrame):
 
     def _histogram(self, st: Optional[VarStatus]) -> None:
         self.plot.clear()
-        _t, y = self.series.get(self.vars[0].id, self.tile.range_s)
+        _t, y = self.series.get(self.vars[0].id, period_s(self.tile.range_s, self.config))
         y = np.asarray(y, float)
         y = y[np.isfinite(y)]
         if len(y) < 5 or st is None:
@@ -457,6 +469,99 @@ class VarTile(TileFrame):
             if cap.cpk is not None:
                 parts.append(f"Cpk {cap.cpk:.2f}")
         self.lbl_info.setText(" · ".join(parts))
+
+
+# --- indicadores del sistema como valor o gráfica de tiempo ----------------------------------------
+def kpi_color(key: str, v: Optional[float]) -> str:
+    low, high = KPIS[key][2]
+    if v is None:
+        return theme.c("text")
+    return theme.c("critical" if v < low else ("warning" if v < high else "good"))
+
+
+def kpi_fmt(key: str, v: Optional[float]) -> str:
+    return "—" if v is None else f"{v:.{KPIS[key][4]}f}"
+
+
+class KpiValueTile(TileFrame):
+    """Indicador como número grande con color por umbral."""
+
+    def __init__(self, tile: HomeTile, title: str, target: str):
+        super().__init__(title, target=target)
+        self.tile = tile
+        self.key = tile.kind
+        self.lbl_value = QLabel("—")
+        self.lbl_value.setAlignment(Qt.AlignCenter)
+        self.lbl_value.setTextFormat(Qt.RichText)
+        self.lay.addWidget(self.lbl_value, 1)
+        self.sub = QLabel("")
+        self.sub.setAlignment(Qt.AlignCenter)
+        self.sub.setWordWrap(True)
+        self.sub.setStyleSheet(f"color:{theme.c('muted')};")
+        self.lay.addWidget(self.sub)
+
+    def set(self, value: Optional[float], sub: str) -> None:
+        size = 34 + 10 * (self.tile.height - 1)
+        unit = KPIS[self.key][1]
+        self.lbl_value.setText(f"<span style='font-size:{size}px; color:{kpi_color(self.key, value)}'>"
+                               f"<b>{kpi_fmt(self.key, value)}</b></span>"
+                               f"<span style='font-size:13px; color:{theme.c('muted')}'> {unit}</span>")
+        self.sub.setText(translate_text(sub))
+
+
+class KpiTrendTile(TileFrame):
+    """Indicador en el tiempo: historial guardado cada 30 s más el valor actual."""
+
+    def __init__(self, tile: HomeTile, title: str, target: str, engine):
+        super().__init__(title, target=target)
+        self.tile = tile
+        self.key = tile.kind
+        self.engine = engine
+        self._cache: tuple = (0.0, 0.0, np.empty(0), np.empty(0))  # (consultado, desde, t, y)
+        self.plot = pg.PlotWidget(axisItems={"bottom": pg.DateAxisItem()})
+        self.plot.setMinimumHeight(110)
+        self.plot.setSizePolicy(QSizePolicy.Ignored, QSizePolicy.Ignored)
+        self.plot.showGrid(x=True, y=True, alpha=0.25)
+        self.plot.setMouseEnabled(x=False, y=False)
+        self.plot.hideButtons()
+        self.plot.setMenuEnabled(False)
+        self.curve = self.plot.plot(pen=pg.mkPen(theme.c("measure"), width=2))
+        low, high = KPIS[self.key][2]
+        for val, color in ((low, "critical"), (high, "good")):
+            self.plot.addItem(pg.InfiniteLine(pos=val, angle=0, pen=pg.mkPen(theme.c(color), style=Qt.DashLine)))
+        self.lay.addWidget(self.plot, 1)
+        self.sub = QLabel("")
+        self.sub.setAlignment(Qt.AlignCenter)
+        self.sub.setStyleSheet(f"color:{theme.c('muted')};")
+        self.lay.addWidget(self.sub)
+
+    def history(self, since: float, now: float):
+        hist = self.engine.historian
+        if hist is None:
+            return np.empty(0), np.empty(0)
+        asked, frm, t, y = self._cache
+        if now - asked > 15 or abs(frm - since) > 60:  # el historial se consulta como máximo cada 15 s
+            rows = [r for r in hist.samples(kpi_var(self.key), since, now + 60) if r[1] is not None]
+            arr = np.asarray(rows, float) if rows else np.empty((0, 2))
+            t, y = (arr[:, 0], arr[:, 1]) if len(arr) else (np.empty(0), np.empty(0))
+            self._cache = (now, since, t, y)
+        return t, y
+
+    def set(self, value: Optional[float], sub: str) -> None:
+        import time as _time
+        now = _time.time()
+        rng = period_s(self.tile.range_s, self.engine.config, now)
+        t, y = self.history(now - rng, now)
+        if value is not None:
+            t, y = np.append(t, now), np.append(y, value)
+        self.curve.setData(t, y)
+        self.plot.setXRange(now - rng, now, padding=0.01)
+        yr = y_range(y, list(KPIS[self.key][2]))
+        if yr is not None:
+            lo_lim, hi_lim = KPIS[self.key][3]
+            self.plot.setYRange(max(yr[0], lo_lim - (hi_lim - lo_lim) * 0.05), min(yr[1], hi_lim * 1.05), padding=0)
+        self.sub.setText(f"{tr('Ahora')}: <b style='color:{kpi_color(self.key, value)}'>{kpi_fmt(self.key, value)}"
+                         f"</b> {KPIS[self.key][1]}" + (f" · {translate_text(sub)}" if sub else ""))
 
 
 def make_var_tile(tile: HomeTile, config: AppConfig, series: SeriesCache) -> VarTile:
