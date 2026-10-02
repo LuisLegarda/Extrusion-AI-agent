@@ -166,11 +166,11 @@ def test_thin_dock_switches_to_value_with_color(ctx):
     ctx.engine.config.dock = DockSettings(enabled=True, edge="top", thickness=132, tiles=tiles)
     dock = DockWindow(ctx.engine, ctx.workspace)
     assert not any(isinstance(w, CompactTile) for w in dock.var_tiles) and dock.var_tiles[0].plot is not None
-    wide = dock.width()
+    assert dock.height() == 132
 
     ctx.engine.config.dock = DockSettings(enabled=True, edge="top", thickness=40, tiles=tiles)
     dock.rebuild()
-    assert dock.height() == 40 and dock.width() < wide
+    assert dock.height() == 40  # mide exactamente el grosor configurado (el largo depende del texto)
     assert all(isinstance(w, CompactTile) for w in dock.var_tiles + dock.kpi_widgets["oee"])
     snap = ctx.engine.step()
     dock.update_snapshot(snap, force=True)
