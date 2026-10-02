@@ -22,17 +22,22 @@ PERIODS = [("Turno actual", 0)] + RANGES
 
 
 class HomeConfigDialog(QDialog):
-    def __init__(self, config: AppConfig, parent=None):
+    def __init__(self, config: AppConfig, parent=None, home: Optional[HomeSettings] = None,
+                 kinds: Optional[tuple] = None):
+        """`home` y `kinds` permiten reutilizar el editor para otra lista de mosaicos (p. ej. el dock)."""
         super().__init__(parent)
         self.setWindowTitle("Personalizar tablero de Inicio")
         self.resize(900, 600)
         self.config = config
-        self.home: HomeSettings = config.home.model_copy(deep=True)
+        self.home: HomeSettings = (home or config.home).model_copy(deep=True)
+        self.kinds = kinds
         self._loading = False
 
         root = QVBoxLayout(self)
+        self.root_layout = root
         top = QHBoxLayout()
-        top.addWidget(QLabel("Columnas del tablero:"))
+        self.lbl_cols = QLabel("Columnas del tablero:")
+        top.addWidget(self.lbl_cols)
         self.sp_cols = QSpinBox()
         self.sp_cols.setRange(1, 12)
         self.sp_cols.setValue(self.home.columns)
@@ -43,7 +48,8 @@ class HomeConfigDialog(QDialog):
 
         body = QHBoxLayout()
         left = QVBoxLayout()
-        left.addWidget(QLabel("<b>Mosaicos</b> (en orden: de izquierda a derecha y de arriba abajo)"))
+        self.lbl_tiles = QLabel("<b>Mosaicos</b> (en orden: de izquierda a derecha y de arriba abajo)")
+        left.addWidget(self.lbl_tiles)
         self.lst = QListWidget()
         self.lst.currentRowChanged.connect(self._load)
         left.addWidget(self.lst, 1)
@@ -54,9 +60,9 @@ class HomeConfigDialog(QDialog):
             b.clicked.connect(slot)
             btns.addWidget(b)
         left.addLayout(btns)
-        b = QPushButton("Restablecer tablero por defecto")
-        b.clicked.connect(self._reset)
-        left.addWidget(b)
+        self.btn_reset = QPushButton("Restablecer tablero por defecto")
+        self.btn_reset.clicked.connect(self._reset)
+        left.addWidget(self.btn_reset)
         body.addLayout(left, 1)
 
         self.form_w = QWidget()
@@ -64,7 +70,8 @@ class HomeConfigDialog(QDialog):
         self.cmb_kind = QComboBox()
         self.cmb_kind.addItem("Variable", "var")
         for k, label in BUILTIN_TILES.items():
-            self.cmb_kind.addItem(label, k)
+            if kinds is None or k in kinds:
+                self.cmb_kind.addItem(label, k)
         self.cmb_kind.currentIndexChanged.connect(self._kind_changed)
         form.addRow("Contenido:", self.cmb_kind)
         self.lst_vars = QListWidget()
@@ -197,10 +204,13 @@ class HomeConfigDialog(QDialog):
         if QMessageBox.question(self, tr("Restablecer"), tr("¿Reemplazar el tablero por el diseño por defecto?")) \
                 != QMessageBox.Yes:
             return
-        self.home = HomeSettings()
+        self.home = self._default_home()
         self.sp_cols.setValue(self.home.columns)
         self._fill_list()
         self._update_form()
+
+    def _default_home(self) -> HomeSettings:
+        return HomeSettings()
 
     def _cols_changed(self, v: int) -> None:
         self.home.columns = v

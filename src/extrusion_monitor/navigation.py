@@ -209,12 +209,15 @@ class WindowsClicker:
         hwnd = self.user32.WindowFromPoint(pt)
         if not hwnd:
             return False
+        if self.user32.GetAncestor(hwnd, 2) in OVERLAY_HWNDS or hwnd in OVERLAY_HWNDS:
+            return False  # el dock deja pasar el clic (ver overlays_pass_clicks)
         pid = self.wintypes.DWORD()
         self.user32.GetWindowThreadProcessId(hwnd, self.ctypes.byref(pid))
         return pid.value == self.pid
 
     def click(self, x: int, y: int) -> None:
         sx, sy = self._screen(x, y)
+        overlays_pass_clicks()
         if self._covered_by_us(sx, sy):
             raise TourAborted(f"la ventana del monitor tapa el botón en ({x}, {y}); muévela o minimízala")
         prev = self.wintypes.POINT()
@@ -247,6 +250,36 @@ class UnavailableClicker:
 
     def idle_seconds(self) -> float:
         return 0.0
+
+
+# Ventanas propias que flotan sobre el HMI (el dock). Durante un clic automático dejan pasar el clic,
+# para que un recorrido no falle ni haga clic en el dock si este quedó encima de un botón.
+OVERLAY_HWNDS: set[int] = set()
+overlay_hold_until = 0.0  # hasta cuándo (time.monotonic) deben seguir dejando pasar los clics
+
+
+def set_click_through(win_id: int, on: bool) -> bool:
+    """Hace que la ventana deje pasar (o no) los clics a lo que está debajo. Solo Windows."""
+    if sys.platform != "win32":
+        return False
+    try:
+        import ctypes
+        GWL_EXSTYLE, WS_EX_LAYERED, WS_EX_TRANSPARENT = -20, 0x00080000, 0x00000020
+        user32 = ctypes.windll.user32
+        style = user32.GetWindowLongW(int(win_id), GWL_EXSTYLE)
+        new = (style | WS_EX_LAYERED | WS_EX_TRANSPARENT) if on else (style & ~WS_EX_TRANSPARENT)
+        if new != style:
+            user32.SetWindowLongW(int(win_id), GWL_EXSTYLE, new)
+        return True
+    except Exception:  # pragma: no cover
+        return False
+
+
+def overlays_pass_clicks(hold_s: float = 1.5) -> None:
+    global overlay_hold_until
+    overlay_hold_until = time.monotonic() + hold_s
+    for hwnd in list(OVERLAY_HWNDS):
+        set_click_through(hwnd, True)
 
 
 def exclude_window_from_capture(win_id: int) -> bool:

@@ -14,7 +14,7 @@ from typing import Callable, Optional
 import numpy as np
 from PIL import Image, ImageDraw, ImageFont
 
-from .config import AppConfig, Click, GeneralSettings, HomeSettings, HomeTile, OeeSettings, OcrOptions, Page, Rect, ReportDef, ReportTrigger, ReportVar, TourDef, TourStep, Variable
+from .config import AppConfig, Click, DockSettings, GeneralSettings, HomeSettings, HomeTile, OeeSettings, OcrOptions, Page, Rect, ReportDef, ReportTrigger, ReportVar, TourDef, TourStep, Variable
 from .recipes import Limit, Recipe
 
 W, H = 1280, 800
@@ -323,6 +323,12 @@ def demo_config() -> AppConfig:
                        ReportVar(var_id="vel"), ReportVar(var_id="z3"), ReportVar(var_id="inyeccion", chart=False)])],
         oee=OeeSettings(enabled=True, speed_var="vel", nominal_source="recipe", microstop_s=60,
                         quality_mode="both", quality_selector="inyeccion", quality_good_state="ON"),
+        dock=DockSettings(enabled=True, edge="top", size="medium", tiles=[
+            HomeTile(id="k_oee", kind="oee", kpi_chart="gauge"),
+            HomeTile(id="k_diam", kind="var", var_ids=["diam"], chart="gauge"),
+            HomeTile(id="k_vel", kind="var", var_ids=["vel"], chart="value"),
+            HomeTile(id="k_diam_t", kind="var", var_ids=["diam"], chart="trend", width=2),
+        ]),
         home=HomeSettings(columns=6, tiles=[
             *[HomeTile(id=k, kind=k) for k in ("oee", "i5", "stability", "cpk", "conform", "read")],
             HomeTile(id="g_diam", kind="var", var_ids=["diam"], chart="gauge"),

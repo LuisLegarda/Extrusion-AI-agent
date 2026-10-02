@@ -179,6 +179,9 @@ class ProcessGauge(QWidget):
         p.setFont(f)
         p.setPen(QColor(theme.c(self.color_key if self.color_key != "neutral" else "text")))
         p.drawText(rect.adjusted(0, side * 0.42, 0, 0), Qt.AlignHCenter | Qt.AlignTop, self.text)
+        if side < 84:  # muy pequeño (dock chico): solo el arco, la aguja y el valor
+            p.end()
+            return
         f.setPointSizeF(max(7.5, side * 0.055))
         f.setBold(False)
         p.setFont(f)
@@ -370,7 +373,7 @@ class VarTile(TileFrame):
         key = self._color_key(st)
         color = theme.c(key) if key != "neutral" else theme.c("text")
         text = fmt(v, st.var, st.reading.decimals) if v is not None else "—"
-        size = 30 + 8 * (self.tile.height - 1)
+        size = getattr(self, "value_px", None) or 30 + 8 * (self.tile.height - 1)
         self.lbl_value.setText(f"<span style='font-size:{size}px; color:{color}'><b>{text}</b></span>"
                                f"<span style='font-size:13px; color:{theme.c('muted')}'> {st.var.unit}</span>")
         t, y = self.series.get(st.var.id, period_s(self.tile.range_s, self.config))
@@ -405,7 +408,7 @@ class VarTile(TileFrame):
         else:
             key = "text"
         color = theme.c(key)
-        size = 26 + 8 * (self.tile.height - 1)
+        size = getattr(self, "value_px", None) or 26 + 8 * (self.tile.height - 1)
         self.lbl_value.setText(f"<span style='font-size:{size}px; color:{color}'><b>{text}</b></span>")
         info = tr("Esperado: {s}", s=st.expected) if st.expected else ""
         if not st.fresh:
@@ -501,7 +504,7 @@ class KpiValueTile(TileFrame):
         self.lay.addWidget(self.sub)
 
     def set(self, value: Optional[float], sub: str) -> None:
-        size = 34 + 10 * (self.tile.height - 1)
+        size = getattr(self, "value_px", None) or 34 + 10 * (self.tile.height - 1)
         unit = KPIS[self.key][1]
         self.lbl_value.setText(f"<span style='font-size:{size}px; color:{kpi_color(self.key, value)}'>"
                                f"<b>{kpi_fmt(self.key, value)}</b></span>"

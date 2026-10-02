@@ -616,6 +616,27 @@ EN: dict[str, str] = {
     "No se pudo codificar la imagen": "The image could not be encoded",
     "el ancho y alto deben ser > 0": "width and height must be > 0",
     "Estado detectado": "Detected state", "Exportar CSV": "Export CSV",
+    # --- dock ---
+    "▭ Dock al minimizar…": "▭ Dock when minimized…", "▭ Minimizar a dock": "▭ Minimize to dock",
+    "Dock al minimizar": "Dock when minimized", "Dock": "Dock",
+    "Al minimizar el programa queda una barra compacta, siempre visible sobre el HMI, con el estado de la máquina y "
+    "los indicadores elegidos. No aparece en la lectura de pantalla ni estorba a los recorridos. Se arrastra desde la "
+    "agarradera (⠿); doble clic en ella restaura el programa.":
+        "When the program is minimized a compact bar stays always visible over the HMI, with the machine status and "
+        "the chosen indicators. It does not appear in the screen reading and does not get in the way of tours. Drag "
+        "it by the grip (⠿); double-click the grip to restore the program.",
+    "Mostrar el dock al minimizar": "Show the dock when minimized", "Posición:": "Position:",
+    "Superior": "Top", "Inferior": "Bottom", "Izquierda": "Left", "Derecha": "Right",
+    "Volver a centrar en el borde": "Center on the edge again",
+    "Olvida la posición a la que se arrastró el dock": "Forgets the position the dock was dragged to",
+    "Tamaño:": "Size:", "Chico": "Small", "Mediano": "Medium", "Grande": "Large",
+    "Al acercar el mouse se desvanece y deja pasar los clics al HMI":
+        "When the mouse approaches it fades out and lets clicks through to the HMI",
+    "Parpadear y mostrar el mensaje al aparecer una alarma": "Blink and show the message when an alarm appears",
+    "<b>Indicadores del dock</b> (en orden)": "<b>Dock indicators</b> (in order)",
+    "Restaurar el programa": "Restore the program",
+    "Arrastra para mover el dock · doble clic para restaurar el programa":
+        "Drag to move the dock · double-click to restore the program",
     # --- menús (misma estructura en el monitor y en el dashboard global) ---
     "Configurar receta": "Recipe setup", "A&cciones": "&Actions", "C&onfiguración": "&Settings", "&Líneas": "&Lines",
     "📋 Recetas y límites…": "📋 Recipes and limits…", "Configuración de la receta": "Recipe configuration",

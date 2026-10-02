@@ -6,7 +6,7 @@ from typing import Optional
 
 import numpy as np
 import pyqtgraph as pg
-from PySide6.QtCore import Qt, QTimer, QUrl
+from PySide6.QtCore import QEvent, Qt, QTimer, QUrl
 from PySide6.QtGui import QAction, QActionGroup, QBrush, QColor, QDesktopServices
 from PySide6.QtWidgets import (
     QApplication, QCheckBox, QComboBox, QFileDialog, QFrame, QHeaderView, QLabel, QListWidget,
@@ -178,6 +178,7 @@ class MainWindow(QMainWindow):
         self.engine.listeners.append(self.bridge.snapshot.emit)
         self._plotted: list[str] = []
         self._rebuilding = False
+        self.dock = None  # barra compacta que queda sobre el HMI al minimizar (se crea al usarla)
         self._build_ui()
         self.rebuild_table()
         self.refresh_recipes()
@@ -318,6 +319,7 @@ class MainWindow(QMainWindow):
             m.addAction(label, lambda tab=tab: self.open_setup(tab))
         m.addAction("🧠 Comportamiento (entrenar)…", self.open_behavior)
         m.addAction("✎ Tablero de Inicio…", self.open_home_config)
+        m.addAction("▭ Dock al minimizar…", self.open_dock_config)
 
         # --- Acciones: lo que se hace en el momento ---
         m = mb.addMenu("A&cciones")
@@ -353,6 +355,8 @@ class MainWindow(QMainWindow):
         m.addAction(self.act_top)
         act = m.addAction("Pantalla completa", self._toggle_fullscreen)
         act.setShortcut("F11")
+        act = m.addAction("▭ Minimizar a dock", self.minimize_to_dock)
+        act.setShortcut("Ctrl+D")
 
         m = mb.addMenu("A&yuda")
         act = m.addAction("Manual de uso", lambda: self._open_url(HELP_URL))
@@ -535,6 +539,8 @@ class MainWindow(QMainWindow):
         self.corr_panel.set_variables(cfg, self._plotted)
         self.behavior_panel.set_models()
         self.home.rebuild()
+        if self.dock is not None:
+            self.dock.rebuild()
 
     def _sync_plots(self) -> None:
         cfg = self.ctx.config
@@ -669,6 +675,57 @@ class MainWindow(QMainWindow):
             self.lbl_export.setText(tr("Dashboard global: OK"))
             self.lbl_export.setToolTip(str(ex.line_dir))
 
+    # --- dock (al minimizar) -------------------------------------------------------------
+    def changeEvent(self, event) -> None:
+        super().changeEvent(event)
+        if event.type() == QEvent.WindowStateChange and not self._rebuilding:
+            self._sync_dock()
+
+    def _sync_dock(self) -> None:
+        """Minimizado y con el dock activado: el dock queda en pantalla; al restaurar se oculta."""
+        want = self.isMinimized() and self.engine.config.dock.enabled
+        if want:
+            if self.dock is None:
+                from .dock import DockWindow
+                self.dock = DockWindow(self.engine, self.ctx.workspace)
+                self.dock.restore.connect(self.restore_from_dock)
+            screen = self.screen() or QApplication.primaryScreen()
+            self.dock.show()
+            self.dock.place(screen.availableGeometry())
+            if self.engine.last is not None:
+                self.dock.update_snapshot(self.engine.last, force=True)
+        elif self.dock is not None and self.dock.isVisible():
+            self.dock.hide()
+
+    def restore_from_dock(self) -> None:
+        self.showMaximized() if self.windowState() & Qt.WindowMaximized else self.showNormal()
+        self.raise_()
+        self.activateWindow()
+
+    def minimize_to_dock(self) -> None:
+        if not self.engine.config.dock.enabled:
+            self.open_dock_config()  # primera vez: activarlo y elegir qué muestra
+            if not self.engine.config.dock.enabled:
+                return
+        self.showMinimized()
+
+    def open_dock_config(self) -> None:
+        from .dock_dialog import DockConfigDialog
+        dlg = DockConfigDialog(self.engine.config, self)
+        if not dlg.exec():
+            return
+        self.engine.config.dock = dlg.dock
+        self.ctx.config = self.engine.config
+        self.ctx.workspace.save_config(self.engine.config)
+        self._save_profile()  # el dock es parte de la configuración de la receta activa
+        if dlg.reset_position:
+            state = self.ctx.workspace.load_state()
+            if state.pop("dock_pos", None) is not None:
+                self.ctx.workspace.save_state(state)
+        if self.dock is not None:
+            self.dock.rebuild()
+        self._sync_dock()
+
     def open_home_config(self) -> None:
         from .home_config_dialog import HomeConfigDialog
         dlg = HomeConfigDialog(self.engine.config, self)
@@ -790,6 +847,8 @@ class MainWindow(QMainWindow):
         if snap.recipe != self.cmb_recipe.currentData():
             self.refresh_recipes()
         self._update_prompts(snap)
+        if self.dock is not None and self.dock.isVisible():
+            self.dock.update_snapshot(snap)
         page = self.stack.currentWidget()
         # Solo se dibuja la página visible (no carga la PC con gráficas ocultas).
         if page is self.home:
@@ -914,6 +973,9 @@ class MainWindow(QMainWindow):
         super().closeEvent(event)
 
     def _detach(self) -> None:
+        if self.dock is not None:
+            self.dock.close()
+            self.dock = None
         try:
             self.engine.listeners.remove(self.bridge.snapshot.emit)
         except ValueError:

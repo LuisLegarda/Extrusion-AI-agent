@@ -309,6 +309,23 @@ class HomeSettings(BaseModel):
     tiles: list[HomeTile] = Field(default_factory=default_home_tiles)
 
 
+def default_dock_tiles() -> list[HomeTile]:
+    return [HomeTile(id="d_oee", kind="oee", kpi_chart="value"),
+            HomeTile(id="d_conform", kind="conform", kpi_chart="value"),
+            HomeTile(id="d_cpk", kind="cpk", kpi_chart="value")]
+
+
+class DockSettings(BaseModel):
+    """Dock: barra compacta siempre visible que queda en pantalla al minimizar el programa."""
+
+    enabled: bool = False  # al minimizar, mostrar el dock en lugar de solo el botón de la barra de tareas
+    edge: Literal["top", "bottom", "left", "right"] = "top"
+    size: Literal["small", "medium", "large"] = "medium"  # grosor del dock
+    tiles: list[HomeTile] = Field(default_factory=default_dock_tiles)  # indicadores o variables (como en Inicio)
+    ghost_on_hover: bool = True  # al acercar el mouse se desvanece y deja pasar los clics al HMI
+    alarm_alert: bool = True  # parpadea y muestra el mensaje al aparecer una alarma
+
+
 class AppConfig(BaseModel):
     version: int = CONFIG_VERSION
     machine_name: str = "Línea de extrusión"
@@ -321,6 +338,7 @@ class AppConfig(BaseModel):
     oee: OeeSettings = Field(default_factory=OeeSettings)
     reports: list[ReportDef] = Field(default_factory=list)
     home: HomeSettings = Field(default_factory=HomeSettings)
+    dock: DockSettings = Field(default_factory=DockSettings)
 
     @model_validator(mode="after")
     def _migrate_tour(self) -> "AppConfig":
