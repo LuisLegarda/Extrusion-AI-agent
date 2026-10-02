@@ -25,8 +25,25 @@ STATE_KEYS = {"running": "good", "assumed": "good_soft", "slow": "warning", "mic
               "stopped": "critical", "unknown": "neutral"}
 CONN_TEXT = {"online": "En línea", "stale": "Retrasada", "offline": "Sin comunicación", "closed": "Programa cerrado"}
 LEVEL_KEYS = {"ALARM": "critical", "WARN": "warning", "OK": "good", "INFO": "info"}
-TILE_W = 128  # ancho de una columna de la tarjeta
-ROW_H = 96  # alto de una fila de la tarjeta
+TILE_W = 128  # ancho de referencia de una columna de la tarjeta (escala 1)
+TILE_MIN_W, TILE_MAX_W = 92, 190  # las tarjetas se reparten el ancho de la ventana dentro de estos límites
+CARD_PAD = 20
+
+
+def card_metrics(viewport_w: int, columns: int, spacing: int = 10, count: int = 0) -> tuple[int, int]:
+    """Tarjetas por fila y ancho de cada una: llenan el ancho disponible sin dejar huecos.
+
+    Con muchas columnas por tarjeta (o una ventana angosta) cabe una sola y sus indicadores se encogen.
+    Con pocas líneas (`count`) en una pantalla ancha, las tarjetas crecen hasta su tamaño máximo.
+    """
+    min_card = columns * TILE_MIN_W + CARD_PAD
+    n = max(1, (viewport_w + spacing) // (min_card + spacing))
+    if count:
+        n = min(n, count)
+    card_w = (viewport_w - spacing * (n - 1)) // n
+    return n, max(120, min(card_w, columns * TILE_MAX_W + CARD_PAD))
+
+
 DEFAULT_SHIFT_S = 8 * 3600
 
 
@@ -174,6 +191,9 @@ class FleetTileWidget(QFrame):
         lay.setContentsMargins(5, 3, 5, 3)
         lay.setSpacing(1)
         self.lbl_title = QLabel()
+        self.scale = 1.0  # tamaño relativo de textos (según el ancho real de la columna)
+        # El ancho lo decide la cuadrícula de la tarjeta (columnas iguales), no el contenido.
+        self.setSizePolicy(QSizePolicy.Ignored, QSizePolicy.Preferred)
         self.lbl_title.setStyleSheet(f"color:{theme.c('text2')}; font-size:11px;")
         lay.addWidget(self.lbl_title)
         self.body: Optional[QWidget] = None
@@ -199,6 +219,13 @@ class FleetTileWidget(QFrame):
             if c in ("bar", "trend"):
                 lay.addWidget(self.lbl)
 
+    def _px(self, base: float) -> int:
+        return max(11, int(base * self.scale))
+
+    def set_scale(self, scale: float) -> None:
+        self.scale = scale
+        self.lbl_title.setStyleSheet(f"color:{theme.c('text2')}; font-size:{max(9, min(13, int(11 * scale)))}px;")
+
     def update_line(self, line: LineState, now: float) -> None:
         st = line.status
         t = self.tile
@@ -213,7 +240,7 @@ class FleetTileWidget(QFrame):
                 self.lbl.setText(f"<span style='color:{theme.c('muted')}'>{tr('OEE sin configurar')}</span>")
                 return
             u = o.get("unit", "m")
-            size = 18 + 4 * (t.height - 1)
+            size = self._px(18 + 4 * (t.height - 1))
             total, good = o.get("length_total") or 0, o.get("length_good") or 0
             detail = tr("conforme {g} · paros {s}", g=f"{good:,.0f}", s=o.get("n_stops", 0))
             self.lbl.setText(f"<span style='font-size:{size}px'><b>{total:,.0f}</b></span> {u}<br>"
@@ -235,7 +262,7 @@ class FleetTileWidget(QFrame):
         color = "neutral" if v is None else ("critical" if v < low else ("warning" if v < high else "good"))
         text = "—" if v is None else f"{v:.{dec}f}"
         if t.chart == "value":
-            size = 26 + 8 * (t.height - 1)
+            size = self._px(26 + 8 * (t.height - 1))
             self.lbl.setText(f"<span style='font-size:{size}px; color:{theme.c(color if v is not None else 'text')}'>"
                              f"<b>{text}</b></span> <span style='color:{theme.c('muted')}'>{unit}</span>")
         elif t.chart == "gauge":
@@ -271,7 +298,7 @@ class FleetTileWidget(QFrame):
         if v.get("kind") in ("text", "selector") or t.chart == "value":
             if v.get("kind") in ("text", "selector") and v.get("expected"):
                 color = "good" if v.get("text") == v.get("expected") else "critical"
-            size = 24 + 8 * (t.height - 1)
+            size = self._px(24 + 8 * (t.height - 1))
             c = theme.c(color) if color not in ("neutral", None) else theme.c("text")
             ref = v.get("ref")
             self.lbl.setText(f"<span style='font-size:{size}px; color:{c}'><b>{var_text(v)}</b></span> "
@@ -306,7 +333,9 @@ class LineCard(QFrame):
         super().__init__()
         self.line_id = line_id
         self.setObjectName("card")
-        self.setFixedWidth(columns * TILE_W + 20)
+        self.columns = columns
+        self.rows = 0
+        self.grid: Optional[QGridLayout] = None
         self.setCursor(Qt.PointingHandCursor)
         self.selected = False
         self.blinking = False
@@ -327,14 +356,29 @@ class LineCard(QFrame):
         for w, (r, c, h, wd) in zip(self.tiles, pack_tiles(tiles, columns)):
             grid.addWidget(w, r, c, h, wd)
             rows = max(rows, r + h)
-        for r in range(rows):
-            grid.setRowMinimumHeight(r, ROW_H)
+        self.rows, self.grid = rows, grid
+        self._card_w = 0
+        self.set_width(columns * TILE_W + CARD_PAD)
         for c in range(columns):
             grid.setColumnStretch(c, 1)
         lay.addLayout(grid)
         self.lbl_foot = QLabel()
         self.lbl_foot.setStyleSheet(f"color:{theme.c('muted')}; font-size:10px;")
         lay.addWidget(self.lbl_foot)
+
+    def set_width(self, card_w: int) -> None:
+        """Ancho de la tarjeta: las columnas se lo reparten y los indicadores (alto y textos) se escalan."""
+        if card_w == self._card_w:
+            return
+        self._card_w = card_w
+        self.setFixedWidth(card_w)
+        tile_w = (card_w - CARD_PAD) / self.columns
+        row_h = int(max(60, min(150, tile_w * 0.75)))
+        for r in range(self.rows):
+            self.grid.setRowMinimumHeight(r, row_h)
+        scale = max(0.6, min(1.5, tile_w / TILE_W))
+        for w in self.tiles:
+            w.set_scale(scale)
 
     def update_line(self, line: LineState, now: float, offline_s: float, area: str) -> None:
         st = line.status

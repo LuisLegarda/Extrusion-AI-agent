@@ -34,7 +34,7 @@ def test_dock_on_minimize_and_restore(ctx):
     from extrusion_monitor import navigation
     from extrusion_monitor.ui.main_window import MainWindow
 
-    ctx.engine.config.dock = DockSettings(enabled=True, edge="bottom", size="medium", tiles=[
+    ctx.engine.config.dock = DockSettings(enabled=True, edge="bottom", thickness=132, tiles=[
         HomeTile(id="a", kind="oee", kpi_chart="gauge"), HomeTile(id="b", kind="read", kpi_chart="value"),
         HomeTile(id="c", kind="var", var_ids=["diam"], chart="gauge"),
         HomeTile(id="d", kind="var", var_ids=["vel"], chart="trend", width=2),
@@ -54,11 +54,16 @@ def test_dock_on_minimize_and_restore(ctx):
     assert "THHN" in dock.chip.text()
     # borde inferior, centrado
     geo = dock._screen_geo
-    assert dock.y() + dock.height() == geo.y() + geo.height()
-    assert abs((dock.x() + dock.width() / 2) - (geo.x() + geo.width() / 2)) <= 1
+    o, size = dock.origin(), dock.total_size()
+    assert o.y() + size.height() == geo.y() + geo.height()
+    assert abs((o.x() + size.width() / 2) - (geo.x() + geo.width() / 2)) <= 1
+    # la agarradera es una pieza aparte, pegada al cuerpo, y también es del dock (captura y recorridos)
+    assert dock.handle.isVisible() and dock.x() == o.x() + dock.handle.width() + 2
+    assert int(dock.handle.winId()) in navigation.OVERLAY_HWNDS
     win.restore_from_dock()
     QApplication.processEvents()
-    assert not dock.isVisible() and int(dock.winId()) not in navigation.OVERLAY_HWNDS
+    assert not dock.isVisible() and not dock.handle.isVisible()
+    assert int(dock.winId()) not in navigation.OVERLAY_HWNDS
     # con el dock desactivado, minimizar no lo muestra
     ctx.engine.config.dock.enabled = False
     win.showMinimized()
@@ -75,15 +80,22 @@ def test_dock_ghost_drag_and_alarm(ctx):
     from extrusion_monitor.analysis.rules import Finding, Level
     from extrusion_monitor.ui.dock import GHOST_OPACITY, DockWindow
 
-    ctx.engine.config.dock = DockSettings(enabled=True, edge="left", size="small")
+    ctx.engine.config.dock = DockSettings(enabled=True, edge="left", size="small")  # formato anterior
+    assert ctx.engine.config.dock.thickness == 96
     dock = DockWindow(ctx.engine, ctx.workspace)
     dock.show()
     geo = QRect(0, 0, 1920, 1080)
     dock.place(geo)
-    assert dock.x() == 0 and not dock.horizontal
+    assert dock.origin().x() == 0 and not dock.horizontal and dock.y() > dock.handle.y()
     # fantasma: casi transparente (deja pasar los clics); también mientras un recorrido hace clic
     dock.set_ghost(True)
     assert dock.windowOpacity() == pytest.approx(GHOST_OPACITY, abs=0.01)
+    # …pero la agarradera sigue sólida: se puede arrastrar y restaurar aunque el dock esté translúcido
+    assert dock.handle.windowOpacity() == 1.0
+    restored = []
+    dock.restore.connect(lambda: restored.append(1))
+    dock.handle.btn.click()
+    assert restored
     dock.set_ghost(False)
     navigation.overlays_pass_clicks(hold_s=5)
     dock._poll()
@@ -91,16 +103,18 @@ def test_dock_ghost_drag_and_alarm(ctx):
     navigation.overlay_hold_until = 0.0
     dock._poll()
     # arrastrado a otra posición: la recuerda; soltado junto a su borde: vuelve a anclarse
-    dock.move(500, 300)
-    dock._drag = QPoint(0, 0)
+    start = dock.origin()
+    dock.begin_drag(start + QPoint(5, 5))
+    dock.drag_to(QPoint(505, 305))
     dock.end_drag()
     assert ctx.workspace.load_state()["dock_pos"] == [500, 300]
     dock.place(geo)
-    assert (dock.x(), dock.y()) == (500, 300)
-    dock.move(dock.edge_pos(geo) + QPoint(10, 5))
-    dock._drag = QPoint(0, 0)
+    assert (dock.origin().x(), dock.origin().y()) == (500, 300)
+    assert dock.y() == 300 + dock.handle.height() + 2  # el cuerpo se mueve con la agarradera
+    dock.begin_drag(dock.origin())
+    dock.drag_to(dock.edge_pos(geo) + QPoint(10, 5))
     dock.end_drag()
-    assert "dock_pos" not in ctx.workspace.load_state() and dock.pos() == dock.edge_pos(geo)
+    assert "dock_pos" not in ctx.workspace.load_state() and dock.origin() == dock.edge_pos(geo)
     # alarma nueva: parpadea y muestra el mensaje
     snap = ctx.engine.step()
     dock.update_snapshot(snap, force=True)
@@ -123,10 +137,11 @@ def test_dock_config_dialog(ctx, monkeypatch):
     assert "var" in kinds and "oee" in kinds and "machine" not in kinds and "alarms" not in kinds
     dlg.chk_enabled.setChecked(True)
     dlg.cmb_edge.setCurrentIndex(dlg.cmb_edge.findData("right"))
-    dlg.cmb_size.setCurrentIndex(dlg.cmb_size.findData("large"))
+    dlg.sp_thick.setValue(40)
+    assert "no caben gráficas" in dlg.lbl_thick.text()
     dlg._add_var()
     d = dlg.dock
-    assert d.enabled and d.edge == "right" and d.size == "large" and dlg.reset_position
+    assert d.enabled and d.edge == "right" and d.thickness == 40 and d.compact and dlg.reset_position
     assert d.tiles[-1].kind == "var" and all(t.height == 1 and t.width <= 4 for t in d.tiles)
 
     win = MainWindow(ctx)
@@ -137,3 +152,33 @@ def test_dock_config_dialog(ctx, monkeypatch):
     assert '"edge": "bottom"' in ctx.workspace.config_file.read_text("utf-8")
     win._rebuilding = True
     win.close()
+
+
+def test_thin_dock_switches_to_value_with_color(ctx):
+    """Muy delgado para gráficas: cada indicador pasa a nombre + valor con color según su rango."""
+    from extrusion_monitor.analysis.rules import Level
+    from extrusion_monitor.ui import theme
+    from extrusion_monitor.ui.dock import CompactTile, DockWindow
+
+    tiles = [HomeTile(id="a", kind="oee", kpi_chart="gauge"),
+             HomeTile(id="c", kind="var", var_ids=["diam"], chart="trend", width=3),
+             HomeTile(id="s", kind="var", var_ids=["inyeccion"], chart="value")]
+    ctx.engine.config.dock = DockSettings(enabled=True, edge="top", thickness=132, tiles=tiles)
+    dock = DockWindow(ctx.engine, ctx.workspace)
+    assert not any(isinstance(w, CompactTile) for w in dock.var_tiles) and dock.var_tiles[0].plot is not None
+    wide = dock.width()
+
+    ctx.engine.config.dock = DockSettings(enabled=True, edge="top", thickness=40, tiles=tiles)
+    dock.rebuild()
+    assert dock.height() == 40 and dock.width() < wide
+    assert all(isinstance(w, CompactTile) for w in dock.var_tiles + dock.kpi_widgets["oee"])
+    snap = ctx.engine.step()
+    dock.update_snapshot(snap, force=True)
+    diam, sel = dock.var_tiles
+    assert "3.2" in diam.lbl.text() and theme.c("good") in diam.lbl.text()  # dentro de límites: verde
+    assert "ON" in sel.lbl.text()
+    assert "%" in dock.kpi_widgets["oee"][0].lbl.text()
+    snap.statuses["diam"].level = Level.ALARM
+    dock.update_snapshot(snap, force=True)
+    assert theme.c("critical") in diam.lbl.text()  # en alarma: rojo
+    dock.close()

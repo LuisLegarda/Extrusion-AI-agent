@@ -54,7 +54,7 @@ class FleetTile(BaseModel):
     kpi: str = "oee"  # clave de analysis.kpis.KPIS
     var: str = ""  # id (o nombre) de la variable; las líneas del mismo tipo comparten ids
     chart: FleetChart = "gauge"
-    width: int = Field(1, ge=1, le=4)  # columnas de la tarjeta
+    width: int = Field(1, ge=1, le=12)  # columnas de la tarjeta
     height: int = Field(1, ge=1, le=3)  # filas de la tarjeta
     range_s: float = Field(0.0, ge=0, le=86400)  # gráfica de tiempo: 0 = turno actual
     title: str = ""
@@ -70,7 +70,7 @@ class FleetSettings(BaseModel):
     dir: str = ""
     poll_s: float = Field(5.0, ge=1, le=60)
     offline_s: float = Field(30.0, ge=10, le=3600)  # sin actualizar más de esto = sin comunicación
-    card_columns: int = Field(2, ge=1, le=4)  # columnas internas de cada tarjeta
+    card_columns: int = Field(2, ge=1, le=12)  # columnas internas de cada tarjeta
     tiles: list[FleetTile] = Field(default_factory=default_fleet_tiles, max_length=MAX_LINE_TILES)
     overrides: dict[str, list[FleetTile]] = Field(default_factory=dict)  # id de línea -> indicadores propios
     areas: dict[str, str] = Field(default_factory=dict)  # id de línea -> área (vacío = la que publica la línea)

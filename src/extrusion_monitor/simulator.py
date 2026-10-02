@@ -323,7 +323,7 @@ def demo_config() -> AppConfig:
                        ReportVar(var_id="vel"), ReportVar(var_id="z3"), ReportVar(var_id="inyeccion", chart=False)])],
         oee=OeeSettings(enabled=True, speed_var="vel", nominal_source="recipe", microstop_s=60,
                         quality_mode="both", quality_selector="inyeccion", quality_good_state="ON"),
-        dock=DockSettings(enabled=True, edge="top", size="medium", tiles=[
+        dock=DockSettings(enabled=True, edge="top", thickness=132, tiles=[
             HomeTile(id="k_oee", kind="oee", kpi_chart="gauge"),
             HomeTile(id="k_diam", kind="var", var_ids=["diam"], chart="gauge"),
             HomeTile(id="k_vel", kind="var", var_ids=["vel"], chart="value"),

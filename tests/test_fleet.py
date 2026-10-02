@@ -263,3 +263,47 @@ def test_fleet_setup_dialog(tmp_path, monkeypatch):
     dlg._own_editors["L1"].tiles = dlg._own_editors["L1"].tiles[:1]
     s = dlg.result_settings()
     assert len(s.tiles) == 5 and len(s.overrides["L1"]) == 1 and s.areas["L1"] == "Nave 9"
+
+
+def test_cards_fill_the_width_and_allow_many_columns(tmp_path):
+    """Más de 4 columnas por tarjeta; las tarjetas y sus indicadores se ajustan al ancho disponible."""
+    pytest.importorskip("PySide6")
+    from PySide6.QtWidgets import QApplication
+
+    from extrusion_monitor.fleet import FleetSettings, FleetTile, save_fleet_settings
+    from extrusion_monitor.ui.fleet_tiles import TILE_MIN_W, card_metrics
+    from extrusion_monitor.ui.fleet_window import FleetWindow
+    # ancho repartido sin huecos: n tarjetas + separaciones = ancho disponible
+    n, w = card_metrics(1900, 2)
+    assert n == 8 and n * w + 10 * (n - 1) <= 1900 < (n + 1) * (2 * TILE_MIN_W + 20) + 10 * n
+    n6, w6 = card_metrics(1900, 6)
+    assert n6 == 3 and w6 > w  # más columnas: menos tarjetas por fila, más anchas
+    assert card_metrics(500, 8) == (1, 500)  # no cabe ni una: ocupa todo y sus indicadores se encogen
+    assert card_metrics(5000, 2, 10, count=3) == (3, 2 * 190 + 20)  # pocas líneas: crecen hasta su máximo
+
+    QApplication.instance() or QApplication([])
+    shared = tmp_path / "planta"
+    for i in range(1, 5):
+        _status(shared, f"L{i}", name=f"Línea {i}")
+    tiles = [FleetTile(id="a", kind="kpi", kpi="oee", chart="gauge"),
+             FleetTile(id="b", kind="var", var="diam", chart="value"),
+             FleetTile(id="c", kind="kpi", kpi="oee", chart="trend", width=6)]
+    cfg = tmp_path / "fleet.json"
+    save_fleet_settings(cfg, FleetSettings(dir=str(shared), card_columns=8, tiles=tiles))
+    w = FleetWindow(None, cfg)
+    w.resize(1700, 900)
+    w.show()
+    w.refresh()
+    card = w.cards["L1"]
+    assert card.columns == 8 and card.tiles[2].tile.width == 6
+    avail = w.scroll.viewport().width()
+    assert card.width() <= avail and card.width() == w.cards["L4"].width()
+    wide_scale = card.tiles[0].scale
+    w.settings.card_columns = 2  # menos columnas: tarjetas más angostas, caben más por fila
+    w.settings.tiles = tiles[:2]
+    w._rebuild_cards()
+    w.refresh()
+    old_width = card.width()
+    assert w.cards["L1"].columns == 2 and w.cards["L1"].width() < old_width
+    assert w._columns() >= 2 and wide_scale > 0
+    w.close()

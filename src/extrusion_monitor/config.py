@@ -315,15 +315,32 @@ def default_dock_tiles() -> list[HomeTile]:
             HomeTile(id="d_cpk", kind="cpk", kpi_chart="value")]
 
 
+DOCK_CHART_MIN = 84  # con menos grosor no caben gráficas: los indicadores se muestran como valor con color
+_DOCK_SIZES = {"small": 96, "medium": 132, "large": 184}  # tamaños de versiones anteriores
+
+
 class DockSettings(BaseModel):
     """Dock: barra compacta siempre visible que queda en pantalla al minimizar el programa."""
 
     enabled: bool = False  # al minimizar, mostrar el dock en lugar de solo el botón de la barra de tareas
     edge: Literal["top", "bottom", "left", "right"] = "top"
-    size: Literal["small", "medium", "large"] = "medium"  # grosor del dock
+    thickness: int = Field(132, ge=28, le=260)  # grosor en píxeles
     tiles: list[HomeTile] = Field(default_factory=default_dock_tiles)  # indicadores o variables (como en Inicio)
     ghost_on_hover: bool = True  # al acercar el mouse se desvanece y deja pasar los clics al HMI
     alarm_alert: bool = True  # parpadea y muestra el mensaje al aparecer una alarma
+
+    @model_validator(mode="before")
+    @classmethod
+    def _old_size(cls, data):
+        if isinstance(data, dict) and "size" in data:
+            data = dict(data)
+            size = data.pop("size")
+            data.setdefault("thickness", _DOCK_SIZES.get(size, 132))
+        return data
+
+    @property
+    def compact(self) -> bool:
+        return self.thickness < DOCK_CHART_MIN
 
 
 class AppConfig(BaseModel):

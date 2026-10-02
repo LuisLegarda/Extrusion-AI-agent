@@ -548,6 +548,8 @@ EN: dict[str, str] = {
         "These indicators are shown on every line's card. If a line is different, give it its own indicators in the "
         "“Per line” tab.",
     "Ancho de cada tarjeta, en columnas de indicadores.": "Width of each card, in indicator columns.",
+    "Columnas de indicadores de cada tarjeta. El tamaño de las tarjetas y de sus indicadores se ajusta solo al ancho de la ventana.":
+        "Indicator columns of each card. The size of the cards and of their indicators adjusts itself to the window width.",
     "<b>Avisos</b> (la tarjeta parpadea hasta que se le da clic)": "<b>Alerts</b> (the card blinks until it is clicked)",
     "<b>Indicadores de la tarjeta</b> (1 a {n}, en orden)": "<b>Card indicators</b> (1 to {n}, in order)",
     "Cada línea admite hasta {n} indicadores.": "Each line supports up to {n} indicators.",
@@ -630,6 +632,11 @@ EN: dict[str, str] = {
     "Volver a centrar en el borde": "Center on the edge again",
     "Olvida la posición a la que se arrastró el dock": "Forgets the position the dock was dragged to",
     "Tamaño:": "Size:", "Chico": "Small", "Mediano": "Medium", "Grande": "Large",
+    "Grosor:": "Thickness:", "Delgado": "Thin", " px": " px",
+    "Con este grosor no caben gráficas: cada indicador se muestra como nombre y valor, con color según su rango.":
+        "Charts do not fit at this thickness: each indicator is shown as name and value, colored by its range.",
+    "Con menos de {n} px los indicadores pasan a solo valor con color.":
+        "Below {n} px the indicators switch to value only, with color.",
     "Al acercar el mouse se desvanece y deja pasar los clics al HMI":
         "When the mouse approaches it fades out and lets clicks through to the HMI",
     "Parpadear y mostrar el mensaje al aparecer una alarma": "Blink and show the message when an alarm appears",

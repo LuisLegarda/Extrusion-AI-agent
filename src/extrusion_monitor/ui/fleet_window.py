@@ -24,7 +24,7 @@ from PySide6.QtWidgets import (
 from ..fleet import FleetReader, FleetSettings, LineState, load_fleet_settings, save_fleet_settings
 from ..i18n import LANGS, lang as i18n_lang, tr, translate_text
 from . import theme
-from .fleet_tiles import (CONN_TEXT, LEVEL_KEYS, LineCard, blink_timer, fmt_age, period_since, severity,
+from .fleet_tiles import (CONN_TEXT, LEVEL_KEYS, LineCard, blink_timer, card_metrics, fmt_age, period_since, severity,
                           trend_key)
 
 FILTERS = [("all", "Todas"), ("alarm", "Con alarma o aviso"), ("stopped", "Detenidas"),
@@ -619,8 +619,14 @@ class FleetWindow(QMainWindow):
         return out
 
     def _columns(self) -> int:
-        w = next(iter(self.cards.values())).width() if self.cards else 280
-        return max(1, (self.scroll.viewport().width() - 10) // (w + 10))
+        """Tarjetas por fila; de paso ajusta el ancho de todas para llenar la ventana."""
+        m = self.grid.contentsMargins()
+        avail = self.scroll.viewport().width() - m.left() - m.right() - 2
+        cols, card_w = card_metrics(avail, self.settings.card_columns, self.grid.horizontalSpacing(),
+                                    count=len(self.cards))
+        for card in self.cards.values():
+            card.set_width(card_w)
+        return cols
 
     def _layout(self, order: list[str], now: float) -> None:
         s = self.settings
@@ -639,7 +645,7 @@ class FleetWindow(QMainWindow):
         shown = pages[self._page] if self.tv else order
         area_of = {k: s.area_of(lines[k]) or tr(NO_AREA) for k in order} if s.group_by_area else {}
         areas = [area_of.get(k) for k in shown]
-        key = (tuple(shown), tuple(areas), cols)
+        key = (tuple(shown), tuple(areas), cols, self.scroll.viewport().width())
         if key == self._layout_key:
             for hdr, area, group in self._headers:  # mismo acomodo: solo se actualizan los resúmenes
                 hdr.setText(self._area_header(area, group, now))

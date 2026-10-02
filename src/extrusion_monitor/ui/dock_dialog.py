@@ -1,13 +1,15 @@
 """Configuración del dock: posición, tamaño, comportamiento e indicadores (mismo editor que el tablero de Inicio)."""
 from __future__ import annotations
 
-from PySide6.QtWidgets import QCheckBox, QComboBox, QFormLayout, QGroupBox, QHBoxLayout, QLabel, QPushButton
+from PySide6.QtWidgets import (QCheckBox, QComboBox, QFormLayout, QGroupBox, QHBoxLayout, QLabel, QPushButton,
+                               QSpinBox)
 
-from ..config import KPI_KINDS, AppConfig, DockSettings, HomeSettings, default_dock_tiles
+from ..config import DOCK_CHART_MIN, KPI_KINDS, AppConfig, DockSettings, HomeSettings, default_dock_tiles
+from ..i18n import tr
 from .home_config_dialog import HomeConfigDialog
 
 EDGES = [("top", "Superior"), ("bottom", "Inferior"), ("left", "Izquierda"), ("right", "Derecha")]
-SIZES = [("small", "Chico"), ("medium", "Mediano"), ("large", "Grande")]
+PRESETS = [("Delgado", 40), ("Chico", 96), ("Mediano", 132), ("Grande", 184)]
 MAX_UNITS = 4
 
 
@@ -49,11 +51,24 @@ class DockConfigDialog(HomeConfigDialog):
         row.addWidget(self.btn_center)
         row.addStretch(1)
         form.addRow("Posición:", row)
-        self.cmb_size = QComboBox()
-        for k, label in SIZES:
-            self.cmb_size.addItem(label, k)
-        self.cmb_size.setCurrentIndex(max(0, self.cmb_size.findData(d.size)))
-        form.addRow("Tamaño:", self.cmb_size)
+        thick = QHBoxLayout()
+        self.sp_thick = QSpinBox()
+        self.sp_thick.setRange(28, 260)
+        self.sp_thick.setSingleStep(4)
+        self.sp_thick.setSuffix(" px")
+        self.sp_thick.setValue(d.thickness)
+        self.sp_thick.valueChanged.connect(self._thick_changed)
+        thick.addWidget(self.sp_thick)
+        for label, px in PRESETS:
+            b = QPushButton(label)
+            b.clicked.connect(lambda _=False, px=px: self.sp_thick.setValue(px))
+            thick.addWidget(b)
+        thick.addStretch(1)
+        form.addRow("Grosor:", thick)
+        self.lbl_thick = QLabel()
+        self.lbl_thick.setWordWrap(True)
+        form.addRow("", self.lbl_thick)
+        self._thick_changed(d.thickness)
         self.chk_ghost = QCheckBox("Al acercar el mouse se desvanece y deja pasar los clics al HMI")
         self.chk_ghost.setChecked(d.ghost_on_hover)
         form.addRow(self.chk_ghost)
@@ -61,6 +76,14 @@ class DockConfigDialog(HomeConfigDialog):
         self.chk_alert.setChecked(d.alarm_alert)
         form.addRow(self.chk_alert)
         self.root_layout.insertWidget(0, box)
+
+    def _thick_changed(self, v: int) -> None:
+        if v < DOCK_CHART_MIN:
+            self.lbl_thick.setText(tr("Con este grosor no caben gráficas: cada indicador se muestra como nombre y "
+                                      "valor, con color según su rango."))
+        else:
+            self.lbl_thick.setText(tr("Con menos de {n} px los indicadores pasan a solo valor con color.",
+                                      n=DOCK_CHART_MIN))
 
     def _edge_changed(self, *_):
         self.reset_position = True  # al cambiar de borde (o pedirlo) vuelve al centro de ese borde
@@ -72,5 +95,5 @@ class DockConfigDialog(HomeConfigDialog):
     def dock(self) -> DockSettings:
         tiles = [t.model_copy(update={"height": 1, "width": min(t.width, MAX_UNITS)}) for t in self.home.tiles]
         return DockSettings(enabled=self.chk_enabled.isChecked(), edge=self.cmb_edge.currentData(),
-                            size=self.cmb_size.currentData(), tiles=tiles,
+                            thickness=self.sp_thick.value(), tiles=tiles,
                             ghost_on_hover=self.chk_ghost.isChecked(), alarm_alert=self.chk_alert.isChecked())
