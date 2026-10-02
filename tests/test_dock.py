@@ -182,3 +182,22 @@ def test_thin_dock_switches_to_value_with_color(ctx):
     dock.update_snapshot(snap, force=True)
     assert theme.c("critical") in diam.lbl.text()  # en alarma: rojo
     dock.close()
+
+
+def test_side_dock_uses_thickness_as_width(ctx):
+    """A la izquierda o derecha el grosor es el ancho del dock (arriba/abajo, su alto)."""
+    from extrusion_monitor.ui.dock import CompactTile, DockWindow
+
+    tiles = [HomeTile(id="a", kind="oee", kpi_chart="gauge"), HomeTile(id="c", kind="var", var_ids=["diam"], chart="value")]
+    for edge in ("left", "right"):
+        for thick in (60, 110, 160):
+            ctx.engine.config.dock = DockSettings(enabled=True, edge=edge, thickness=thick, tiles=tiles)
+            dock = DockWindow(ctx.engine, ctx.workspace)
+            assert dock.width() == thick and dock.handle.width() == thick and dock.height() > thick
+            assert all(w.width() <= thick for w in dock.var_tiles + dock.kpi_widgets["oee"])
+            assert isinstance(dock.var_tiles[0], CompactTile) == (thick < 84)
+            dock.close()
+    ctx.engine.config.dock = DockSettings(enabled=True, edge="bottom", thickness=110, tiles=tiles)
+    dock = DockWindow(ctx.engine, ctx.workspace)
+    assert dock.height() == 110 and dock.width() > 110
+    dock.close()

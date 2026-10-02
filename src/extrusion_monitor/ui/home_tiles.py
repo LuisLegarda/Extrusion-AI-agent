@@ -143,7 +143,8 @@ class ProcessGauge(QWidget):
         p.setRenderHint(QPainter.Antialiasing)
         w, h = self.width(), self.height()
         side = min(w, h * 1.15) - 16
-        rect = QRectF((w - side) / 2, 8, side, side)
+        # El arco visible ocupa ~87 % del alto del círculo (el hueco queda abajo): se centra en el widget.
+        rect = QRectF((w - side) / 2, max(4.0, (h - side * 0.87) / 2), side, side)
         thick = max(8.0, side * 0.09)
         start, span = 225.0, -270.0
         inner = rect.adjusted(thick, thick, -thick, -thick)
@@ -160,33 +161,36 @@ class ProcessGauge(QWidget):
                 arc(self._frac(a), self._frac(b), QColor(theme.c(key)), thick)
         c = inner.center()
         r_out = inner.width() / 2
+
+        def radial(frac: float, r0: float, r1: float) -> tuple[QPointF, QPointF]:
+            ang = math.radians(start + span * frac)
+            return (QPointF(c.x() + r0 * math.cos(ang), c.y() - r0 * math.sin(ang)),
+                    QPointF(c.x() + r1 * math.cos(ang), c.y() - r1 * math.sin(ang)))
+
         if self.reference is not None:  # marca de referencia (consigna o nominal)
-            ang = math.radians(start + span * self._frac(self.reference))
             p.setPen(QPen(QColor(theme.c("setpoint")), 3))
-            p.drawLine(QPointF(c.x() + (r_out - thick) * math.cos(ang), c.y() - (r_out - thick) * math.sin(ang)),
-                       QPointF(c.x() + (r_out + thick * 0.8) * math.cos(ang),
-                               c.y() - (r_out + thick * 0.8) * math.sin(ang)))
+            p.drawLine(*radial(self._frac(self.reference), r_out - thick, r_out + thick * 0.8))
         if self.value is not None:
-            ang = math.radians(start + span * self._frac(self.value))
-            r = r_out - thick * 0.9
-            p.setPen(QPen(QColor(theme.c("text")), 3))
-            p.drawLine(c, QPointF(c.x() + r * math.cos(ang), c.y() - r * math.sin(ang)))
-            p.setBrush(QColor(theme.c("text")))
-            p.drawEllipse(c, 4, 4)
+            # Marcador del valor sobre el arco (sin aguja al centro, que es donde va el número).
+            pen = QPen(QColor(theme.c("text")), max(3.0, thick * 0.45))
+            pen.setCapStyle(Qt.RoundCap)
+            p.setPen(pen)
+            p.drawLine(*radial(self._frac(self.value), r_out - thick * 1.5, r_out + thick * 0.75))
         f = QFont(self.font())
-        f.setPointSizeF(max(10.0, side * 0.11))
+        f.setPointSizeF(max(10.0, side * 0.12))
         f.setBold(True)
         p.setFont(f)
         p.setPen(QColor(theme.c(self.color_key if self.color_key != "neutral" else "text")))
-        p.drawText(rect.adjusted(0, side * 0.42, 0, 0), Qt.AlignHCenter | Qt.AlignTop, self.text)
-        if side < 84:  # muy pequeño (dock chico): solo el arco, la aguja y el valor
+        # Valor centrado en el arco; la unidad, justo debajo.
+        p.drawText(rect.adjusted(0, -side * 0.05, 0, -side * 0.05), Qt.AlignCenter, self.text)
+        if side < 84:  # muy pequeño (dock chico): solo el arco, el marcador y el valor
             p.end()
             return
-        f.setPointSizeF(max(7.5, side * 0.055))
+        f.setPointSizeF(max(7.5, side * 0.06))
         f.setBold(False)
         p.setFont(f)
         p.setPen(QColor(theme.c("muted")))
-        p.drawText(rect.adjusted(0, side * 0.58, 0, 0), Qt.AlignHCenter | Qt.AlignTop, self.unit)
+        p.drawText(rect.adjusted(0, side * 0.24, 0, 0), Qt.AlignCenter, self.unit)
         # extremos de la escala, junto al final del arco por dentro
         for frac, align in ((0.0, Qt.AlignLeft), (1.0, Qt.AlignRight)):
             v = self.lo if frac == 0 else self.hi

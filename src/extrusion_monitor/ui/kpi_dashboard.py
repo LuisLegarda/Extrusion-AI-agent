@@ -92,7 +92,8 @@ class Gauge(QWidget):
         p.setRenderHint(QPainter.Antialiasing)
         w, h = self.width(), self.height()
         side = min(w, h * 1.25) - 16
-        rect = QRectF((w - side) / 2, 8, side, side)
+        # El arco visible ocupa ~87 % del alto del círculo (el hueco queda abajo): se centra en el widget.
+        rect = QRectF((w - side) / 2, max(4.0, (h - side * 0.87) / 2), side, side)
         thick = max(8.0, side * 0.09)
         start, span = 225.0, -270.0
 
@@ -124,11 +125,12 @@ class Gauge(QWidget):
         p.setFont(f)
         p.setPen(self.palette().text().color())
         text = "—" if self.value is None else f"{self.value:.{self.decimals}f}"
-        p.drawText(rect.adjusted(0, side * 0.18, 0, 0), Qt.AlignCenter, text)
+        # Valor centrado en el arco; la unidad, justo debajo.
+        p.drawText(rect.adjusted(0, -side * 0.05, 0, -side * 0.05), Qt.AlignCenter, text)
         f.setPointSizeF(max(8.0, side * 0.07))
         f.setBold(False)
         p.setFont(f)
-        p.drawText(rect.adjusted(0, side * 0.42, 0, 0), Qt.AlignCenter, self.unit)
+        p.drawText(rect.adjusted(0, side * 0.26, 0, 0), Qt.AlignCenter, self.unit)
         p.end()
 
 

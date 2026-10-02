@@ -49,11 +49,12 @@ def value_px(thick: int) -> int:
 class CompactTile(QFrame):
     """Indicador en un dock delgado: nombre y valor, con color según su rango (sin gráfica)."""
 
-    def __init__(self, tile, config, thick: int):
+    def __init__(self, tile, config, thick: int, horizontal: bool = True):
         super().__init__()
         self.tile = tile
         self.config = config
-        self.one_line = thick < 56
+        self.one_line = horizontal and thick < 56
+        self.max_title_w = None if horizontal else max(20, thick - 22)  # en columna el nombre se recorta
         self.px = max(12, min(22, int(thick * 0.36))) if self.one_line else max(13, min(24, int(thick * 0.3)))
         self.setObjectName("card")
         lay = QVBoxLayout(self)
@@ -88,7 +89,12 @@ class CompactTile(QFrame):
 
     def _show(self, text: str, unit: str, color: str) -> None:
         sep = " " if self.one_line else "<br>"
-        self.lbl.setText(f"<span style='font-size:10px; color:{theme.c('text2')}'>{self.title}</span>{sep}"
+        title = self.title
+        if self.max_title_w is not None:
+            small = QFont(self.font())
+            small.setPixelSize(10)
+            title = QFontMetrics(small).elidedText(title, Qt.ElideRight, self.max_title_w)
+        self.lbl.setText(f"<span style='font-size:10px; color:{theme.c('text2')}'>{title}</span>{sep}"
                          f"<b style='font-size:{self.px}px; color:{color}'>{text}</b>"
                          f"<span style='font-size:10px; color:{theme.c('muted')}'> {unit}</span>")
 
@@ -222,42 +228,41 @@ class DockWindow(QWidget):
         lay.setContentsMargins(margin, margin, margin, margin)
         lay.setSpacing(4)
 
-        # agarradera: junto al inicio del dock; apilada (⠿ sobre ⤢) si hay grosor, en línea si es delgado
+        # El grosor es siempre la dimensión corta del dock: su alto arriba/abajo, su ancho a izquierda/derecha.
+        # Agarradera junto al inicio: ⠿ y ⤢ apilados o en línea según lo que quepa.
         if self.horizontal:
             self.handle.setup(QSize(34, thick) if thick >= 62 else QSize(54, thick), stacked=thick >= 62)
         else:
-            self.handle.setup(QSize(unit, 30), stacked=False)
+            self.handle.setup(QSize(thick, 30) if thick >= 62 else QSize(thick, 52), stacked=thick < 62)
 
         # estado de la máquina, receta y alarmas (siempre)
         self.chip = QLabel("—")
         self.chip.setTextFormat(Qt.RichText)
-        self.chip.setWordWrap(not cfg.compact)
+        self.chip.setWordWrap(not cfg.compact or not self.horizontal)
         self.chip.setAlignment(Qt.AlignCenter)
         self.chip.setObjectName("dockChip")  # fondo propio: se lee también cuando el dock parpadea en rojo
         self.chip.setStyleSheet(f"#dockChip {{ background:{theme.c('surface')}; border-radius:6px; }}")
-        chip_len = max(150, unit) if not cfg.compact else 190
-        self.chip.setFixedSize(*((chip_len, inner) if self.horizontal else (unit - 8, max(inner, 44))))
+        if self.horizontal:
+            self.chip.setFixedSize(max(150, unit) if not cfg.compact else 190, inner)
+        else:
+            self.chip.setFixedSize(inner, 78 if not cfg.compact else 46)
         lay.addWidget(self.chip)
 
-        made = [w for w in (self._make_tile(t) for t in cfg.tiles) if w is not None]
-        if cfg.compact and not self.horizontal and made:  # columna tan ancha como el indicador más largo
-            unit = min(max(max(w.preferred_width() for w in made) + 8, unit), 330)
-            self.handle.setup(QSize(unit, 30), stacked=False)
-            self.chip.setFixedSize(unit - 8, max(inner, 44))
-        for tile, w in zip([t for t in cfg.tiles if t.kind == "var" or t.kind in KPI_KINDS], made):
-            # Horizontal: el ancho del indicador son sus unidades. Vertical: una columna de mosaicos iguales.
-            if cfg.compact:
-                length = min(max(w.preferred_width(), 70), 320)
-            else:
-                length = unit * max(1, min(tile.width, 4))
-            w.setFixedSize(*((length, inner) if self.horizontal else (unit - 8, inner)))
+        tiles = [t for t in cfg.tiles if t.kind == "var" or t.kind in KPI_KINDS]
+        for tile in tiles:
+            w = self._make_tile(tile)
+            if self.horizontal:  # el largo de cada indicador: sus unidades de ancho, o su texto si es delgado
+                length = min(max(w.preferred_width(), 70), 320) if cfg.compact else unit * max(1, min(tile.width, 4))
+                w.setFixedSize(length, inner)
+            else:  # columna: todos del ancho del dock; alto proporcional (o dos renglones si es delgado)
+                w.setFixedSize(inner, 44 if cfg.compact else max(88, int(inner * 0.95)))
             w.setCursor(Qt.ArrowCursor)
             lay.addWidget(w)
         # Tamaño exacto: el grosor configurado en un sentido y lo que ocupen los indicadores en el otro.
         if self.horizontal:
             self.frame.setFixedHeight(thick)
         else:
-            self.frame.setFixedWidth(unit - 8 + 2 * margin + 4)
+            self.frame.setFixedWidth(thick)
         self._outer.addWidget(self.frame)
         self._style()
         self.setMinimumSize(0, 0)
@@ -278,7 +283,7 @@ class DockWindow(QWidget):
             return None  # el dock solo lleva indicadores y variables
         if cfg.compact:
             # Muy delgado para gráficas: solo el valor, con color según su rango.
-            w = CompactTile(tile, self.engine.config, cfg.thickness)
+            w = CompactTile(tile, self.engine.config, cfg.thickness, self.horizontal)
             (self.var_tiles if k == "var" else self.kpi_widgets.setdefault(k, [])).append(w)
             return w
         small = cfg.thickness < 110
@@ -308,7 +313,7 @@ class DockWindow(QWidget):
                 w.sub.hide()
             self.kpi_widgets.setdefault(k, []).append(w)
         w.layout().setContentsMargins(5, 3, 5, 3)
-        w.value_px = value_px(cfg.thickness)
+        w.value_px = value_px(cfg.thickness) if self.horizontal else max(13, int(value_px(cfg.thickness) * 0.8))
         title = w.findChild(QLabel)  # título más chico que en el tablero
         if title is not None:
             title.setText(title.text().replace("font-size:14px", "font-size:11px"))
