@@ -130,13 +130,15 @@ def test_both_programs_share_the_menu_structure(tmp_path):
     fleet = FleetWindow(str(tmp_path / "planta"), tmp_path / "fleet.json")
     m, f = menus(mon), menus(fleet)
     assert list(m) == ["Archivo", "Receta", "Acciones", "Configuración", "Ver", "Ayuda"]
-    assert list(f) == ["Archivo", "Líneas", "Acciones", "Configuración", "Ver", "Ayuda"]
+    # el dashboard solo tiene lo que no está ya a la vista en su barra superior, en el mismo orden
+    assert list(f) == ["Archivo", "Configuración", "Ver", "Ayuda"]
+    assert f["Configuración"][:3] == ["⚙ Carpeta de datos y avisos…", "Indicadores de las tarjetas…", "Líneas y áreas…"]
     # lo que se guarda con la receta está en el menú Receta
     for item in ("Pestañas y variables…", "Recorridos…", "KPI / OEE…", "Reportes automáticos…", "✎ Tablero de Inicio…"):
         assert item in m["Receta"]
     # idioma y tema en el mismo lugar en los dos programas; mismos atajos para lo equivalente
     assert m["Configuración"][-2:] == f["Configuración"][-2:] == ["🌐 Idioma / Language", "🎨 Tema"]
-    assert {"F5", "Ctrl+E", "Ctrl+Q", "F11", "F1"} <= shortcuts(mon) & shortcuts(fleet)
+    assert {"Ctrl+E", "Ctrl+Q", "F11", "F1"} <= shortcuts(mon) & shortcuts(fleet)
     fleet.toggle_tv()
     assert fleet.tv and not fleet.menuBar().isVisible() and fleet.actions()  # atajos activos sin menú
     fleet.toggle_tv()

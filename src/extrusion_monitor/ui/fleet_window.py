@@ -263,7 +263,7 @@ class FleetWindow(QMainWindow):
         self.lbl_dir = QLabel()
         top.addWidget(self.lbl_dir, 1)
         for text, slot, tip in (("⚙ Configuración", self.open_setup, "Carpeta de datos, indicadores, áreas y avisos"),
-                                ("✔ Reconocer avisos", self.acknowledge_all, "Detiene el parpadeo de las tarjetas"),
+                                ("✔ Reconocer avisos", self.acknowledge_all, "Detiene el parpadeo de las tarjetas (Ctrl+K)"),
                                 ("⤓ Exportar CSV", self.export_csv, "Estado y OEE de todas las líneas"),
                                 ("📺 Modo TV (F11)", self.toggle_tv, "Pantalla completa con páginas que rotan")):
             b = QPushButton(text)
@@ -350,50 +350,23 @@ class FleetWindow(QMainWindow):
 
     # --- menús: archivo, vista, idioma y tema ------------------------------------------------
     def _build_menus(self) -> None:
-        """Misma estructura que el monitor de línea: Archivo · Líneas · Acciones · Configuración · Ver · Ayuda."""
+        """Solo lo que no está ya a la vista: Archivo · Configuración · Ver · Ayuda (mismo orden que el monitor).
+
+        Filtro, orden, búsqueda, reconocer avisos, exportar y modo TV están en la barra superior; sonido y
+        agrupar por área, en la configuración.
+        """
         mb = self.menuBar()
-        # --- Archivo: los datos de la planta ---
         m = mb.addMenu("&Archivo")
-        act = m.addAction("⟳ Actualizar ahora", lambda: self.refresh())
-        act.setShortcut("F5")
-        m.addSeparator()
         act = m.addAction("⤓ Exportar resumen a CSV…", self.export_csv)
         act.setShortcut("Ctrl+E")
-        m.addAction("📂 Abrir carpeta de datos", self._open_data_dir)
         m.addSeparator()
         act = m.addAction("Salir", self.close)
         act.setShortcut("Ctrl+Q")
 
-        # --- Líneas: qué se muestra de cada línea y cómo se ordenan ---
-        m = mb.addMenu("&Líneas")
-        m.addAction("Indicadores de las tarjetas…", lambda: self.open_setup(1))
-        m.addAction("Líneas y áreas…", lambda: self.open_setup(2))
-        m.addSeparator()
-        for title, combo in (("Filtro", self.cmb_filter), ("Orden", self.cmb_sort)):
-            sub = m.addMenu(title)
-            grp = QActionGroup(sub)
-            for i in range(combo.count()):
-                act = sub.addAction(combo.itemText(i), lambda i=i, combo=combo: combo.setCurrentIndex(i))
-                act.setCheckable(True)
-                grp.addAction(act)
-            sub.aboutToShow.connect(lambda sub=sub, combo=combo: sub.actions()[combo.currentIndex()].setChecked(True))
-        self.act_group = m.addAction("Agrupar por área")
-        self.act_group.setCheckable(True)
-        self.act_group.setChecked(self.settings.group_by_area)
-        self.act_group.toggled.connect(lambda on: self._set_option("group_by_area", on))
-
-        # --- Acciones: lo que se hace en el momento ---
-        m = mb.addMenu("A&cciones")
-        act = m.addAction("✔ Reconocer avisos", self.acknowledge_all)
-        act.setShortcut("Ctrl+K")
-        self.act_sound = m.addAction("🔔 Sonido de avisos")
-        self.act_sound.setCheckable(True)
-        self.act_sound.setChecked(self.settings.sound)
-        self.act_sound.toggled.connect(lambda on: self._set_option("sound", on))
-
-        # --- Configuración: ajustes de este equipo ---
         m = mb.addMenu("C&onfiguración")
         m.addAction("⚙ Carpeta de datos y avisos…", lambda: self.open_setup(0))
+        m.addAction("Indicadores de las tarjetas…", lambda: self.open_setup(1))
+        m.addAction("Líneas y áreas…", lambda: self.open_setup(2))
         m.addSeparator()
         lm = m.addMenu("🌐 Idioma / Language")
         grp = QActionGroup(lm)
@@ -410,7 +383,6 @@ class FleetWindow(QMainWindow):
             act.setChecked(code == theme.name())
             grp2.addAction(act)
 
-        # --- Ver: paneles y modos de pantalla ---
         m = mb.addMenu("&Ver")
         self.act_detail = m.addAction("Panel de detalle de la línea")
         self.act_events = m.addAction("Panel de alarmas de la planta")
@@ -429,16 +401,7 @@ class FleetWindow(QMainWindow):
         # Los atajos siguen funcionando con el menú oculto (modo TV).
         for menu in mb.findChildren(QMenu):
             self.addActions([a for a in menu.actions() if not a.shortcut().isEmpty()])
-
-    def _set_option(self, name: str, value) -> None:
-        setattr(self.settings, name, value)
-        self._save_settings()
-        self._layout_key = None
-        self.refresh(rescan=False)
-
-    def _open_data_dir(self) -> None:
-        if self.settings.dir:
-            QDesktopServices.openUrl(QUrl.fromLocalFile(self.settings.dir))
+        QShortcut(QKeySequence("Ctrl+K"), self, activated=self.acknowledge_all)  # reconocer avisos
 
     def _about(self) -> None:
         QMessageBox.about(self, "Acerca de", "<b>Dashboard global de líneas</b><br>Estado, indicadores y alarmas de "
@@ -511,10 +474,6 @@ class FleetWindow(QMainWindow):
         folder_changed = new.dir != self.settings.dir
         self.settings = new
         self._save_settings()
-        for act, on in ((self.act_group, new.group_by_area), (self.act_sound, new.sound)):
-            act.blockSignals(True)
-            act.setChecked(on)
-            act.blockSignals(False)
         self.timer.start(int(new.poll_s * 1000))
         if folder_changed:
             self.set_folder(new.dir)

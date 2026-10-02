@@ -561,6 +561,7 @@ EN: dict[str, str] = {
     "Ahora": "Now", "Sin área": "No area", "Alarmas activas": "Active alarms",
     "⚙ Configuración": "⚙ Settings", "Carpeta de datos, indicadores, áreas y avisos": "Data folder, indicators, areas and alerts",
     "✔ Reconocer avisos": "✔ Acknowledge alerts", "Detiene el parpadeo de las tarjetas": "Stops the cards from blinking",
+    "Detiene el parpadeo de las tarjetas (Ctrl+K)": "Stops the cards from blinking (Ctrl+K)",
     "⤓ Exportar CSV": "⤓ Export CSV", "Estado y OEE de todas las líneas": "Status and OEE of every line",
     "📺 Modo TV (F11)": "📺 TV mode (F11)", "Pantalla completa con páginas que rotan": "Full screen with rotating pages",
     "Elige la carpeta donde escriben las líneas (⚙ Configuración).": "Choose the folder the lines write to (⚙ Settings).",
