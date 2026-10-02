@@ -13,11 +13,11 @@ from pathlib import Path
 from typing import Optional
 
 import pyqtgraph as pg
-from PySide6.QtCore import Qt, QTimer
-from PySide6.QtGui import QActionGroup, QBrush, QColor, QKeySequence, QShortcut
+from PySide6.QtCore import Qt, QTimer, QUrl
+from PySide6.QtGui import QActionGroup, QBrush, QColor, QDesktopServices, QKeySequence, QShortcut
 from PySide6.QtWidgets import (
     QApplication, QComboBox, QFileDialog, QFrame, QGridLayout, QHBoxLayout, QHeaderView, QLabel, QLineEdit,
-    QListWidget, QListWidgetItem, QMainWindow, QMessageBox, QPushButton, QScrollArea, QSplitter, QTableWidget,
+    QListWidget, QListWidgetItem, QMainWindow, QMenu, QMessageBox, QPushButton, QScrollArea, QSplitter, QTableWidget,
     QTableWidgetItem, QTabWidget, QVBoxLayout, QWidget,
 )
 
@@ -32,6 +32,7 @@ FILTERS = [("all", "Todas"), ("alarm", "Con alarma o aviso"), ("stopped", "Deten
 SORTS = [("name", "Nombre"), ("status", "Gravedad"), ("oee", "OEE (menor primero)")]
 TREND_RANGES = [("1 h", 3600), ("8 h", 8 * 3600), ("24 h", 86400), ("7 días", 7 * 86400)]
 NO_AREA = "Sin área"
+HELP_URL = "https://github.com/LuisLegarda/Extrusion-AI-agent#dashboard-global-varias-líneas"
 
 
 def natural(text: str) -> list:
@@ -342,7 +343,6 @@ class FleetWindow(QMainWindow):
         self.tv_timer = QTimer(self)
         self.tv_timer.timeout.connect(self._next_page)
         self.blink = blink_timer(self, lambda: self.cards.values())
-        QShortcut(QKeySequence("F11"), self, activated=self.toggle_tv)
         QShortcut(QKeySequence("Esc"), self, activated=lambda: self.tv and self.toggle_tv())
         self._set_dir_label()
         self.detail.show_line(None)
@@ -350,15 +350,50 @@ class FleetWindow(QMainWindow):
 
     # --- menús: archivo, vista, idioma y tema ------------------------------------------------
     def _build_menus(self) -> None:
+        """Misma estructura que el monitor de línea: Archivo · Líneas · Acciones · Configuración · Ver · Ayuda."""
         mb = self.menuBar()
+        # --- Archivo: los datos de la planta ---
         m = mb.addMenu("&Archivo")
-        m.addAction("⚙ Configuración…", self.open_setup)
-        m.addAction("⤓ Exportar CSV…", self.export_csv)
+        act = m.addAction("⟳ Actualizar ahora", lambda: self.refresh())
+        act.setShortcut("F5")
         m.addSeparator()
-        m.addAction("Salir", self.close)
-        m = mb.addMenu("&Ver")
-        m.addAction("📺 Modo TV (F11)", self.toggle_tv)
-        m.addAction("✔ Reconocer avisos", self.acknowledge_all)
+        act = m.addAction("⤓ Exportar resumen a CSV…", self.export_csv)
+        act.setShortcut("Ctrl+E")
+        m.addAction("📂 Abrir carpeta de datos", self._open_data_dir)
+        m.addSeparator()
+        act = m.addAction("Salir", self.close)
+        act.setShortcut("Ctrl+Q")
+
+        # --- Líneas: qué se muestra de cada línea y cómo se ordenan ---
+        m = mb.addMenu("&Líneas")
+        m.addAction("Indicadores de las tarjetas…", lambda: self.open_setup(1))
+        m.addAction("Líneas y áreas…", lambda: self.open_setup(2))
+        m.addSeparator()
+        for title, combo in (("Filtro", self.cmb_filter), ("Orden", self.cmb_sort)):
+            sub = m.addMenu(title)
+            grp = QActionGroup(sub)
+            for i in range(combo.count()):
+                act = sub.addAction(combo.itemText(i), lambda i=i, combo=combo: combo.setCurrentIndex(i))
+                act.setCheckable(True)
+                grp.addAction(act)
+            sub.aboutToShow.connect(lambda sub=sub, combo=combo: sub.actions()[combo.currentIndex()].setChecked(True))
+        self.act_group = m.addAction("Agrupar por área")
+        self.act_group.setCheckable(True)
+        self.act_group.setChecked(self.settings.group_by_area)
+        self.act_group.toggled.connect(lambda on: self._set_option("group_by_area", on))
+
+        # --- Acciones: lo que se hace en el momento ---
+        m = mb.addMenu("A&cciones")
+        act = m.addAction("✔ Reconocer avisos", self.acknowledge_all)
+        act.setShortcut("Ctrl+K")
+        self.act_sound = m.addAction("🔔 Sonido de avisos")
+        self.act_sound.setCheckable(True)
+        self.act_sound.setChecked(self.settings.sound)
+        self.act_sound.toggled.connect(lambda on: self._set_option("sound", on))
+
+        # --- Configuración: ajustes de este equipo ---
+        m = mb.addMenu("C&onfiguración")
+        m.addAction("⚙ Carpeta de datos y avisos…", lambda: self.open_setup(0))
         m.addSeparator()
         lm = m.addMenu("🌐 Idioma / Language")
         grp = QActionGroup(lm)
@@ -374,6 +409,41 @@ class FleetWindow(QMainWindow):
             act.setCheckable(True)
             act.setChecked(code == theme.name())
             grp2.addAction(act)
+
+        # --- Ver: paneles y modos de pantalla ---
+        m = mb.addMenu("&Ver")
+        self.act_detail = m.addAction("Panel de detalle de la línea")
+        self.act_events = m.addAction("Panel de alarmas de la planta")
+        for act, widget in ((self.act_detail, self.detail), (self.act_events, self.events_box)):
+            act.setCheckable(True)
+            act.setChecked(True)
+            act.toggled.connect(lambda on, widget=widget: widget.setVisible(on and not self.tv))
+        m.addSeparator()
+        act = m.addAction("📺 Modo TV", self.toggle_tv)
+        act.setShortcut("F11")
+
+        m = mb.addMenu("A&yuda")
+        act = m.addAction("Manual de uso", lambda: QDesktopServices.openUrl(QUrl(HELP_URL)))
+        act.setShortcut("F1")
+        m.addAction("Acerca de…", self._about)
+        # Los atajos siguen funcionando con el menú oculto (modo TV).
+        for menu in mb.findChildren(QMenu):
+            self.addActions([a for a in menu.actions() if not a.shortcut().isEmpty()])
+
+    def _set_option(self, name: str, value) -> None:
+        setattr(self.settings, name, value)
+        self._save_settings()
+        self._layout_key = None
+        self.refresh(rescan=False)
+
+    def _open_data_dir(self) -> None:
+        if self.settings.dir:
+            QDesktopServices.openUrl(QUrl.fromLocalFile(self.settings.dir))
+
+    def _about(self) -> None:
+        QMessageBox.about(self, "Acerca de", "<b>Dashboard global de líneas</b><br>Estado, indicadores y alarmas de "
+                                             "todas las líneas a partir de la carpeta de datos compartida.<br>Solo lee "
+                                             "los archivos que publican las líneas: no modifica nada en ellas.")
 
     def _ui_state(self) -> dict:
         try:
@@ -431,15 +501,20 @@ class FleetWindow(QMainWindow):
         except OSError:
             pass
 
-    def open_setup(self) -> None:
+    def open_setup(self, tab: int = 0) -> None:
         from .fleet_setup import FleetSetupDialog
         dlg = FleetSetupDialog(self.settings, self.reader.lines, self)
+        dlg.tabs.setCurrentIndex(int(tab or 0))
         if not dlg.exec():
             return
         new = dlg.result_settings()
         folder_changed = new.dir != self.settings.dir
         self.settings = new
         self._save_settings()
+        for act, on in ((self.act_group, new.group_by_area), (self.act_sound, new.sound)):
+            act.blockSignals(True)
+            act.setChecked(on)
+            act.blockSignals(False)
         self.timer.start(int(new.poll_s * 1000))
         if folder_changed:
             self.set_folder(new.dir)
@@ -695,8 +770,10 @@ class FleetWindow(QMainWindow):
     # --- modo TV y exportación ---------------------------------------------------------------
     def toggle_tv(self) -> None:
         self.tv = not self.tv
-        for w in (self.top, self.detail, self.events_box, self.menuBar()):
-            w.setVisible(not self.tv)
+        self.top.setVisible(not self.tv)
+        self.menuBar().setVisible(not self.tv)
+        self.detail.setVisible(not self.tv and self.act_detail.isChecked())
+        self.events_box.setVisible(not self.tv and self.act_events.isChecked())
         if self.tv:
             self.showFullScreen()
             self.tv_timer.start(int(self.settings.tv_rotate_s * 1000))

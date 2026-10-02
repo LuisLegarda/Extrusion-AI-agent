@@ -40,7 +40,7 @@ RANGES = [("5 min", 300), ("15 min", 900), ("30 min", 1800), ("1 h", 3600), ("4 
 NAV_ITEMS = [("home", "Inicio", "🏠"), ("variables", "Variables en vivo", "📟"), ("trends", "Tendencias", "📈"),
              ("kpi", "KPI / OEE", "🏭"), ("spc", "SPC", "📊"), ("corr", "Correlación", "🔗"),
              ("behavior", "Estabilidad (IA)", "🧠"), ("events", "Alarmas y eventos", "🔔")]
-NAV_TOOLS = [("recipes", "Recetas", "📋"), ("reports", "Reportes", "📄"), ("setup", "Configuración", "⚙")]
+NAV_TOOLS = [("recipes", "Recetas", "📋"), ("reports", "Reportes", "📄"), ("setup", "Configurar receta", "⚙")]
 HELP_URL = "https://github.com/LuisLegarda/Extrusion-AI-agent#readme"
 
 
@@ -289,50 +289,45 @@ class MainWindow(QMainWindow):
         self._report_menu.aboutToShow.connect(self._fill_report_menu)
 
     def _build_menus(self) -> None:
+        """Misma estructura que el dashboard global: Archivo · Receta · Acciones · Configuración · Ver · Ayuda."""
         mb = self.menuBar()
+        # --- Archivo: el monitoreo y sus datos ---
         m = mb.addMenu("&Archivo")
         m.addAction(self.act_run)
         m.addSeparator()
+        act = m.addAction("⤓ Exportar historial a CSV…", self.export_csv)
+        act.setShortcut("Ctrl+E")
+        m.addAction("📂 Abrir carpeta de reportes", self._open_reports_dir)
         m.addAction("📂 Abrir carpeta de datos", lambda: self._open_dir(self.ctx.workspace.home))
         m.addSeparator()
-        m.addAction("Salir", self.close)
+        act = m.addAction("Salir", self.close)
+        act.setShortcut("Ctrl+Q")
 
+        # --- Receta: la receta activa y todo lo que se guarda con ella ---
         m = mb.addMenu("&Receta")
-        m.addAction("📋 Editar recetas…", self.open_recipes)
-        m.addAction(self.act_auto)
-        m.addSeparator()
         self._recipe_menu = m.addMenu("Receta activa")
         self._recipe_menu.aboutToShow.connect(self._fill_recipe_menu)
-
-        m = mb.addMenu("&Datos")
-        m.addAction("⤓ Exportar historial a CSV…", self.export_csv)
-        m.addMenu(self._report_menu)
-        m.addAction("📂 Abrir carpeta de reportes", self._open_reports_dir)
-
-        m = mb.addMenu("&Entrenamiento")
-        m.addAction("🧠 Entrenar comportamiento…", self.open_behavior)
-        m.addAction("Ver estabilidad (comportamiento)", lambda: self.show_page("behavior"))
-
-        m = mb.addMenu("Reco&rridos")
-        m.addAction(self.act_tour_pause)
-        m.addMenu(self._tour_menu)
-        m.addSeparator()
-        m.addAction("Configurar recorridos…", lambda: self.open_setup("Recorrido automático"))
-
-        m = mb.addMenu("&Configuración")
+        m.addAction(self.act_auto)
+        act = m.addAction("📋 Recetas y límites…", self.open_recipes)
+        act.setShortcut("Ctrl+R")
+        m.addSection("Configuración de la receta")
         for label, tab in (("Pestañas y variables…", "Pestañas y variables"),
                            ("Recorridos…", "Recorrido automático"), ("KPI / OEE…", "KPI / OEE"),
-                           ("Reportes…", "Reportes"), ("General…", "General")):
+                           ("Reportes automáticos…", "Reportes"),
+                           ("Lectura y análisis (general)…", "General")):
             m.addAction(label, lambda tab=tab: self.open_setup(tab))
-        m.addSeparator()
-        m.addAction("🌐 Dashboard global (exportación)…", self.open_station)
+        m.addAction("🧠 Comportamiento (entrenar)…", self.open_behavior)
+        m.addAction("✎ Tablero de Inicio…", self.open_home_config)
 
-        m = mb.addMenu("&Ver")
-        for i, (key, label, _icon) in enumerate(NAV_ITEMS, 1):
-            act = m.addAction(label, lambda key=key: self.show_page(key))
-            act.setShortcut(f"Ctrl+{i}")
-        m.addSeparator()
-        m.addAction("✎ Personalizar tablero de Inicio…", self.open_home_config)
+        # --- Acciones: lo que se hace en el momento ---
+        m = mb.addMenu("A&cciones")
+        m.addAction(self.act_tour_pause)
+        m.addMenu(self._tour_menu)
+        m.addMenu(self._report_menu)
+
+        # --- Configuración: ajustes de este equipo (no cambian con la receta) ---
+        m = mb.addMenu("C&onfiguración")
+        m.addAction("🌐 Dashboard global (exportación)…", self.open_station)
         m.addSeparator()
         lm = m.addMenu("🌐 Idioma / Language")
         grp = QActionGroup(lm)
@@ -348,13 +343,20 @@ class MainWindow(QMainWindow):
             act.setCheckable(True)
             act.setChecked(code == theme.name())
             grp2.addAction(act)
+
+        # --- Ver: páginas y modos de pantalla ---
+        m = mb.addMenu("&Ver")
+        for i, (key, label, _icon) in enumerate(NAV_ITEMS + [("reports", "Reportes", "")], 1):
+            act = m.addAction(label, lambda key=key: self.show_page(key))
+            act.setShortcut(f"Ctrl+{i}")
         m.addSeparator()
         m.addAction(self.act_top)
         act = m.addAction("Pantalla completa", self._toggle_fullscreen)
         act.setShortcut("F11")
 
         m = mb.addMenu("A&yuda")
-        m.addAction("Manual de uso", lambda: self._open_url(HELP_URL))
+        act = m.addAction("Manual de uso", lambda: self._open_url(HELP_URL))
+        act.setShortcut("F1")
         m.addAction("Acerca de…", self._about)
 
     def _build_sidebar(self) -> QWidget:

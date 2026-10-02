@@ -615,6 +615,21 @@ EN: dict[str, str] = {
     "No se pudo codificar la imagen": "The image could not be encoded",
     "el ancho y alto deben ser > 0": "width and height must be > 0",
     "Estado detectado": "Detected state", "Exportar CSV": "Export CSV",
+    # --- menús (misma estructura en el monitor y en el dashboard global) ---
+    "Configurar receta": "Recipe setup", "A&cciones": "&Actions", "C&onfiguración": "&Settings", "&Líneas": "&Lines",
+    "📋 Recetas y límites…": "📋 Recipes and limits…", "Configuración de la receta": "Recipe configuration",
+    "Reportes automáticos…": "Automatic reports…", "Lectura y análisis (general)…": "Reading and analysis (general)…",
+    "🧠 Comportamiento (entrenar)…": "🧠 Behavior (train)…", "✎ Tablero de Inicio…": "✎ Home dashboard…",
+    "⟳ Actualizar ahora": "⟳ Refresh now", "⤓ Exportar resumen a CSV…": "⤓ Export summary to CSV…",
+    "Indicadores de las tarjetas…": "Card indicators…", "Líneas y áreas…": "Lines and areas…",
+    "Filtro": "Filter", "Orden": "Sort", "Agrupar por área": "Group by area",
+    "🔔 Sonido de avisos": "🔔 Alert sound", "⚙ Carpeta de datos y avisos…": "⚙ Data folder and alerts…",
+    "Panel de detalle de la línea": "Line detail panel", "Panel de alarmas de la planta": "Plant alarms panel",
+    "📺 Modo TV": "📺 TV mode",
+    "<b>Dashboard global de líneas</b><br>Estado, indicadores y alarmas de todas las líneas a partir de la carpeta "
+    "de datos compartida.<br>Solo lee los archivos que publican las líneas: no modifica nada en ellas.":
+        "<b>Global line dashboard</b><br>Status, indicators and alarms of every line from the shared data folder."
+        "<br>It only reads the files the lines publish: it changes nothing on them.",
     "coma": "comma", "punto": "point", "real": "actual", "— elegir —": "— choose —", "— ninguno —": "— none —",
     "calibre=12 AWG; material=PVC; color=negro": "gauge=12 AWG; material=PVC; color=black",
     "Aceptar": "OK", "Cancelar": "Cancel",

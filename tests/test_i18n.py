@@ -108,3 +108,38 @@ def test_live_labels_and_fleet_language_theme(tmp_path, en):
         dark.close()
     finally:
         apply_ui_prefs({})
+
+
+def test_both_programs_share_the_menu_structure(tmp_path):
+    pytest.importorskip("PySide6")
+    from PySide6.QtWidgets import QApplication
+
+    from extrusion_monitor.bootstrap import build
+    from extrusion_monitor.ui.fleet_window import FleetWindow
+    from extrusion_monitor.ui.main_window import MainWindow
+    QApplication.instance() or QApplication([])
+
+    def menus(win):
+        return {a.text().replace("&", ""): [b.text() for b in a.menu().actions() if not b.isSeparator()]
+                for a in win.menuBar().actions()}
+
+    def shortcuts(win):
+        return {b.shortcut().toString() for a in win.menuBar().actions() for b in a.menu().actions()}
+
+    mon = MainWindow(build(tmp_path / "home", demo=True))
+    fleet = FleetWindow(str(tmp_path / "planta"), tmp_path / "fleet.json")
+    m, f = menus(mon), menus(fleet)
+    assert list(m) == ["Archivo", "Receta", "Acciones", "Configuración", "Ver", "Ayuda"]
+    assert list(f) == ["Archivo", "Líneas", "Acciones", "Configuración", "Ver", "Ayuda"]
+    # lo que se guarda con la receta está en el menú Receta
+    for item in ("Pestañas y variables…", "Recorridos…", "KPI / OEE…", "Reportes automáticos…", "✎ Tablero de Inicio…"):
+        assert item in m["Receta"]
+    # idioma y tema en el mismo lugar en los dos programas; mismos atajos para lo equivalente
+    assert m["Configuración"][-2:] == f["Configuración"][-2:] == ["🌐 Idioma / Language", "🎨 Tema"]
+    assert {"F5", "Ctrl+E", "Ctrl+Q", "F11", "F1"} <= shortcuts(mon) & shortcuts(fleet)
+    fleet.toggle_tv()
+    assert fleet.tv and not fleet.menuBar().isVisible() and fleet.actions()  # atajos activos sin menú
+    fleet.toggle_tv()
+    fleet.close()
+    mon._rebuilding = True
+    mon.close()
