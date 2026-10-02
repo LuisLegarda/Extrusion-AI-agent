@@ -69,6 +69,8 @@ class StationDialog(QDialog):
         self.lbl.setWordWrap(True)
         root.addWidget(self.lbl)
         bb = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel)
+        bb.button(QDialogButtonBox.Ok).setText("Aceptar")
+        bb.button(QDialogButtonBox.Cancel).setText("Cancelar")
         test = bb.addButton("Probar escritura", QDialogButtonBox.ActionRole)
         test.clicked.connect(self._test)
         bb.accepted.connect(self.accept)

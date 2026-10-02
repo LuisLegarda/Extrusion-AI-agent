@@ -20,7 +20,7 @@ from ..capture import ScreenSource
 from ..navigation import exclude_window_from_capture
 from ..engine import Snapshot
 from ..recipes import Bounds
-from ..i18n import LANGS, lang as i18n_lang, tr
+from ..i18n import LANGS, lang as i18n_lang, tr, translate_text
 from . import theme
 from .common import (  # noqa: F401 (y_range se reexporta)
     SeriesCache, SnapshotBridge, level_color, level_text, level_text_color, y_range,
@@ -801,7 +801,7 @@ class MainWindow(QMainWindow):
         self._append_events(snap)
         counts = {lvl: sum(1 for f in snap.findings if f.level == lvl) for lvl in Level}
         if snap.error:
-            self._set_banner(Level.ALARM, snap.error)  # los mensajes del motor quedan en español
+            self._set_banner(Level.ALARM, translate_text(snap.error))
         elif self.engine.running:
             text = tr({Level.OK: "PROCESO OK", Level.INFO: "PROCESO OK",
                        Level.WARN: "AVISO", Level.ALARM: "ALARMA"}[snap.overall])
@@ -867,7 +867,8 @@ class MainWindow(QMainWindow):
             if f.var_id.startswith("@"):
                 model = self.engine.behaviors.store.get(f.var_id[1:])
                 name = model.name if model else ""
-            vals = [time.strftime("%H:%M:%S", time.localtime(f.since)), f.level.label, f.rule, name, f.message]
+            vals = [time.strftime("%H:%M:%S", time.localtime(f.since)), translate_text(f.level.label),
+                    translate_text(f.rule), name, translate_text(f.message)]
             for c, text in enumerate(vals):
                 it = QTableWidgetItem(text)
                 if c == 1:
@@ -886,7 +887,7 @@ class MainWindow(QMainWindow):
         alarm = False
         for e in snap.events:
             item = QListWidgetItem(f"{time.strftime('%H:%M:%S', time.localtime(e.ts))}  "
-                                   f"[{level_text(e.level)}]  {e.message}")
+                                   f"[{level_text(e.level)}]  {translate_text(e.message)}")
             if e.level >= Level.WARN:
                 item.setForeground(QBrush(level_color(e.level)))
             self.log.insertItem(0, item)

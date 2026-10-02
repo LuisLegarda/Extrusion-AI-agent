@@ -14,7 +14,7 @@ from PySide6.QtWidgets import (
 
 from ..analysis.kpis import KPIS
 from ..fleet import MAX_LINE_TILES, FleetSettings, FleetTile, default_fleet_tiles
-from ..i18n import tr
+from ..i18n import tr, translate_widget
 from .fleet_tiles import tile_title
 
 KINDS = [("kpi", "Indicador (OEE, calidad, Cpk…)"), ("var", "Variable"), ("production", "Producción del turno"),
@@ -270,6 +270,8 @@ class FleetSetupDialog(QDialog):
         self.tabs.addTab(tw, "Indicadores (todas las líneas)")
         self.tabs.addTab(self._lines_tab(), "Por línea")
         bb = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel)
+        bb.button(QDialogButtonBox.Ok).setText("Aceptar")
+        bb.button(QDialogButtonBox.Cancel).setText("Cancelar")
         bb.accepted.connect(self.accept)
         bb.rejected.connect(self.reject)
         root.addWidget(bb)
@@ -402,6 +404,7 @@ class FleetSetupDialog(QDialog):
             e = TileListEditor(base, self.variables, self.sp_cols.value())
             self._own_editors[lid] = e
             self.own_host.addWidget(e)
+            translate_widget(e)  # se crea con la ventana ya abierta
         return e
 
     def _own_toggled(self, on: bool) -> None:

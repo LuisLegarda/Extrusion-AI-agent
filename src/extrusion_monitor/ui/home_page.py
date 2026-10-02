@@ -377,7 +377,7 @@ class HomePage(QWidget):
         for f in findings[:30]:
             if f.level < Level.WARN:
                 continue
-            it = QListWidgetItem(f"{time.strftime('%H:%M', time.localtime(f.since))}  {f.message}")
+            it = QListWidgetItem(f"{time.strftime('%H:%M', time.localtime(f.since))}  {translate_text(f.message)}")
             it.setForeground(level_color(f.level))
             self.lst_alarms.addItem(it)
         if not self.lst_alarms.count():

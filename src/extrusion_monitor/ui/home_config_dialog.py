@@ -118,6 +118,8 @@ class HomeConfigDialog(QDialog):
         root.addLayout(body, 1)
 
         bb = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel)
+        bb.button(QDialogButtonBox.Ok).setText("Aceptar")
+        bb.button(QDialogButtonBox.Cancel).setText("Cancelar")
         bb.accepted.connect(self.accept)
         bb.rejected.connect(self.reject)
         root.addWidget(bb)

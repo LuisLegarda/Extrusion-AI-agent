@@ -14,7 +14,7 @@ from typing import Optional
 
 import pyqtgraph as pg
 from PySide6.QtCore import Qt, QTimer
-from PySide6.QtGui import QBrush, QColor, QKeySequence, QShortcut
+from PySide6.QtGui import QActionGroup, QBrush, QColor, QKeySequence, QShortcut
 from PySide6.QtWidgets import (
     QApplication, QComboBox, QFileDialog, QFrame, QGridLayout, QHBoxLayout, QHeaderView, QLabel, QLineEdit,
     QListWidget, QListWidgetItem, QMainWindow, QMessageBox, QPushButton, QScrollArea, QSplitter, QTableWidget,
@@ -22,7 +22,7 @@ from PySide6.QtWidgets import (
 )
 
 from ..fleet import FleetReader, FleetSettings, LineState, load_fleet_settings, save_fleet_settings
-from ..i18n import tr
+from ..i18n import LANGS, lang as i18n_lang, tr, translate_text
 from . import theme
 from .fleet_tiles import (CONN_TEXT, LEVEL_KEYS, LineCard, blink_timer, fmt_age, period_since, severity,
                           trend_key)
@@ -177,7 +177,7 @@ class LineDetail(QWidget):
                 self.tbl.setItem(i, c, it)
         self.lst_alarms.clear()
         for a in st.get("alarms") or []:
-            it = QListWidgetItem(f"{time.strftime('%H:%M:%S', time.localtime(a['since']))}  {a['msg']}")
+            it = QListWidgetItem(f"{time.strftime('%H:%M:%S', time.localtime(a['since']))}  {translate_text(a['msg'])}")
             it.setForeground(QBrush(QColor(theme.c(LEVEL_KEYS.get(a.get("level"), "neutral")))))
             self.lst_alarms.addItem(it)
         if not self.lst_alarms.count():
@@ -185,7 +185,8 @@ class LineDetail(QWidget):
         self.lst_events.clear()
         for e in reversed(line.events[-200:]):
             it = QListWidgetItem(f"{time.strftime('%d/%m %H:%M:%S', time.localtime(e.get('ts', 0)))}  "
-                                 f"[{e.get('level', '')}]  {e.get('msg', '')}")
+                                 f"[{tr({'WARN': 'AVISO', 'ALARM': 'ALARMA'}.get(e.get('level'), e.get('level', '')))}]  "
+                                 f"{translate_text(e.get('msg', ''))}")
             if e.get("level") in ("WARN", "ALARM"):
                 it.setForeground(QBrush(QColor(theme.c(LEVEL_KEYS[e["level"]]))))
             self.lst_events.addItem(it)
@@ -230,12 +231,15 @@ class LineDetail(QWidget):
 
 
 class FleetWindow(QMainWindow):
-    def __init__(self, folder: Optional[str], settings_file: Path):
+    def __init__(self, folder: Optional[str], settings_file: Path, state_file: Optional[Path] = None):
         super().__init__()
         self.settings_file = Path(settings_file)
+        # Idioma y tema: los mismos que el programa de monitoreo si comparten carpeta de datos.
+        self.state_file = Path(state_file) if state_file else self.settings_file.with_name("state.json")
         self.settings: FleetSettings = load_fleet_settings(self.settings_file)
-        if folder:
+        if folder and folder != self.settings.dir:
             self.settings.dir = folder
+            self._save_settings()  # la carpeta indicada al abrir queda recordada
         self.setWindowTitle(tr("Dashboard global de líneas"))
         self.resize(1500, 900)
         self.reader = FleetReader(self.settings.dir)
@@ -327,6 +331,7 @@ class FleetWindow(QMainWindow):
         self.split.setSizes([1000, 500])
         root.addWidget(self.split, 1)
         self.setCentralWidget(central)
+        self._build_menus()
 
         self.timer = QTimer(self)
         self.timer.timeout.connect(self.refresh)
@@ -342,6 +347,78 @@ class FleetWindow(QMainWindow):
         self._set_dir_label()
         self.detail.show_line(None)
         QTimer.singleShot(0, self.refresh)
+
+    # --- menús: archivo, vista, idioma y tema ------------------------------------------------
+    def _build_menus(self) -> None:
+        mb = self.menuBar()
+        m = mb.addMenu("&Archivo")
+        m.addAction("⚙ Configuración…", self.open_setup)
+        m.addAction("⤓ Exportar CSV…", self.export_csv)
+        m.addSeparator()
+        m.addAction("Salir", self.close)
+        m = mb.addMenu("&Ver")
+        m.addAction("📺 Modo TV (F11)", self.toggle_tv)
+        m.addAction("✔ Reconocer avisos", self.acknowledge_all)
+        m.addSeparator()
+        lm = m.addMenu("🌐 Idioma / Language")
+        grp = QActionGroup(lm)
+        for code, label in LANGS.items():
+            act = lm.addAction(label, lambda code=code: self._set_ui_pref("lang", code))
+            act.setCheckable(True)
+            act.setChecked(code == i18n_lang())
+            grp.addAction(act)
+        tm = m.addMenu("🎨 Tema")
+        grp2 = QActionGroup(tm)
+        for code, label in (("light", "Claro"), ("dark", "Oscuro")):
+            act = tm.addAction(tr(label), lambda code=code: self._set_ui_pref("theme", code))
+            act.setCheckable(True)
+            act.setChecked(code == theme.name())
+            grp2.addAction(act)
+
+    def _ui_state(self) -> dict:
+        try:
+            return json.loads(self.state_file.read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            return {}
+
+    def _set_ui_pref(self, key: str, value: str) -> None:
+        state = self._ui_state()
+        ui = dict(state.get("ui", {}))
+        if ui.get(key, {"lang": "es", "theme": "light"}[key]) == value:
+            return
+        ui[key] = value
+        state["ui"] = ui
+        try:
+            self.state_file.write_text(json.dumps(state, indent=2, ensure_ascii=False), encoding="utf-8")
+        except OSError:
+            pass
+        from .main_window import apply_ui_prefs
+        apply_ui_prefs(ui)
+        self.rebuild_window()
+
+    def rebuild_window(self) -> "FleetWindow":
+        """Vuelve a construir la ventana con el idioma o tema nuevos (misma carpeta y configuración)."""
+        new = FleetWindow(None, self.settings_file, self.state_file)
+        new.setGeometry(self.geometry())
+        new.cmb_sort.setCurrentIndex(self.cmb_sort.currentIndex())
+        new.cmb_filter.setCurrentIndex(self.cmb_filter.currentIndex())
+        new.plant_events = list(self.plant_events)
+        new._fill_plant_events()
+        if self.isMaximized():
+            new.showMaximized()
+        else:
+            new.show()
+        if self.selected:
+            QTimer.singleShot(100, lambda: new.select(self.selected) if self.selected in new.cards else None)
+        self.close()
+        self.deleteLater()
+        rebuilt_fleet_windows.append(new)
+        return new
+
+    def closeEvent(self, event) -> None:
+        for t in (self.timer, self.trend_timer, self.tv_timer, self.blink):
+            t.stop()
+        super().closeEvent(event)
 
     # --- configuración ---------------------------------------------------------------------
     def _set_dir_label(self) -> None:
@@ -598,7 +675,7 @@ class FleetWindow(QMainWindow):
         lines = self.reader.lines
         for e in reversed(self.plant_events[-200:]):
             name = lines[e["line_id"]].name if e["line_id"] in lines else e["line_id"]
-            msg = e.get("msg", "")
+            msg = translate_text(e.get("msg", ""))
             text = msg if msg.startswith(name) else f"{name}  ·  {msg}"
             it = QListWidgetItem(f"{time.strftime('%d/%m %H:%M:%S', time.localtime(e.get('ts', 0)))}  {text}")
             it.setData(Qt.UserRole, e["line_id"])
@@ -618,7 +695,7 @@ class FleetWindow(QMainWindow):
     # --- modo TV y exportación ---------------------------------------------------------------
     def toggle_tv(self) -> None:
         self.tv = not self.tv
-        for w in (self.top, self.detail, self.events_box):
+        for w in (self.top, self.detail, self.events_box, self.menuBar()):
             w.setVisible(not self.tv)
         if self.tv:
             self.showFullScreen()
@@ -648,7 +725,7 @@ class FleetWindow(QMainWindow):
                 "actualizado"]
         with open(path, "w", newline="", encoding="utf-8-sig") as f:
             w = csv.writer(f, delimiter=";")
-            w.writerow(cols)
+            w.writerow([tr(c) for c in cols])
             for lid in sorted(self.reader.lines, key=lambda k: natural(self.reader.lines[k].name)):
                 ln = self.reader.lines[lid]
                 st = ln.status
@@ -673,6 +750,9 @@ class FleetWindow(QMainWindow):
             QTimer.singleShot(0, lambda: self.refresh(rescan=False))
 
 
+rebuilt_fleet_windows: list = []  # referencia a la ventana nueva tras cambiar idioma o tema
+
+
 def run_fleet(folder: Optional[str], home: Optional[Path] = None) -> int:
     import logging
     import sys
@@ -693,9 +773,7 @@ def run_fleet(folder: Optional[str], home: Optional[Path] = None) -> int:
         state = {}
     apply_ui_prefs(state.get("ui", {}))
     Translator().install(app)
-    win = FleetWindow(folder, home_dir / "fleet.json")
-    if folder:
-        win._save_settings()
+    win = FleetWindow(folder, home_dir / "fleet.json", home_dir / "state.json")
     win.show()
     if not win.settings.dir:
         QTimer.singleShot(300, win.open_setup)  # primera vez: pedir la carpeta de datos
