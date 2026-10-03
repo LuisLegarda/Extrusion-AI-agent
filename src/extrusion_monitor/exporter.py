@@ -208,7 +208,8 @@ class FleetExporter:
             rows = eng.historian.oee_samples(a, now)
             samples = [OeeSample(r[0], r[1], r[2], r[3], r[4], None if r[5] is None else bool(r[5]), r[6] or 0)
                        for r in rows]
-            self._oee = compute(samples, a, now, o.microstop_s, o.length_factor)
+            self._oee = compute(samples, a, now, o.microstop_s, o.length_factor,
+                                planned=eng.historian.planned_intervals(a, now))
             self._oee_at = now
         return self._oee
 

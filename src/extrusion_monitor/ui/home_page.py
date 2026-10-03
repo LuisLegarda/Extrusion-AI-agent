@@ -403,7 +403,8 @@ class HomePage(QWidget):
         rows = eng.historian.oee_samples(a, now)
         samples = [OeeSample(r[0], r[1], r[2], r[3], r[4], None if r[5] is None else bool(r[5]), r[6] or 0)
                    for r in rows]
-        res = compute(samples, a, now, o.microstop_s, o.length_factor)
+        res = compute(samples, a, now, o.microstop_s, o.length_factor,
+                      planned=eng.historian.planned_intervals(a, now))
         self.oee = res
 
         def pc(v):

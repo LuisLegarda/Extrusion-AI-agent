@@ -343,6 +343,55 @@ class DockSettings(BaseModel):
         return self.thickness < DOCK_CHART_MIN
 
 
+class ProblemReason(BaseModel):
+    id: str
+    name: str
+
+
+class ProblemCategory(BaseModel):
+    """Categoría del catálogo (primer nivel) con sus causas o defectos (segundo nivel)."""
+
+    id: str
+    name: str
+    planned: bool = False  # paro planeado (cambio, comida…): no cuenta contra la Disponibilidad del OEE
+    reasons: list[ProblemReason] = Field(default_factory=list)
+
+
+def _cat(cid: str, name: str, reasons: list[str], planned: bool = False) -> ProblemCategory:
+    return ProblemCategory(id=cid, name=name, planned=planned,
+                           reasons=[ProblemReason(id=f"{cid}_{i}", name=r) for i, r in enumerate(reasons, 1)])
+
+
+def default_downtime_catalog() -> list[ProblemCategory]:
+    return [_cat("mec", "Mecánico", ["Rotura de material", "Atasco", "Falla de husillo", "Falla de jalador"]),
+            _cat("ele", "Eléctrico / control", ["Falla de calefacción", "Falla de motor", "Falla de sensor"]),
+            _cat("mat", "Material", ["Falta de compuesto", "Material húmedo", "Cambio de carrete"]),
+            _cat("ajuste", "Ajuste de proceso", ["Arranque / estabilización", "Ajuste de dimensiones"]),
+            _cat("cambio", "Cambio de producto", ["Cambio de receta", "Cambio de dado / punta"], planned=True),
+            _cat("prog", "Paro programado", ["Comida / descanso", "Mantenimiento programado", "Junta / capacitación"],
+                 planned=True)]
+
+
+def default_defect_catalog() -> list[ProblemCategory]:
+    return [_cat("dim", "Dimensional", ["Diámetro fuera de tolerancia", "Excentricidad", "Espesor de aislamiento"]),
+            _cat("sup", "Superficie", ["Burbujas / porosidad", "Grumos", "Rayas", "Quemado"]),
+            _cat("ele_d", "Eléctrico", ["Falla de chispa (spark)", "Capacitancia fuera"]),
+            _cat("otros", "Otros", ["Color incorrecto", "Marcado / impresión"])]
+
+
+class ProblemSettings(BaseModel):
+    """Problemas de proceso: catálogos de causas de paro y de defectos de calidad, y operadores."""
+
+    downtime: list[ProblemCategory] = Field(default_factory=default_downtime_catalog)
+    defects: list[ProblemCategory] = Field(default_factory=default_defect_catalog)
+    operators: list[str] = Field(default_factory=list)
+    prompt: bool = True  # al reanudar la línea, avisar para clasificar el paro
+    prompt_min_s: float = Field(120.0, ge=0, le=86400)  # solo paros de al menos este tiempo
+
+    def category(self, kind: str, cid: str) -> Optional[ProblemCategory]:
+        return next((c for c in (self.downtime if kind == "downtime" else self.defects) if c.id == cid), None)
+
+
 class AppConfig(BaseModel):
     version: int = CONFIG_VERSION
     machine_name: str = "Línea de extrusión"
@@ -356,6 +405,7 @@ class AppConfig(BaseModel):
     reports: list[ReportDef] = Field(default_factory=list)
     home: HomeSettings = Field(default_factory=HomeSettings)
     dock: DockSettings = Field(default_factory=DockSettings)
+    problems: ProblemSettings = Field(default_factory=ProblemSettings)
 
     @model_validator(mode="after")
     def _migrate_tour(self) -> "AppConfig":

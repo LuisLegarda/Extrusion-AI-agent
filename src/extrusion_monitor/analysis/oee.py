@@ -55,6 +55,7 @@ class OeeResult:
     planned_s: float = 0.0
     run_s: float = 0.0
     stop_s: float = 0.0
+    planned_stop_s: float = 0.0  # detenido en paros planeados (no cuenta contra la Disponibilidad)
     unknown_s: float = 0.0
     n_stops: int = 0
     n_microstops: int = 0
@@ -84,9 +85,19 @@ def classify(speed: Optional[float], nominal: Optional[float], stop_threshold: f
     return RUNNING
 
 
+def _overlap(a: float, b: float, spans) -> float:
+    return sum(max(0.0, min(b, e) - max(a, s)) for s, e in spans)
+
+
 def compute(samples: list[OeeSample], start: float, end: float, microstop_s: float,
-            length_factor: float = 1.0, blip_s: float = 8.0) -> OeeResult:
-    """KPIs del periodo. `length_factor` convierte velocidad a longitud por minuto (m/min = 1)."""
+            length_factor: float = 1.0, blip_s: float = 8.0, planned=()) -> OeeResult:
+    """KPIs del periodo. `length_factor` convierte velocidad a longitud por minuto (m/min = 1).
+
+    `planned`: tramos de paro planeado capturados por el operador (cambio de producto, comida…). El
+    tiempo detenido dentro de ellos no cuenta como paro ni como tiempo planificado (no baja la
+    Disponibilidad).
+    """
+    planned = [(a, b) for a, b in planned if b > start and a < end]
     res = OeeResult(start=start, end=end)
     rows = [s for s in samples if start <= s.ts <= end]
     if not rows:
@@ -137,7 +148,9 @@ def compute(samples: list[OeeSample], start: float, end: float, microstop_s: flo
         if s.overall < 2:
             normal_time += s.dt
         if state == STOPPED:
-            res.stop_s += s.dt
+            p = _overlap(s.ts - s.dt, s.ts, planned) if planned else 0.0
+            res.planned_stop_s += p
+            res.stop_s += s.dt - p
             continue
         res.run_s += s.dt
         speed = s.speed or 0.0
@@ -150,7 +163,9 @@ def compute(samples: list[OeeSample], start: float, end: float, microstop_s: flo
             run_nominal += s.nominal * s.dt
             speed_time += s.dt
     res.planned_s = res.run_s + res.stop_s
-    res.n_stops = sum(1 for iv in raw if iv.state == STOPPED)
+    # Un paro cubierto casi por completo por paros planeados no cuenta como paro.
+    res.n_stops = sum(1 for iv in raw if iv.state == STOPPED
+                      and _overlap(iv.start, iv.end, planned) < 0.9 * iv.duration)
     res.n_microstops = sum(1 for iv in raw if iv.state == MICROSTOP)
     if res.planned_s > 0:
         res.availability = res.run_s / res.planned_s
