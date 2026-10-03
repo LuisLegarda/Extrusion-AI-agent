@@ -297,3 +297,34 @@ def find_usb_cameras(max_index: int = 5) -> list[int]:
         finally:
             cap.release()
     return found
+
+
+def grab_for_setup(manager: Optional[CameraManager], s: CameraSettings, stage: str = "final") -> np.ndarray:
+    """Cuadro para el configurador con los ajustes `s` (aunque aún no se hayan guardado).
+
+    stage: «raw» (tal cual), «rotated» (rotado, sin perspectiva: ahí se marcan las esquinas) o «final».
+    Si el motor ya tiene abierta esa cámara se usa su último cuadro (Windows no deja abrirla dos veces).
+    """
+    feed = None
+    if manager is not None:
+        feed = manager.feeds.get(s.id)
+        if feed is None or feed.settings.device != s.device:
+            feed = next((f for f in manager.feeds.values() if f.settings.device == s.device), None)
+    same = feed is not None and (feed.settings.device, feed.settings.width, feed.settings.height,
+                                 feed.settings.exposure) == (s.device, s.width, s.height, s.exposure)
+    if same:
+        if not feed.running:
+            feed.poll()
+        with feed.lock:
+            raw = None if feed.raw is None else feed.raw.copy()
+        if raw is None:
+            raise CameraUnavailable(feed.error or "sin imagen")
+    else:
+        if feed is not None:
+            feed._close()  # libera el dispositivo para abrirlo con los ajustes nuevos
+        raw = grab_once(s, raw=True)
+    if stage == "raw":
+        return raw
+    if stage == "rotated":
+        return process(raw, s.model_copy(update={"warp": None}))
+    return process(raw, s)

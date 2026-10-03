@@ -14,6 +14,7 @@ Por eso sirve para cualquier línea de extrusión.
 | Función | Detalle |
 |---|---|
 | Lectura en vivo | Captura la pantalla del HMI y lee con OCR las regiones configuradas. Se puede usar el OCR integrado de Windows, plantillas enseñadas o Tesseract. |
+| Cámaras (equipos sin HMI) | Para equipos antiguos o sin pantalla que se pueda capturar, una cámara USB o IP (RTSP / HTTP) mira el tablero. Lee **displays de 7 segmentos** (LED o LCD, con dígitos inclinados, punto decimal y signo), **luces y torres andon** por color (incluido *«Ámbar parpadeando»*), **agujas** de manómetros y carátulas (calibración con 3 clics: centro, mínimo y máximo), **barras de nivel** y, con OCR, cualquier texto. Admite rotación, corrección de perspectiva (4 clics sobre las esquinas) y exposición manual. Se combinan pantalla y cámaras en la misma línea, y todo lo leído funciona igual que lo del HMI: recetas, alarmas, tendencias, OEE, reportes y dashboard. Si la cámara se desconecta avisa una vez, conserva los últimos datos y se reconecta sola. *Receta → 📹 Cámaras*. |
 | Pestañas del HMI | Árbol libre de componente → pestaña → sub-pestaña. Una imagen ancla (forma y color) identifica cada pestaña, y sus variables se leen cuando está visible. |
 | Recorridos | Macros de uno o varios pasos grabadas en vivo, con clics verificados. Pueden leer cada pantalla y regresar. Se disparan cada X tiempo, si el HMI queda X tiempo fuera de una pantalla, si un selector cambia de estado o si un valor baja a cero. Opcionalmente muestran un aviso con cuenta regresiva: el operador puede posponer (vuelve a avisar tras X tiempo), y si lo ignora o acepta, se ejecuta. |
 | Variables con fórmula | Variables calculadas a partir de otras: `vel / rpm`, `{zona_1} - {zona_1_sp}`, `max(z1, z2, z3) - min(z1, z2, z3)`, `si(rpm > 0, vel / rpm, 0)`. Se tratan como una medición más: receta, tolerancias, tendencias, reportes. |
@@ -110,6 +111,16 @@ Configuración inicial en el HMI:
 8. **▶ Iniciar.**
 
 Los datos se guardan en `%LOCALAPPDATA%\ExtrusionMonitor`. Para usar el modo portátil, crea una carpeta `data` junto al `.exe`.
+
+### Cámaras: consejos de instalación
+
+- **Montaje:** la cámara debe quedar fija y lo más de frente posible. Si queda inclinada, usa *Corregir perspectiva*.
+- **Luz:** constante y sin reflejos sobre el vidrio del tablero.
+- **Displays LED:** con exposición manual se ven más nítidos. Con la automática se «queman».
+- **Resolución:** cada dígito debe medir al menos ~20 px de alto en la imagen.
+- **Luces:** enseña el estado apagado y el encendido (*Capturar estado actual como…*).
+- **Torres andon:** marca toda la torre con *+ Torre andon…* y se crea una luz por color.
+- **Modo demo:** incluye la cámara simulada «Cámara del tablero», con andon, display LED, LCD, manómetro y barra.
 
 ## Construir el .exe
 
