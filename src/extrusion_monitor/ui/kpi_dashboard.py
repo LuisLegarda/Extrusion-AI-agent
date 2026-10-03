@@ -327,8 +327,9 @@ class KpiDashboard(QWidget):
         a, b = self._period(now)
         span = b - a
         samples = self._samples(a - span, b)  # incluye el periodo anterior
-        res = compute(samples, a, b, o.microstop_s, o.length_factor)
-        prev = compute(samples, a - span, a, o.microstop_s, o.length_factor)
+        planned = self.engine.historian.planned_intervals(a - span, b)
+        res = compute(samples, a, b, o.microstop_s, o.length_factor, planned=planned)
+        prev = compute(samples, a - span, a, o.microstop_s, o.length_factor, planned=planned)
         spark = sparkline(samples, a, b, o.microstop_s, o.length_factor)
         self.result = res
         fmt = "%d/%m %H:%M"
