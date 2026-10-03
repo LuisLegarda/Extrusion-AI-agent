@@ -31,6 +31,9 @@ class AppContext:
 def build(home: Optional[Path] = None, demo: bool = False, source: Optional[FrameSource] = None,
           clock=None, sleep=None) -> AppContext:
     ws = Workspace(home)
+    if not demo:
+        from .backup import auto_backup
+        auto_backup(ws.home)  # antes de cargar (y migrar) la configuración
     if demo:
         demo_source = setup_demo(ws)
         source = source or demo_source

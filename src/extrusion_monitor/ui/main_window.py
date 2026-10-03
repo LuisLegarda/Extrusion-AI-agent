@@ -14,6 +14,7 @@ from PySide6.QtWidgets import (
     QTableWidgetItem, QTabWidget, QToolButton, QVBoxLayout, QWidget,
 )
 
+from .. import version_label
 from ..analysis.rules import Level
 from ..bootstrap import AppContext, make_clicker, make_ocr
 from ..capture import ScreenSource
@@ -301,6 +302,9 @@ class MainWindow(QMainWindow):
         m.addAction("📂 Abrir carpeta de reportes", self._open_reports_dir)
         m.addAction("📂 Abrir carpeta de datos", lambda: self._open_dir(self.ctx.workspace.home))
         m.addSeparator()
+        m.addAction("🛟 Crear respaldo de la configuración", self._backup_now)
+        m.addAction("📂 Abrir carpeta de respaldos", self._open_backups)
+        m.addSeparator()
         act = m.addAction("Salir", self.close)
         act.setShortcut("Ctrl+Q")
 
@@ -495,6 +499,20 @@ class MainWindow(QMainWindow):
         d.mkdir(parents=True, exist_ok=True)
         QDesktopServices.openUrl(QUrl.fromLocalFile(str(d)))
 
+    def _backup_now(self) -> None:
+        from ..backup import create_backup, prune
+        try:
+            out = create_backup(self.ctx.workspace.home, "manual")
+            prune(self.ctx.workspace.home)
+        except OSError as e:
+            QMessageBox.warning(self, "Respaldo", f"{tr('No se pudo crear el respaldo')}: {e}")
+            return
+        QMessageBox.information(self, "Respaldo", f"{tr('Respaldo creado')}:\n{out}")
+
+    def _open_backups(self) -> None:
+        from ..backup import backups_dir
+        self._open_dir(backups_dir(self.ctx.workspace.home))
+
     def _open_url(self, url: str) -> None:
         QDesktopServices.openUrl(QUrl(url))
 
@@ -502,9 +520,10 @@ class MainWindow(QMainWindow):
         self.showNormal() if self.isFullScreen() else self.showFullScreen()
 
     def _about(self) -> None:
-        QMessageBox.about(self, "Acerca de", "<b>Monitor de extrusión</b><br>Verificación de parámetros, recetas, "
+        QMessageBox.about(self, "Acerca de", tr("<b>Monitor de extrusión</b><br>Verificación de parámetros, recetas, "
                                              "tendencias, KPI/OEE y reportes a partir de la pantalla del HMI.<br>"
                                              "Solo lee la pantalla: no modifica el PLC ni el software del fabricante.")
+                          + f"<br><br>{tr('Versión')}: {version_label()}")
 
     def _update_title(self) -> None:
         demo = tr(" — MODO DEMO (HMI simulado)") if self.ctx.demo else ""

@@ -666,6 +666,10 @@ EN: dict[str, str] = {
     "Nombre de la pestaña:": "Tab name:", "Nombre de la variable (p. ej. «Cylinder 1»):": "Variable name (e.g. “Cylinder 1”):",
     "Lectura débil: ajusta la región (solo el número, sin la unidad).":
         "Weak reading: adjust the region (the number only, without the unit).",
+    # --- versiones y respaldos ---
+    "Versión": "Version", "🛟 Crear respaldo de la configuración": "🛟 Back up the configuration",
+    "📂 Abrir carpeta de respaldos": "📂 Open backups folder", "Respaldo": "Backup", "Respaldo creado": "Backup created",
+    "No se pudo crear el respaldo": "The backup could not be created",
 }
 
 # Textos con valores: la clave es la plantilla en español («{}» = valor) y el resultado su traducción.

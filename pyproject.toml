@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "extrusion-monitor"
-version = "0.1.0"
+dynamic = ["version"]  # se toma de src/extrusion_monitor/__init__.py
 description = "Verificación de parámetros, recetas y tendencias para líneas de extrusión mediante lectura de pantalla del HMI"
 readme = "README.md"
 requires-python = ">=3.10"
@@ -32,6 +32,9 @@ dev = ["pytest>=7", "pyinstaller>=6.3"]
 
 [project.scripts]
 extrusion-monitor = "extrusion_monitor.app:main"
+
+[tool.setuptools.dynamic]
+version = {attr = "extrusion_monitor.__version__"}
 
 [tool.setuptools.packages.find]
 where = ["src"]

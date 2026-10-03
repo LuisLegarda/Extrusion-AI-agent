@@ -11,3 +11,6 @@ dist/
 
 # graphify: grafo local de cada equipo (se regenera; no se sube)
 graphify-out/
+
+# lo genera GitHub Actions al construir (canal, commit, fecha)
+src/extrusion_monitor/_build.py

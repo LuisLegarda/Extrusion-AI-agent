@@ -1,25 +1,56 @@
+# Pruebas + ejecutable de Windows. Canales (ver docs/DESARROLLO.md):
+#   etiqueta vX.Y.Z  -> versión ESTABLE permanente (release "vX.Y.Z", queda como respaldo para siempre)
+#   rama develop     -> versión de PRUEBA para el HMI (release "dev", se reemplaza en cada push)
+#   otras ramas / PR -> solo pruebas y el .zip como artefacto de Actions (no cambia ninguna descarga)
 name: Build Windows
 
 on:
   push:
     branches: ["**"]
+    tags: ["v*"]
   pull_request:
   workflow_dispatch:
+
+concurrency:  # dos pushes seguidos a la misma rama: gana el último (las etiquetas nunca se cancelan)
+  group: build-${{ github.ref }}
+  cancel-in-progress: ${{ !startsWith(github.ref, 'refs/tags/') }}
 
 jobs:
   build:
     runs-on: windows-latest
     permissions:
-      contents: write  # publicar el ejecutable como release "dev"
+      contents: write  # publicar las descargas
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
           python-version: "3.11"
-      - name: Instalar dependencias
+      - name: Canal y versión
+        id: info
+        shell: bash
+        run: |
+          version=$(python -c "import ast,re;s=open('src/extrusion_monitor/__init__.py',encoding='utf-8').read();print(re.search(r'__version__ = \"(.+?)\"',s).group(1))")
+          if [[ "$GITHUB_REF" == refs/tags/v* ]]; then
+            channel=estable
+            if [[ "${GITHUB_REF_NAME}" != "v${version}" ]]; then
+              echo "::error::La etiqueta ${GITHUB_REF_NAME} no coincide con __version__ = ${version}"; exit 1
+            fi
+            grep -q "^## \[${version}\]" CHANGELOG.md || { echo "::error::Falta la sección [${version}] en CHANGELOG.md"; exit 1; }
+          elif [[ "$GITHUB_REF" == refs/heads/develop && "$GITHUB_EVENT_NAME" == push ]]; then
+            channel=prueba
+          else
+            channel=rama
+          fi
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "channel=$channel" >> "$GITHUB_OUTPUT"
+          ref="${GITHUB_HEAD_REF:-$GITHUB_REF_NAME}"
+          printf 'BUILD = {"channel": "%s", "ref": "%s", "commit": "%s", "date": "%s"}\n' \
+            "$channel" "$ref" "${GITHUB_SHA::7}" "$(date -u +%Y-%m-%d)" > src/extrusion_monitor/_build.py
+          echo "Versión $version · canal $channel · $ref ${GITHUB_SHA::7}"
+      - name: Instalar dependencias (versiones fijas)
         run: |
           python -m pip install --upgrade pip
-          pip install -e .[dev]
+          pip install -c packaging/constraints-windows.txt -e .[dev]
       - name: Pruebas
         env:
           QT_QPA_PLATFORM: offscreen
@@ -31,16 +62,29 @@ jobs:
           Compress-Archive -Path dist/ExtrusionMonitor -DestinationPath ExtrusionMonitor-windows.zip
       - uses: actions/upload-artifact@v4
         with:
-          name: ExtrusionMonitor-windows
-          path: dist/ExtrusionMonitor
-      - name: Publicar descarga (release "dev")
-        if: github.event_name == 'push'
+          name: ExtrusionMonitor-windows-${{ steps.info.outputs.channel }}-${{ github.sha }}
+          path: ExtrusionMonitor-windows.zip
+          retention-days: 30
+      - name: Publicar versión de prueba (release "dev")
+        if: steps.info.outputs.channel == 'prueba'
         shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          notes="Versión de prueba generada automáticamente desde la rama ${GITHUB_REF_NAME} (commit ${GITHUB_SHA::7}).
-          Descomprime el .zip y ejecuta ExtrusionMonitor\\ExtrusionMonitor.exe (usa --demo para el HMI simulado)."
+          notes="Versión de PRUEBA ${{ steps.info.outputs.version }} generada desde develop (commit ${GITHUB_SHA::7}).
+          Para producción usa la última versión estable. Descomprime el .zip encima de la carpeta actual
+          (se conservan tus datos) y ejecuta ExtrusionMonitor\\ExtrusionMonitor.exe (--demo para el HMI simulado)."
           gh release delete dev --yes --cleanup-tag || true
           gh release create dev ExtrusionMonitor-windows.zip --prerelease --target "$GITHUB_SHA" \
-            --title "Monitor de extrusión (versión de prueba)" --notes "$notes"
+            --title "Versión de prueba (develop)" --notes "$notes"
+      - name: Publicar versión estable
+        if: steps.info.outputs.channel == 'estable'
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          v="${{ steps.info.outputs.version }}"
+          cp ExtrusionMonitor-windows.zip "ExtrusionMonitor-v${v}-windows.zip"
+          awk -v v="$v" '$0 ~ "^## \\[" v "\\]" {on=1; next} /^## \[/ {on=0} on' CHANGELOG.md > notes.md
+          gh release create "v${v}" "ExtrusionMonitor-v${v}-windows.zip" ExtrusionMonitor-windows.zip \
+            --verify-tag --latest --title "Monitor de extrusión v${v}" --notes-file notes.md

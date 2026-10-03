@@ -21,6 +21,7 @@ from PySide6.QtWidgets import (
     QTableWidgetItem, QTabWidget, QVBoxLayout, QWidget,
 )
 
+from .. import version_label
 from ..fleet import FleetReader, FleetSettings, LineState, load_fleet_settings, save_fleet_settings
 from ..i18n import LANGS, lang as i18n_lang, tr, translate_text
 from . import theme
@@ -404,9 +405,10 @@ class FleetWindow(QMainWindow):
         QShortcut(QKeySequence("Ctrl+K"), self, activated=self.acknowledge_all)  # reconocer avisos
 
     def _about(self) -> None:
-        QMessageBox.about(self, "Acerca de", "<b>Dashboard global de líneas</b><br>Estado, indicadores y alarmas de "
+        QMessageBox.about(self, "Acerca de", tr("<b>Dashboard global de líneas</b><br>Estado, indicadores y alarmas de "
                                              "todas las líneas a partir de la carpeta de datos compartida.<br>Solo lee "
                                              "los archivos que publican las líneas: no modifica nada en ellas.")
+                          + f"<br><br>{tr('Versión')}: {version_label()}")
 
     def _ui_state(self) -> dict:
         try:
