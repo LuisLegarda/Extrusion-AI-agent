@@ -670,6 +670,89 @@ EN: dict[str, str] = {
     "Versión": "Version", "🛟 Crear respaldo de la configuración": "🛟 Back up the configuration",
     "📂 Abrir carpeta de respaldos": "📂 Open backups folder", "Respaldo": "Backup", "Respaldo creado": "Backup created",
     "No se pudo crear el respaldo": "The backup could not be created",
+    # --- cámaras e indicadores físicos ---
+    "Fuente:": "Source:", "Fuente": "Source", "📹 Cámaras…": "📹 Cameras…", "📷 Capturar": "📷 Capture",
+    "Pantalla del HMI o una cámara que mira el tablero del equipo": "HMI screen or a camera looking at the machine panel",
+    "Agregar o ajustar cámaras (USB o IP) para equipos sin pantalla legible":
+        "Add or adjust cameras (USB or IP) for machines without a readable screen",
+    "🖥 Pantalla del HMI": "🖥 HMI screen", "cámara": "camera", "Cámara": "Camera", "Cámaras": "Cameras",
+    "Lectura": "Reading", "Probar lectura": "Test reading", "Indicadores físicos:": "Physical indicators:",
+    "+ Luz / LED": "+ Light / LED", "+ Torre andon…": "+ Andon tower…", "+ Display 7 seg.": "+ 7-seg display",
+    "+ Aguja": "+ Needle", "+ Barra de nivel": "+ Level bar",
+    "Luz piloto, LED o una luz de torre andon: se reconoce por su color (y si parpadea)":
+        "Pilot light, LED or an andon tower light: recognized by its color (and whether it blinks)",
+    "Marca toda la torre: se crea una luz por cada color": "Mark the whole tower: one light is created per color",
+    "Display de 7 segmentos de un controlador, sensor o contador (LED o LCD)":
+        "7-segment display of a controller, sensor or counter (LED or LCD)",
+    "Manómetro, termómetro de carátula o tacómetro": "Pressure gauge, dial thermometer or tachometer",
+    "Bargraph de LED o indicador de nivel": "LED bargraph or level indicator",
+    "Texto / números (OCR)": "Text / numbers (OCR)", "Display de 7 segmentos (LED o LCD)": "7-segment display (LED or LCD)",
+    "Aguja (manómetro, carátula)": "Needle (gauge, dial)", "Barra de nivel / bargraph": "Level bar / bargraph",
+    "display 7 seg.": "7-seg display", "aguja": "needle", "barra de nivel": "level bar", "luz / andon": "light / andon",
+    "Reconocer": "Recognize", "Por imagen (forma y color)": "By image (shape and color)",
+    "Por color (luz, LED, andon)": "By color (light, LED, andon)",
+    "Por color tolera mejor los cambios de luz de una cámara y detecta el parpadeo":
+        "By color copes better with a camera's lighting changes and detects blinking",
+    "Detectar parpadeo (agrega «… parpadeando»)": "Detect blinking (adds “… blinking”)",
+    "Ventana de parpadeo": "Blink window",
+    "Ventana para decidir si parpadea (al menos dos encendidos y apagados)":
+        "Window used to decide whether it blinks (at least two on/off changes)",
+    "Display de 7 segmentos": "7-segment display", "Dígitos": "Digits", "automático": "automatic",
+    "automática": "automatic", "Tipo de display": "Display type", "segmentos encendidos (LED)": "lit segments (LED)",
+    "segmentos oscuros (LCD)": "dark segments (LCD)", "Inclinación": "Slant",
+    "Marca solo los dígitos (sin unidades ni marco). Si el punto decimal no se ve, indica los decimales y activa «Reinsertar punto decimal».":
+        "Mark only the digits (no units or frame). If the decimal point is not visible, set the decimals and enable “Reinsert decimal point”.",
+    "Aguja": "Needle", "🎯 Calibrar: centro, mínimo y máximo (3 clics)": "🎯 Calibrate: center, minimum and maximum (3 clicks)",
+    "Calibración": "Calibration", "Valor en la marca mínima": "Value at the minimum mark",
+    "Valor en la marca máxima": "Value at the maximum mark", "aguja oscura": "dark needle", "aguja clara": "light needle",
+    "Barra de nivel": "Level bar", "Dirección": "Direction", "sube (de abajo hacia arriba)": "rises (bottom to top)",
+    "baja": "falls", "hacia la derecha": "to the right", "hacia la izquierda": "to the left", "Valor vacío": "Empty value",
+    "Valor lleno": "Full value", "Relleno": "Fill", "lo lleno es claro / encendido": "filled part is bright / lit",
+    "lo lleno es oscuro": "filled part is dark", "lista": "ready", "sin calibrar": "not calibrated",
+    "Nueva luz / LED": "New light / LED", "Nuevo display de 7 segmentos": "New 7-segment display",
+    "Nueva aguja": "New needle", "Nueva barra de nivel": "New level bar", "Nombre:": "Name:",
+    "Torre andon": "Andon tower", "Colores de arriba hacia abajo, separados por coma:":
+        "Colors from top to bottom, separated by commas:", "Rojo, Ámbar, Verde": "Red, Amber, Green",
+    "Ahora enseña sus colores: con la luz apagada pulsa «Capturar estado actual como…» → «Apagado»; enciéndela y repite con su color.":
+        "Now teach its colors: with the light off press “Capture current state as…” → “Off”; turn it on and repeat with its color.",
+    "Torre creada. Enseña cada luz: «Capturar estado actual como…» con la luz apagada («Apagado») y encendida (su color).":
+        "Tower created. Teach each light: “Capture current state as…” with the light off (“Off”) and on (its color).",
+    "① Clic en el CENTRO (eje) de la aguja · Esc para cancelar": "① Click the CENTER (pivot) of the needle · Esc to cancel",
+    "② Clic en la marca del valor MÍNIMO de la escala": "② Click the MINIMUM value mark of the scale",
+    "③ Clic en la marca del valor MÁXIMO": "③ Click the MAXIMUM value mark",
+    "Enseña al menos dos estados: apagado y encendido.": "Teach at least two states: off and on.",
+    "Estado detectado": "Detected state", "distancia de color": "color distance",
+    "El parpadeo se detecta durante el monitoreo (varios cuadros por segundo).":
+        "Blinking is detected while monitoring (several frames per second).",
+    "Display": "Display", "confianza": "confidence", "inclinación": "slant", "segmentos encendidos": "lit segments",
+    "segmentos oscuros": "dark segments",
+    "Ajusta la región para que cubra solo los dígitos, con poco margen.":
+        "Adjust the region so it covers only the digits, with a small margin.",
+    "Calibra la aguja: centro, marca mínima y marca máxima.": "Calibrate the needle: center, minimum mark and maximum mark.",
+    "Nivel no distinguible": "Level cannot be distinguished", "Nivel": "Level", "Cámara sin imagen": "Camera without image",
+    "📹 Cámaras (equipos sin pantalla)…": "📹 Cameras (machines without a screen)…",
+    "Usa una cámara cuando el equipo no tiene una pantalla que se pueda capturar: displays de 7 segmentos o LCD, luces, torres andon, manómetros o barras de nivel. Colócala fija y de frente, con luz constante y sin reflejos; luego marca las variables sobre su imagen en el configurador.":
+        "Use a camera when the machine has no screen that can be captured: 7-segment or LCD displays, lights, andon towers, gauges or level bars. Mount it fixed and facing the panel, with steady light and no glare; then mark the variables on its image in the configurator.",
+    "+ Agregar": "+ Add", "Quitar": "Remove", "🔍 Buscar cámaras USB": "🔍 Find USB cameras", "Resolución": "Resolution",
+    "Automática": "Automatic", "Rotación": "Rotation", "Exposición manual": "Manual exposure", "Análisis": "Analysis",
+    " cuadros/s": " frames/s", "⬚ Corregir perspectiva (4 clics)": "⬚ Correct perspective (4 clicks)",
+    "Quitar corrección": "Remove correction", "▶ Vista en vivo": "▶ Live view", "📷 Tomar imagen": "📷 Take image",
+    "Imagen de la cámara (rotada):": "Camera image (rotated):",
+    "Resultado (sobre esta imagen se marcan las variables):": "Result (variables are marked on this image):",
+    "Si la cámara no está de frente: haz clic en las 4 esquinas del tablero o display y la imagen se endereza":
+        "If the camera is not facing the panel: click the 4 corners of the panel or display and the image is straightened",
+    "Los LED y displays brillantes se «queman» con la exposición automática: baja la exposición hasta que los segmentos se vean nítidos.":
+        "LEDs and bright displays get “burned out” with automatic exposure: lower the exposure until the segments look sharp.",
+    "En cámaras USB de Windows suele ir de -13 (muy oscura) a -1 (clara)":
+        "On Windows USB cameras it usually ranges from -13 (very dark) to -1 (bright)",
+    "Número de la cámara USB (0, 1…), dirección de una cámara IP (rtsp://usuario:clave@ip:554/…, http://ip/video) o «demo» (tablero simulado)":
+        "USB camera number (0, 1…), IP camera address (rtsp://user:password@ip:554/…, http://ip/video) or “demo” (simulated panel)",
+    "Buscando cámaras USB…": "Searching for USB cameras…", "Cámaras USB encontradas: ": "USB cameras found: ",
+    "ninguna": "none", "Sin imagen": "No image", "perspectiva corregida": "perspective corrected", "Imagen": "Image",
+    "Haz clic en la esquina": "Click the corner", "superior izquierda": "top left", "superior derecha": "top right",
+    "inferior derecha": "bottom right", "inferior izquierda": "bottom left", "Quitar cámara": "Remove camera",
+    "Apagado": "Off", "Cámara del tablero": "Panel camera", "luz sin colores enseñados": "light without taught colors",
+    "aguja no encontrada": "needle not found", "nivel no distinguible": "level cannot be distinguished",
 }
 
 # Textos con valores: la clave es la plantilla en español («{}» = valor) y el resultado su traducción.
@@ -795,4 +878,13 @@ EN_PATTERNS: dict[str, str] = {
     "Se detectaron {} caracteres en la imagen pero el texto tiene {}. Ajusta la región o el umbral.":
         "{} characters were detected in the image but the text has {}. Adjust the region or the threshold.",
     "No se pudo leer la imagen {}": "The image {} could not be read",
+    # --- cámaras ---
+    "Cámara «{}» sin imagen: {}. Se conservan los últimos datos.": "Camera “{}” without image: {}. The last data is kept.",
+    "Cámara «{}» con imagen de nuevo: se reanuda la lectura": "Camera “{}” has an image again: reading resumes",
+    "cámara sin imagen: {}": "camera without image: {}", "display ilegible («{}»)": "unreadable display (“{}”)",
+    "no numérico («{}»)": "not numeric (“{}”)", "color no reconocido (más cercano «{}» {})":
+        "color not recognized (closest “{}” {})", "{} parpadeando": "{} blinking",
+    "error de lectura: {}": "reading error: {}", "{}: la cámara '{}' no existe": "{}: the camera '{}' does not exist",
+    "«{}»: calibra la aguja (centro, mínimo y máximo)": "“{}”: calibrate the needle (center, minimum and maximum)",
+    "«{}» tiene {} variables. Se quitarán también.\n¿Continuar?": "“{}” has {} variables. They will be removed too.\nContinue?",
 }

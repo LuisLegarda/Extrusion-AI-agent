@@ -313,7 +313,7 @@ class ReportTab(QWidget):
             st = QComboBox()
             st.addItem("cualquier estado", None)
             var = cfg.variable(tr.var_id) if tr.var_id else None
-            for s in (var.states if var else []):
+            for s in (var.state_names if var else []):
                 st.addItem(s, s)
             st.setCurrentIndex(max(0, st.findData(tr.state)))
             st.currentIndexChanged.connect(lambda _=0, tr=tr, w=st: self._set(tr, "state", w.currentData()))

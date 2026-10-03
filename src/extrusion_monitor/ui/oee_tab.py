@@ -123,7 +123,7 @@ class OeeTab(QWidget):
     def _fill_states(self) -> None:
         v = self.dlg.config.variable(self.cmb_qsel.currentData()) if self.cmb_qsel.currentData() else None
         self.cmb_qstate.clear()
-        for st in (v.states if v else []):
+        for st in (v.state_names if v else []):
             self.cmb_qstate.addItem(st, st)
 
     def commit(self) -> list[str]:

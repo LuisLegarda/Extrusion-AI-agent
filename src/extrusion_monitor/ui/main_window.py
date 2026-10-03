@@ -321,6 +321,7 @@ class MainWindow(QMainWindow):
                            ("Reportes automáticos…", "Reportes"),
                            ("Lectura y análisis (general)…", "General")):
             m.addAction(label, lambda tab=tab: self.open_setup(tab))
+        m.addAction("📹 Cámaras (equipos sin pantalla)…", lambda: self.open_setup(cameras=True))
         m.addAction("🧠 Comportamiento (entrenar)…", self.open_behavior)
         m.addAction("✎ Tablero de Inicio…", self.open_home_config)
         m.addAction("▭ Dock al minimizar…", self.open_dock_config)
@@ -639,7 +640,7 @@ class MainWindow(QMainWindow):
             self.engine.start()
             self.act_run.setText(tr("■ Detener monitoreo"))
 
-    def open_setup(self, tab: Optional[str] = None) -> None:
+    def open_setup(self, tab: Optional[str] = None, cameras: bool = False) -> None:
         from .setup_dialog import SetupDialog
         was_running = self.engine.running
         # Durante la configuración el monitoreo (y su recorrido con clics) se detiene.
@@ -650,6 +651,8 @@ class MainWindow(QMainWindow):
                 if dlg.tabs.tabText(i) == tab:
                     dlg.tabs.setCurrentIndex(i)
                     break
+        if cameras:
+            QTimer.singleShot(0, dlg._open_cameras)
         accepted = dlg.exec()
         if accepted:
             if not self.ctx.demo and dlg.config.general.monitor != self.ctx.config.general.monitor:

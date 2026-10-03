@@ -142,7 +142,7 @@ class RecipeDialog(QDialog):
             if var.kind == "selector":
                 exp = QComboBox()
                 exp.addItem("— no verificar —", None)
-                for st in var.states:
+                for st in var.state_names:
                     exp.addItem(f"esperado: {st}", st)
                 exp.setCurrentIndex(max(0, exp.findData(lim.expected)))
                 self.table.setCellWidget(row, C_NOM, exp)

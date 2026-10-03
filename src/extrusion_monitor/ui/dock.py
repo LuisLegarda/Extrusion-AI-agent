@@ -80,7 +80,7 @@ class CompactTile(QFrame):
         if self.tile.kind != "var":
             sample, unit = "100.0", KPIS[self.tile.kind][1]
         elif self.var is not None and not self.var.numeric:
-            sample, unit = max(list(self.var.states) + ["XXXXXX"], key=len), ""
+            sample, unit = max(list(self.var.state_names) + ["XXXXXX"], key=len), ""
         else:
             sample, unit = "0000.00", self.var.unit if self.var else ""
         w_title = QFontMetrics(small).horizontalAdvance(self.title)
