@@ -306,7 +306,10 @@ def demo_config() -> AppConfig:
         return_clicks=[click("home", "principal")],
         steps=[TourStep(id="s_ext1", page="ext1", clicks=[click("c_ext1", "ext1")], settle_s=0.5),
                TourStep(id="s_linea", page="linea", clicks=[click("c_linea", "linea")], settle_s=0.5)])
+    cameras, cam_vars = demo_camera_config()
+    variables += cam_vars
     return AppConfig(
+        cameras=cameras,
         machine_name="Demo línea de cable",
         general=GeneralSettings(ocr_engine="template", sample_interval_s=1.0, recipe_name_var="receta_hmi",
                                 trend_window_min=5, trend_horizon_min=5, spc_subgroup_s=10,
@@ -380,3 +383,115 @@ TEACH_STRINGS = ["0123456789", "-.5", "THHN-12AWG-NEGRO", "ABCDEFGHIJKLM", "NOPQ
 def teach_template(ocr, sim: HmiSimulator, opts: OcrOptions) -> None:
     for s in TEACH_STRINGS:
         ocr.teach(sim.render_text_sample(s), s, opts)
+
+
+# --- cámara simulada: tablero de un equipo antiguo (andon, displays de 7 segmentos, manómetro, nivel) ---------
+CAM_W, CAM_H = 960, 600
+ANDON = [("andon_rojo", "Andon rojo", "Rojo", (40, 40, 230), 90), ("andon_ambar", "Andon ámbar", "Ámbar",
+         (0, 170, 255), 170), ("andon_verde", "Andon verde", "Verde", (60, 210, 60), 250)]
+ANDON_X, ANDON_R = 90, 34
+LED_RECT = Rect(x=230, y=70, w=330, h=120)  # display LED rojo: temperatura de fundido
+LCD_RECT = Rect(x=230, y=250, w=330, h=110)  # display LCD: velocidad del tornillo
+GAUGE_C, GAUGE_R = (720, 200), 140  # manómetro: presión de cabezal
+BAR_RECT = Rect(x=880, y=60, w=50, h=300)  # barra de LED: nivel de tolva
+
+
+def panel_values(t: float) -> dict[str, float]:
+    return {"cam_temp": round(205.0 + 12.0 * math.sin(t / 40.0), 1),
+            "cam_rpm": round(45.0 + 6.0 * math.sin(t / 23.0), 1),
+            "cam_presion": 150.0 + 60.0 * math.sin(t / 31.0),
+            "cam_nivel": 50.0 + 40.0 * math.sin(t / 37.0)}
+
+
+def andon_state(t: float) -> dict[str, str]:
+    """Ciclo de 120 s: verde, ámbar parpadeando (aviso), rojo (paro) y de vuelta a verde."""
+    p = t % 120.0
+    on = {"andon_rojo": False, "andon_ambar": False, "andon_verde": False}
+    if p < 70:
+        on["andon_verde"] = True
+    elif p < 90:
+        on["andon_ambar"] = (p * 2) % 2 < 1  # 1 Hz
+    elif p < 105:
+        on["andon_rojo"] = True
+    else:
+        on["andon_verde"] = True
+    return on
+
+
+class SimCamera:
+    """Cámara que «ve» el tablero simulado (con ruido y brillo variable, como una cámara real)."""
+
+    def __init__(self, clock: Callable[[], float] = time.time, seed: int = 3):
+        self.clock = clock
+        self.rng = np.random.default_rng(seed)
+
+    def render(self, t: float, noise: bool = True) -> np.ndarray:
+        import cv2
+        from .vision.indicators import draw_bar, draw_gauge
+        from .vision.sevenseg import draw_text
+        img = np.full((CAM_H, CAM_W, 3), (70, 74, 78), np.uint8)
+        cv2.rectangle(img, (20, 20), (CAM_W - 20, CAM_H - 20), (95, 98, 100), -1)
+        v = panel_values(t)
+        lamps = andon_state(t)
+        cv2.rectangle(img, (ANDON_X - 8, 50), (ANDON_X + 8, 560), (40, 40, 40), -1)
+        for vid, _, _, color, y in ANDON:
+            off = tuple(int(c * 0.25 + 30) for c in color)
+            cv2.circle(img, (ANDON_X, y), ANDON_R, color if lamps[vid] else off, -1, cv2.LINE_AA)
+            cv2.circle(img, (ANDON_X, y), ANDON_R, (30, 30, 30), 2, cv2.LINE_AA)
+        x, y, w, h = LED_RECT.x, LED_RECT.y, LED_RECT.w, LED_RECT.h
+        cv2.rectangle(img, (x, y), (x + w, y + h), (18, 18, 22), -1)
+        draw_text(img, f"{v['cam_temp']:5.1f}", x + 30, y + 22, 76, on=(50, 60, 255), off=(30, 30, 52), slant=8)
+        x, y, w, h = LCD_RECT.x, LCD_RECT.y, LCD_RECT.w, LCD_RECT.h
+        cv2.rectangle(img, (x, y), (x + w, y + h), (150, 185, 165), -1)
+        draw_text(img, f"{v['cam_rpm']:4.1f}", x + 40, y + 20, 70, on=(40, 48, 42), off=(138, 170, 152), slant=6)
+        draw_gauge(img, GAUGE_C[0], GAUGE_C[1], GAUGE_R, (v["cam_presion"]) / 250.0)
+        draw_bar(img, BAR_RECT.x, BAR_RECT.y, BAR_RECT.w, BAR_RECT.h, v["cam_nivel"] / 100.0)
+        for text, pos in (("TEMP. FUNDIDO C", (230, 60)), ("VELOCIDAD RPM", (230, 240)),
+                          ("PRESION bar", (650, 375)), ("TOLVA %", (860, 385))):
+            cv2.putText(img, text, pos, cv2.FONT_HERSHEY_SIMPLEX, 0.6, (230, 230, 230), 1, cv2.LINE_AA)
+        if noise:
+            gain = 1.0 + 0.04 * math.sin(t * 3.1)
+            img = np.clip(img.astype(np.float32) * gain + self.rng.normal(0, 4, img.shape), 0, 255).astype(np.uint8)
+            img = cv2.GaussianBlur(img, (3, 3), 0)
+        return img
+
+    def read(self) -> np.ndarray:
+        return self.render(self.clock())
+
+    def release(self) -> None:
+        pass
+
+
+def demo_camera_config() -> tuple[list, list[Variable]]:
+    """Cámara «demo» y las variables de su tablero (colores de las luces enseñados con la propia imagen)."""
+    from .config import BarOptions, CameraSettings, ColorState, GaugeOptions, SevenSegOptions
+    from .vision.indicators import lamp_feature
+    cam = CameraSettings(id="cam1", name="Cámara del tablero", device="demo", fps=10)
+    sim = SimCamera()
+    lit, dark = sim.render(10.0, noise=False), sim.render(95.0, noise=False)  # verde encendido / rojo encendido
+    out = []
+    for vid, name, color_name, _, y in ANDON:
+        r = Rect(x=ANDON_X - ANDON_R, y=y - ANDON_R, w=2 * ANDON_R, h=2 * ANDON_R)
+        on_img = lit if vid == "andon_verde" else (dark if vid == "andon_rojo" else None)
+        if on_img is None:  # ámbar: en t=75 está encendido (parpadeo)
+            on_img = sim.render(75.2, noise=False)
+        off_img = dark if vid != "andon_rojo" else lit
+        from .capture import crop
+        out.append(Variable(
+            id=vid, name=name, kind="selector", source="cam1", region=r, state_method="color", blink=True,
+            color_states=[ColorState(name="Apagado", lab=lamp_feature(crop(off_img, r))),
+                          ColorState(name=color_name, lab=lamp_feature(crop(on_img, r)))], trend=False))
+    out.append(Variable(id="cam_temp", name="Temp. fundido (display)", unit="°C", kind="actual", source="cam1",
+                        region=LED_RECT, reader="sevenseg", seg=SevenSegOptions(digits=4), decimals=1,
+                        valid_min=0, valid_max=400, max_step=40))
+    out.append(Variable(id="cam_rpm", name="Velocidad tornillo (LCD)", unit="rpm", kind="actual", source="cam1",
+                        region=LCD_RECT, reader="sevenseg", seg=SevenSegOptions(digits=3), decimals=1,
+                        valid_min=0, valid_max=200, max_step=30))
+    gr = Rect(x=GAUGE_C[0] - GAUGE_R - 10, y=GAUGE_C[1] - GAUGE_R - 10, w=2 * GAUGE_R + 20, h=2 * GAUGE_R + 20)
+    out.append(Variable(id="cam_presion", name="Presión de cabezal (manómetro)", unit="bar", kind="actual",
+                        source="cam1", region=gr, reader="gauge", decimals=0, valid_min=0, valid_max=250,
+                        gauge=GaugeOptions(cx=0.5, cy=0.5, radius=GAUGE_R / gr.w, angle_min=135, angle_max=45,
+                                           value_min=0, value_max=250, calibrated=True)))
+    out.append(Variable(id="cam_nivel", name="Nivel de tolva (barra)", unit="%", kind="actual", source="cam1",
+                        region=BAR_RECT, reader="bar", decimals=0, bar=BarOptions(direction="up", value_max=100)))
+    return [cam], out

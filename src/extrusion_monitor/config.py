@@ -54,6 +54,65 @@ class Page(BaseModel):
 
 
 VariableKind = Literal["actual", "setpoint", "text", "selector", "formula"]
+SCREEN = "screen"  # fuente de las variables leídas de la pantalla del HMI (si no, id de una cámara)
+ReaderKind = Literal["ocr", "sevenseg", "gauge", "bar"]
+BLINK_SUFFIX = " parpadeando"
+
+
+class CameraSettings(BaseModel):
+    """Cámara (USB o IP) que mira un tablero, display o indicador de un equipo sin HMI legible."""
+
+    id: str
+    name: str = "Cámara"
+    # Índice de la cámara USB ("0", "1"…), URL (rtsp://…, http://…/video) o "demo" (tablero simulado).
+    device: str = "0"
+    width: Optional[int] = Field(None, ge=160, le=7680)
+    height: Optional[int] = Field(None, ge=120, le=4320)
+    rotate: Literal[0, 90, 180, 270] = 0
+    # Corrección de perspectiva: 4 esquinas [x, y] (sup. izq., sup. der., inf. der., inf. izq.) de la imagen original.
+    warp: Optional[list[list[float]]] = None
+    # Exposición manual (los LED y displays brillantes se saturan con la automática). None = automática.
+    exposure: Optional[float] = None
+    fps: float = Field(10.0, ge=1, le=30)  # cuadros que se analizan por segundo (luces y parpadeo)
+
+
+class SevenSegOptions(BaseModel):
+    """Display de 7 segmentos (LED o LCD)."""
+
+    digits: Optional[int] = Field(None, ge=1, le=12)  # None = automático
+    # «light»: segmentos que se encienden (LED); «dark»: segmentos oscuros sobre fondo claro (LCD).
+    polarity: Literal["auto", "light", "dark"] = "auto"
+    slant: Optional[float] = Field(None, ge=-30, le=30)  # inclinación de los dígitos en grados; None = automática
+
+
+class GaugeOptions(BaseModel):
+    """Manómetro o indicador de aguja: centro y marcas de mínimo y máximo, relativos a la región (0..1)."""
+
+    cx: float = 0.5
+    cy: float = 0.5
+    radius: float = Field(0.45, gt=0, le=2)  # fracción del lado menor de la región
+    angle_min: float = 135.0  # grados en la imagen (0 = derecha, 90 = abajo); la escala avanza en sentido horario
+    angle_max: float = 45.0
+    value_min: float = 0.0
+    value_max: float = 100.0
+    needle: Literal["auto", "dark", "light"] = "auto"
+    calibrated: bool = False
+
+
+class BarOptions(BaseModel):
+    """Barra de nivel o bargraph de LED: qué fracción está encendida."""
+
+    direction: Literal["up", "down", "right", "left"] = "up"
+    value_min: float = 0.0
+    value_max: float = 100.0
+    polarity: Literal["auto", "light", "dark"] = "auto"
+
+
+class ColorState(BaseModel):
+    """Estado de una luz o andon reconocido por su color (Lab de la parte más brillante)."""
+
+    name: str
+    lab: list[float] = Field(default_factory=lambda: [0.0, 128.0, 128.0])
 
 
 class Variable(BaseModel):
@@ -80,6 +139,18 @@ class Variable(BaseModel):
     # Selector: estados reconocidos por imagen (p. ej. «ON», «OFF»); las imágenes se guardan aparte.
     states: list[str] = Field(default_factory=list)
     state_threshold: float = Field(0.8, ge=0.3, le=1.0)
+    # Selector por color (luz, LED, torre andon): estados con su color y detección de parpadeo.
+    state_method: Literal["image", "color"] = "image"
+    color_states: list[ColorState] = Field(default_factory=list)
+    blink: bool = False
+    blink_window_s: float = Field(3.0, ge=1, le=30)
+
+    # Origen de la imagen y método de lectura de los valores numéricos.
+    source: str = SCREEN
+    reader: ReaderKind = "ocr"
+    seg: SevenSegOptions = Field(default_factory=SevenSegOptions)
+    gauge: GaugeOptions = Field(default_factory=GaugeOptions)
+    bar: BarOptions = Field(default_factory=BarOptions)
 
     # Fórmula: variable calculada a partir de otras (p. ej. «vel / rpm»).
     formula: str = ""
@@ -95,8 +166,25 @@ class Variable(BaseModel):
 
     @property
     def screen(self) -> bool:
-        """Se lee de la pantalla (las fórmulas no)."""
+        """Se lee de una imagen: pantalla del HMI o cámara (las fórmulas no)."""
         return self.kind != "formula"
+
+    @property
+    def on_camera(self) -> bool:
+        return self.kind != "formula" and self.source != SCREEN
+
+    @property
+    def state_names(self) -> list[str]:
+        """Estados posibles (con «… parpadeando» para las luces con detección de parpadeo)."""
+        if self.kind != "selector":
+            return []
+        if self.state_method != "color":
+            return list(self.states)
+        names = [c.name for c in self.color_states]
+        if self.blink and len(self.color_states) > 1:
+            off = min(self.color_states, key=lambda c: c.lab[0]).name
+            names += [n + BLINK_SUFFIX for n in names if n != off]
+        return names
 
 
 OcrEngineName = Literal["windows", "template", "tesseract"]
@@ -356,6 +444,16 @@ class AppConfig(BaseModel):
     reports: list[ReportDef] = Field(default_factory=list)
     home: HomeSettings = Field(default_factory=HomeSettings)
     dock: DockSettings = Field(default_factory=DockSettings)
+    cameras: list[CameraSettings] = Field(default_factory=list)
+
+    def camera(self, cam_id: str) -> Optional[CameraSettings]:
+        return next((c for c in self.cameras if c.id == cam_id), None)
+
+    @property
+    def needs_screen(self) -> bool:
+        """Hay algo que leer en la pantalla del HMI (si todo viene de cámaras, no se captura la pantalla)."""
+        return not self.cameras or any(v.screen and v.source == SCREEN for v in self.variables) or bool(self.pages) or \
+            any(t.enabled and t.steps for t in self.tours)
 
     @model_validator(mode="after")
     def _migrate_tour(self) -> "AppConfig":
@@ -452,9 +550,14 @@ class AppConfig(BaseModel):
         if dup:
             problems.append(f"IDs de variable duplicados: {', '.join(sorted(dup))}")
         page_ids = {p.id for p in self.pages}
+        cam_ids = {c.id for c in self.cameras}
         for v in self.variables:
             if v.page and v.page not in page_ids:
                 problems.append(f"{v.id}: la página '{v.page}' no existe")
+            if v.on_camera and v.source not in cam_ids:
+                problems.append(f"{v.id}: la cámara '{v.source}' no existe")
+            if v.kind in ("actual", "setpoint") and v.reader == "gauge" and not v.gauge.calibrated:
+                problems.append(f"«{v.name}»: calibra la aguja (centro, mínimo y máximo)")
             if v.setpoint_var:
                 sp = self.variable(v.setpoint_var)
                 if sp is None:
