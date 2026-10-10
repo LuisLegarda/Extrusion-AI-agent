@@ -109,3 +109,28 @@ def test_is_blank():
     img = np.zeros((100, 100, 3), np.uint8)
     img[40:60, 40:60] = 200
     assert not is_blank(img)
+
+
+def test_cameras_read_even_without_screen(tmp_path):
+    from extrusion_monitor.camera import CameraManager, transform
+    from extrusion_monitor.config import CameraDef
+    ctx, sim, ft = make(tmp_path)
+    eng = ctx.engine
+    assert "cam1" in eng.cameras.sources  # solo se abren las cámaras en uso
+    snaps = run(ctx, ft, 4)
+    st = snaps[-1].statuses["laser"]
+    assert st.fresh and abs(st.reading.value - snaps[-1].statuses["diam"].reading.value) < 0.05
+    src = BlankableSource(eng.source)
+    eng.source = src
+    src.mode = "black"
+    snaps = run(ctx, ft, 3)
+    assert "no disponible" in snaps[-1].error
+    assert snaps[-1].statuses["laser"].fresh  # la cámara se sigue leyendo
+    cam = CameraDef(id="x", source="sim:none", rotate=90, flip="h")
+    img = np.zeros((10, 20, 3), np.uint8)
+    assert transform(img, cam).shape == (20, 10, 3)
+    m = CameraManager()
+    m.configure([cam])
+    assert m.frames() == {"x": None} and "no disponible" in m.status("x")
+    m.configure([])
+    assert not m.sources

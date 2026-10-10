@@ -14,6 +14,7 @@ Por eso sirve para cualquier línea de extrusión.
 | Función | Detalle |
 |---|---|
 | Lectura en vivo | Captura la pantalla del HMI y lee con OCR las regiones configuradas. Se puede usar el OCR integrado de Windows, plantillas enseñadas o Tesseract. |
+| Captura por cámara | Cada variable elige su **tipo de captura**: pantalla del HMI o cámara (USB o de red, p. ej. `rtsp://…`). Sirve para displays, indicadores o selectores físicos fuera del HMI. Por cámara se configuran fuente, controlador, resolución, rotación, espejo, exposición, enfoque, brillo y lecturas por segundo. Solo se abren las cámaras en uso, y cada una se lee en segundo plano a la tasa elegida. Si se desconecta, se reconecta sola, y se sigue leyendo aunque la pantalla del HMI no esté disponible. |
 | Pestañas del HMI | Árbol libre de componente → pestaña → sub-pestaña. Una imagen ancla (forma y color) identifica cada pestaña, y sus variables se leen cuando está visible. |
 | Recorridos | Macros de uno o varios pasos grabadas en vivo, con clics verificados. Pueden leer cada pantalla y regresar. Se disparan cada X tiempo, si el HMI queda X tiempo fuera de una pantalla, si un selector cambia de estado o si un valor baja a cero. Opcionalmente muestran un aviso con cuenta regresiva: el operador puede posponer (vuelve a avisar tras X tiempo), y si lo ignora o acepta, se ejecuta. |
 | Variables con fórmula | Variables calculadas a partir de otras: `vel / rpm`, `{zona_1} - {zona_1_sp}`, `max(z1, z2, z3) - min(z1, z2, z3)`, `si(rpm > 0, vel / rpm, 0)`. Se tratan como una medición más: receta, tolerancias, tendencias, reportes. |
@@ -66,6 +67,7 @@ Configuración inicial en el HMI:
    - *+ Selector*: marca el recuadro del selector. Luego, con el HMI en cada estado, pulsa *Capturar estado actual como…* (por ejemplo ON y después OFF).
    - *🧠 Entrenar comportamiento…* (también en la barra principal): elige las variables de referencia y el periodo del historial en que el proceso estuvo bien.
    - *Crear serie…* replica las variables seleccionadas con un desplazamiento, por ejemplo Cylinder 1 → Cylinder 2…5 o Head 1 → Head 8. Si antes marcas la posición del segundo elemento, el desplazamiento se calcula solo.
+   - **Tipo de captura:** *Pantalla del HMI* o *Cámara*. Con *Cámara* aparecen sus opciones (fuente con *🔍 Buscar cámaras*, resolución, rotación, exposición, enfoque…). *📷 Ver imagen de la cámara* la muestra a la izquierda para marcar la región. Arriba, *Imagen:* cambia entre la pantalla y cada cámara: las variables creadas sobre la imagen de una cámara quedan como variables de cámara. En la demo, «Cámara demo» simula un medidor láser.
    - *Probar OCR* comprueba la lectura. Con la **lectura automática** (activa por defecto) muestra cuántas variantes coinciden.
    - *🩺 Diagnóstico de lectura* prueba todas las variables visibles y marca las débiles. En la ventana principal, la columna *Lectura* muestra el % de lecturas exitosas de cada variable. *Quitar marco del campo* elimina el recuadro de los campos del HMI.
    - Si usas el motor de plantillas, *Enseñar caracteres…* le enseña la fuente del HMI.
@@ -129,4 +131,4 @@ Estructura (`src/extrusion_monitor/`):
 | 1 | Verificación de parámetros y recetas, detección de ajustes erróneos, tendencias en tiempo real | **Esta versión** |
 | 2 | Auto-ajuste de parámetros (escritura hacia el HMI/PLC con lazos y límites de seguridad) | Pendiente de definir |
 | 3 | Auto-setup (cargar y verificar una receta completa y guiar el arranque) | Pendiente |
-| 4 | Verificación física con cámaras en puntos críticos | Pendiente |
+| 4 | Verificación física con cámaras en puntos críticos | Iniciada: lectura de displays e indicadores por cámara |

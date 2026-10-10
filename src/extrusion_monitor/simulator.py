@@ -14,7 +14,7 @@ from typing import Callable, Optional
 import numpy as np
 from PIL import Image, ImageDraw, ImageFont
 
-from .config import AppConfig, Click, GeneralSettings, OeeSettings, OcrOptions, Page, Rect, ReportDef, ReportTrigger, ReportVar, TourDef, TourStep, Variable
+from .config import AppConfig, CameraDef, Click, GeneralSettings, OeeSettings, OcrOptions, Page, Rect, ReportDef, ReportTrigger, ReportVar, TourDef, TourStep, Variable
 from .recipes import Limit, Recipe
 
 W, H = 1280, 800
@@ -251,6 +251,23 @@ class SimulatorSource:
         return self.sim.render()
 
 
+CAM_SIZE = (640, 400)
+CAM_BOX = Rect(x=230, y=175, w=180, h=BOX_H)
+
+
+def demo_camera_frame(sim: HmiSimulator) -> np.ndarray:
+    """Imagen de la cámara simulada: un medidor láser con display que muestra el diámetro."""
+    img = Image.new("RGB", CAM_SIZE, (64, 70, 78))
+    d = ImageDraw.Draw(img)
+    d.rectangle([180, 110, 460, 280], fill=(34, 36, 40), outline=(20, 20, 22), width=4)
+    d.text((200, 125), "LASER  O mm", font=_font(18), fill=(210, 210, 210))
+    b = CAM_BOX
+    d.rectangle([b.x, b.y, b.x + b.w - 1, b.y + b.h - 1], fill=BOX_BG)
+    d.text((b.x + 20, b.y + 6), f"{sim.act['diam'] + 0.01:.2f}", font=sim.font, fill=VAL)
+    d.ellipse([420, 125, 440, 145], fill=(60, 200, 90))
+    return np.asarray(img)[:, :, ::-1].copy()
+
+
 class SimClicker:
     """Clics sobre el HMI simulado; `operator_input()` simula que el operador toca el mouse."""
 
@@ -292,6 +309,9 @@ def demo_config() -> AppConfig:
                 decimals=v.decimals, ocr=ocr, valid_min=0, valid_max=v.nominal * 3,
                 max_step=max(v.alarm * 4, v.nominal * 0.2)))
 
+    # Variable leída por cámara: un display físico (medidor láser) frente a la cámara simulada.
+    variables.append(Variable(id="laser", name="Diámetro láser (cámara)", unit="mm", kind="actual", region=CAM_BOX,
+                              decimals=2, ocr=ocr, valid_min=0, valid_max=10, capture="camera", camera_id="cam1"))
     variables.append(Variable(id="rendimiento", name="Metros por vuelta", unit="m/rev", kind="formula",
                               formula="si(rpm > 0, vel / rpm, 0)", decimals=2, trend=True,
                               region=Rect(x=0, y=0, w=1, h=1)))
@@ -315,6 +335,7 @@ def demo_config() -> AppConfig:
                for pid, label in SIM_PAGES],
         variables=variables,
         tours=[tour],
+        cameras=[CameraDef(id="cam1", name="Cámara demo (medidor láser)", source="sim:demo", read_fps=2)],
         reports=[ReportDef(
             id="demo", name="Reporte de producción", min_interval_s=600, name_var="receta_hmi",
             triggers=[ReportTrigger(kind="selector", var_id="inyeccion", state="OFF"),

@@ -37,13 +37,24 @@ def build(home: Optional[Path] = None, demo: bool = False, source: Optional[Fram
     source = source or ScreenSource(config.general.monitor)
     extra = {k: v for k, v in (("clock", clock), ("sleep", sleep)) if v is not None}
     engine = MonitorEngine(ws, config, recipes, source, ocr, Historian(ws.history_db),
-                           clicker=make_clicker(source), **extra)
+                           clicker=make_clicker(source), cameras=make_cameras(source), **extra)
     ensure_profiles(ws, recipes)
     state = ws.load_state()
     engine.state.auto_recipe = bool(state.get("auto_recipe", True))
     if state.get("recipe") in recipes.names():
         engine.state.recipe = state["recipe"]
     return AppContext(ws, config, recipes, engine, template, demo)
+
+
+def make_cameras(source: FrameSource):
+    """Cámaras; en la demo, «sim:demo» es una cámara simulada que mira un medidor del proceso."""
+    from .camera import CameraManager
+    sim = getattr(source, "sim", None)
+    providers = {}
+    if sim is not None:
+        from .simulator import demo_camera_frame
+        providers["demo"] = lambda: demo_camera_frame(sim)
+    return CameraManager(providers)
 
 
 def make_clicker(source: FrameSource):

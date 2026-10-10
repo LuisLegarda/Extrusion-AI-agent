@@ -101,6 +101,8 @@ class SetupDialog(QDialog):
         self.ctx = ctx
         self.config: AppConfig = ctx.config.model_copy(deep=True)
         self.frame: Optional[np.ndarray] = None
+        self.frame_source = "screen"  # "screen" o id de la cámara de la imagen mostrada
+        self._screen_frame: Optional[np.ndarray] = None
         self.anchors: dict[str, np.ndarray] = {}
         for p in self.config.pages:
             img = load_png(ctx.workspace.page_anchor_file(p.id))
@@ -120,6 +122,7 @@ class SetupDialog(QDialog):
         self._pair: Optional[tuple] = None
         self._build()
         self._load_general()
+        self._refresh_sources()
         self._refresh_tree()
         try:
             self._set_frame(ctx.engine.grab_frame())
@@ -134,7 +137,12 @@ class SetupDialog(QDialog):
         ll = QVBoxLayout(left)
         ll.setContentsMargins(0, 0, 0, 0)
         bar = QHBoxLayout()
-        for text, slot in (("📷 Capturar pantalla del HMI", self.capture_hmi), ("Abrir imagen…", self.load_image),
+        bar.addWidget(QLabel("Imagen:"))
+        self.cmb_source = QComboBox()
+        self.cmb_source.setToolTip("Origen de la imagen mostrada: la pantalla del HMI o una cámara")
+        self.cmb_source.activated.connect(lambda _: self.show_source(self.cmb_source.currentData()))
+        bar.addWidget(self.cmb_source)
+        for text, slot in (("📷 Capturar", self.capture_current), ("Abrir imagen…", self.load_image),
                            ("Guardar captura…", self.save_image), ("Ajustar vista", lambda: self.view.fit())):
             b = QPushButton(text)
             b.clicked.connect(slot)
@@ -295,6 +303,11 @@ class SetupDialog(QDialog):
         for k, label in KINDS:
             self.cmb_kind.addItem(label, k)
         self.cmb_page = QComboBox()
+        self.cmb_capture = QComboBox()
+        self.cmb_capture.addItem("Pantalla del HMI", "screen")
+        self.cmb_capture.addItem("Cámara", "camera")
+        self.cmb_capture.setToolTip("De dónde se lee la variable: de la pantalla del HMI o de una cámara "
+                                    "(display, indicador o selector físico)")
         self.cmb_sp = QComboBox()
         self.sp_dec = QSpinBox()
         self.sp_dec.setRange(-1, 6)
@@ -330,7 +343,8 @@ class SetupDialog(QDialog):
                                    "exp, pow, clamp, si(cond, a, b). Operadores + - * / ** % y comparaciones.")
         self.ed_formula.editingFinished.connect(self._commit_var)
         for label, wdg in (("ID", self.ed_id), ("Nombre", self.ed_name), ("Unidad", self.ed_unit),
-                           ("Tipo", self.cmb_kind), ("Pestaña", self.cmb_page),
+                           ("Tipo", self.cmb_kind), ("Tipo de captura", self.cmb_capture),
+                           ("Pestaña", self.cmb_page),
                            ("Consigna vinculada", self.cmb_sp), ("Decimales", self.sp_dec),
                            ("Separador decimal", self.cmb_sep), ("", self.chk_fixdec),
                            ("Valor mínimo válido", self.ed_vmin), ("Valor máximo válido", self.ed_vmax),
@@ -341,8 +355,11 @@ class SetupDialog(QDialog):
             f.addRow(label, wdg)
         for wdg in (self.ed_id, self.ed_name, self.ed_unit, self.ed_vmin, self.ed_vmax, self.ed_step):
             wdg.editingFinished.connect(self._commit_var)
-        for wdg in (self.cmb_kind, self.cmb_page, self.cmb_sp, self.cmb_sep, self.cmb_invert):
+        for wdg in (self.cmb_kind, self.cmb_page, self.cmb_sp, self.cmb_sep, self.cmb_invert, self.cmb_capture):
             wdg.currentIndexChanged.connect(self._commit_var)
+        from .camera_panel import CameraPanel
+        self.cam_panel = CameraPanel(self)
+        f.insertRow(5, self.cam_panel)  # justo debajo de «Tipo de captura»
         for wdg in (self.sp_dec, self.sp_scale, self.sp_thr):
             wdg.valueChanged.connect(self._commit_var)
         for wdg in (self.chk_fixdec, self.chk_trend, self.chk_border, self.chk_auto):
@@ -453,16 +470,84 @@ class SetupDialog(QDialog):
         return w
 
     # --- imagen -------------------------------------------------------------------
-    def _set_frame(self, frame: np.ndarray, fit: bool = True) -> None:
+    def _set_frame(self, frame: np.ndarray, fit: bool = True, source: str = "screen") -> None:
         self.frame = frame
+        self.frame_source = source
+        if source == "screen":
+            self._screen_frame = frame
+        i = self.cmb_source.findData(source)
+        if i >= 0:
+            self.cmb_source.setCurrentIndex(i)
         self.view.set_image(frame)
         self._redraw()
         if fit:
             QTimer.singleShot(0, self.view.fit)
 
+    # --- cámaras -----------------------------------------------------------------------
+    def _refresh_sources(self) -> None:
+        cur = self.frame_source
+        self.cmb_source.blockSignals(True)
+        self.cmb_source.clear()
+        self.cmb_source.addItem(tr("Pantalla del HMI"), "screen")
+        for c in self.config.cameras:
+            self.cmb_source.addItem(f"📷 {c.name}", c.id)
+        self.cmb_source.setCurrentIndex(max(0, self.cmb_source.findData(cur)))
+        self.cmb_source.blockSignals(False)
+
+    def capture_current(self) -> None:
+        if self.frame_source == "screen":
+            self.capture_hmi()
+        else:
+            self.show_source(self.frame_source, refresh=True)
+
+    def show_source(self, source: Optional[str], refresh: bool = False) -> None:
+        """Muestra la imagen de la pantalla del HMI o de una cámara para marcar regiones."""
+        if not source:
+            return
+        if source == "screen":
+            if self._screen_frame is not None and not refresh:
+                self._set_frame(self._screen_frame, source="screen")
+            else:
+                self.capture_hmi()
+            return
+        cam = self.config.camera(source)
+        if cam is None:
+            return
+        QApplication.setOverrideCursor(Qt.WaitCursor)
+        try:
+            img = self.ctx.engine.cameras.snapshot(cam)
+        finally:
+            QApplication.restoreOverrideCursor()
+        if img is None:
+            self.cam_panel.lbl_status.setText(f"<span style='color:#e53935'>"
+                                              f"{tr('No se pudo obtener imagen de la cámara')}</span>")
+            QMessageBox.warning(self, tr("Cámara"), tr("No se pudo obtener imagen de «{c}» ({s}). Revisa la fuente "
+                                                        "(índice o dirección) y que no la use otro programa.",
+                                                        c=cam.name, s=cam.source))
+            self._refresh_sources()
+            return
+        self._set_frame(img, fit=self.frame_source != source, source=source)
+        self.cam_panel.lbl_status.setText(tr("Imagen {w}×{h} de «{c}»", w=img.shape[1], h=img.shape[0], c=cam.name))
+
+    def camera_changed(self) -> None:
+        """Se agregó, borró o editó una cámara."""
+        self._refresh_sources()
+        for it in self._all_items():
+            key = it.data(0, ROLE)
+            if key and key[0] == "camera":
+                cam = self.config.camera(key[1])
+                if cam:
+                    it.setText(0, f"📷 {cam.name}")
+
+    def camera_selected_for_var(self, camera_id: Optional[str]) -> None:
+        if self._current_var and self.cmb_capture.currentData() == "camera":
+            self._commit_var()
+            if camera_id and self.frame_source != camera_id:
+                self.show_source(camera_id)
+
     def capture_hmi(self) -> None:
         if self.ctx.demo:
-            self._set_frame(self.ctx.engine.grab_frame())
+            self._set_frame(self.ctx.engine.grab_frame(), source="screen")
             return
         tops = [w for w in QApplication.topLevelWidgets() if w.isVisible()]
         for w in tops:
@@ -474,7 +559,7 @@ class SetupDialog(QDialog):
             finally:
                 for w in tops:
                     w.show()
-            self._set_frame(frame)
+            self._set_frame(frame, source="screen")
 
         QTimer.singleShot(800, grab)
 
@@ -483,7 +568,7 @@ class SetupDialog(QDialog):
                                               "Imágenes (*.png *.jpg *.jpeg *.bmp *.webp)")
         if path:
             try:
-                self._set_frame(ImageFileSource(path).grab())
+                self._set_frame(ImageFileSource(path).grab(), source=self.frame_source)
             except ValueError as exc:
                 QMessageBox.warning(self, "Error", str(exc))
 
@@ -495,19 +580,25 @@ class SetupDialog(QDialog):
             save_png(Path(path), self.frame)
 
     def _visible_pages(self) -> set[str]:
-        if self.frame is None:
+        if self.frame is None or self.frame_source != "screen":
             return set()
         return PageDetector(self.config, self.anchors).visible_pages(self.frame)
 
     def _redraw(self) -> None:
         """Dibuja las regiones de las pestañas visibles en la captura (o todas si no hay captura)."""
+        selected_vars = set(self._selected("var")) | {self._current_var}
+        if self.frame_source != "screen":
+            # Imagen de una cámara: solo las regiones de las variables de esa cámara.
+            regions = [(v.id, v.name if v.id in selected_vars else "", v.region, KIND_COLORS[v.kind])
+                       for v in self.config.variables if v.from_camera and v.camera_id == self.frame_source]
+            self.view.set_regions(regions, self._current_var)
+            return
         visible = self._visible_pages() if self.frame is not None else None
         show = lambda pid: pid is None or visible is None or pid in visible or pid == self._current_page  # noqa: E731
         regions = []
         for p in self.config.pages:
             if p.anchor is not None and (show(p.parent) or p.id == self._current_page):
                 regions.append((f"page:{p.id}", f"[{p.name}]", p.anchor, PAGE_COLOR))
-        selected_vars = set(self._selected("var")) | {self._current_var}
         for v in self.config.variables:
             if not v.screen:
                 continue
@@ -555,11 +646,17 @@ class SetupDialog(QDialog):
 
         for p in self.config.children(None):
             add_page(p, None)
+        for cam in self.config.cameras:
+            it = QTreeWidgetItem([f"📷 {cam.name}", tr("cámara"), cam.id])
+            it.setData(0, ROLE, ("camera", cam.id))
+            it.setFont(0, bold)
+            self.tree.addTopLevelItem(it)
+            nodes[f"cam:{cam.id}"] = it
         linked_sp = {v.setpoint_var for v in self.config.variables if v.setpoint_var}
         for v in self.config.variables:
             if v.kind == "setpoint" and v.id in linked_sp:
                 continue  # se muestra bajo su medición
-            parent = nodes.get(v.page, none)
+            parent = nodes.get(f"cam:{v.camera_id}", none) if v.from_camera else nodes.get(v.page, none)
             it = self._var_item(v)
             parent.addChild(it)
             if v.kind == "actual" and v.setpoint_var:
@@ -569,7 +666,7 @@ class SetupDialog(QDialog):
                     it.setExpanded(True)
         for it in self._all_items():
             key = it.data(0, ROLE)
-            if key[0] == "page":
+            if key[0] in ("page", "camera"):
                 it.setExpanded(first or key in expanded)
         self.tree.blockSignals(False)
         self._refresh_combos()
@@ -618,6 +715,12 @@ class SetupDialog(QDialog):
             self._current_page = key[1]
             self._load_page()
             self.stack.setCurrentIndex(1)
+            if self.frame_source != "screen":
+                self.show_source("screen")
+        elif key and key[0] == "camera":
+            self.stack.setCurrentIndex(0)
+            if self.frame_source != key[1]:
+                self.show_source(key[1])
         else:
             self.stack.setCurrentIndex(0)
         self._redraw()
@@ -629,9 +732,11 @@ class SetupDialog(QDialog):
         item = self.tree.currentItem()
         if item and item.data(0, ROLE) == ("page", NO_PAGE):
             return None
+        if self.frame_source != "screen":
+            return None  # imagen de cámara: sin pestaña del HMI
         if self._current_var:
             v = self.config.variable(self._current_var)
-            return v.page if v else None
+            return v.page if v and v.screen else None
         visible = self._visible_pages()
         if visible:
             return max(visible, key=lambda pid: len(self.config.page_path(pid)))
@@ -815,6 +920,12 @@ class SetupDialog(QDialog):
         self.ed_unit.setText(v.unit)
         self.cmb_kind.setCurrentIndex(max(0, self.cmb_kind.findData(v.kind)))
         self.cmb_page.setCurrentIndex(max(0, self.cmb_page.findData(v.page)))
+        self.cmb_capture.setCurrentIndex(max(0, self.cmb_capture.findData(v.capture)))
+        self.cmb_capture.setEnabled(v.kind != "formula")
+        self.cmb_page.setEnabled(not v.from_camera and v.kind != "formula")
+        self.cam_panel.setVisible(v.from_camera)
+        if v.from_camera:
+            self.cam_panel.load(v.camera_id)
         self.cmb_sp.setCurrentIndex(max(0, self.cmb_sp.findData(v.setpoint_var)))
         self.cmb_sp.setEnabled(v.kind == "actual")
         self.sp_dec.setValue(-1 if v.decimals is None else v.decimals)
@@ -837,6 +948,10 @@ class SetupDialog(QDialog):
         r = v.region
         self.lbl_region.setText(f"x={r.x} y={r.y} {r.w}×{r.h}")
         self._loading = False
+        # La imagen de la izquierda pasa a la fuente de la variable (pantalla o su cámara).
+        want = v.camera_id if v.from_camera else ("screen" if v.screen else self.frame_source)
+        if want and want != self.frame_source:
+            self.show_source(want)
         self._test_ocr()
 
     def _commit_var(self) -> None:
@@ -852,10 +967,18 @@ class SetupDialog(QDialog):
             self.ed_id.setText(old.id)
             new_id = old.id
         kind = self.cmb_kind.currentData()
+        capture = self.cmb_capture.currentData() if kind != "formula" else "screen"
+        camera_id = None
+        if capture == "camera":
+            camera_id = self.cam_panel.current_id() if old.capture == "camera" else (
+                old.camera_id or self.cam_panel.ensure_camera())
+            if old.capture != "camera":
+                self.cam_panel.load(camera_id)
         try:
             var = Variable(
                 id=new_id, name=self.ed_name.text().strip() or new_id, unit=self.ed_unit.text().strip(),
-                group=old.group, kind=kind, page=self.cmb_page.currentData(), region=old.region,
+                group=old.group, kind=kind, page=None if capture == "camera" else self.cmb_page.currentData(),
+                region=old.region, capture=capture, camera_id=camera_id,
                 setpoint_var=self.cmb_sp.currentData() if kind == "actual" else None,
                 decimals=None if self.sp_dec.value() < 0 else self.sp_dec.value(),
                 decimal_separator=self.cmb_sep.currentData(), fix_missing_decimal=self.chk_fixdec.isChecked(),
@@ -878,7 +1001,10 @@ class SetupDialog(QDialog):
             for v in self.config.variables:
                 if v.setpoint_var == var.id:
                     v.setpoint_var = None
-        structural = (old.kind, old.page, old.setpoint_var, old.id) != (var.kind, var.page, var.setpoint_var, var.id)
+        structural = ((old.kind, old.page, old.setpoint_var, old.id, old.capture, old.camera_id)
+                      != (var.kind, var.page, var.setpoint_var, var.id, var.capture, var.camera_id))
+        self.cam_panel.setVisible(var.from_camera)
+        self.cmb_page.setEnabled(not var.from_camera and var.kind != "formula")
         if structural:
             self._refresh_tree(("var", var.id))
         else:
@@ -903,14 +1029,18 @@ class SetupDialog(QDialog):
         if kind == "setpoint":
             base += "_sp"
         vid = _unique(base, {v.id for v in self.config.variables})
-        return Variable(id=vid, name=name, kind=kind, region=region, page=page, trend=kind in ("actual", "formula"))
+        cam = self.frame_source if self.frame_source != "screen" else None
+        return Variable(id=vid, name=name, kind=kind, region=region, page=None if cam else page,
+                        trend=kind in ("actual", "formula"), capture="camera" if cam else "screen", camera_id=cam)
 
     def _new_var(self, kind: str) -> None:
         r = self._need_selection()
         if r is None:
             return
         page = self._context_page()
-        where = f" en «{self.config.page_label(page)}»" if page else " (siempre visible)"
+        cam = self.config.camera(self.frame_source)
+        where = (f" (📷 {cam.name})" if cam else
+                 f" en «{self.config.page_label(page)}»" if page else " (siempre visible)")
         name, ok = QInputDialog.getText(self, f"Nueva {KIND_SHORT[kind]}", f"Nombre{where}:")
         if not ok or not name.strip():
             return
@@ -1177,6 +1307,13 @@ class SetupDialog(QDialog):
             self._test_formula(v)
             return
         if v is None or self.frame is None:
+            return
+        want = v.camera_id if v.from_camera else "screen"
+        if want != self.frame_source:
+            self.lbl_crop.clear()
+            self.lbl_bin.clear()
+            self.lbl_result.setText(tr("La imagen mostrada no es de la fuente de esta variable: pulsa «📷 Capturar» "
+                                       "o «Ver imagen de la cámara»."))
             return
         img = crop(self.frame, v.region)
         if v.kind == "selector":

@@ -66,11 +66,22 @@ class VariableTree(QTreeWidget):
             self._pages[pid] = it
             return it
 
+        def cam_item(cid: Optional[str]) -> QTreeWidgetItem:
+            key = f"cam:{cid}"
+            if key not in self._pages:
+                cam = config.camera(cid)
+                it = QTreeWidgetItem([f"📷 {cam.name if cam else cid}"])
+                it.setFont(C_NAME, bold)
+                it.setData(C_NAME, ROLE, ("page", key))
+                self.addTopLevelItem(it)
+                self._pages[key] = it
+            return self._pages[key]
+
         linked = {v.setpoint_var: v.id for v in config.variables if v.kind == "actual" and v.setpoint_var}
         for v in config.variables:
             if v.kind == "setpoint" and v.id in linked:
                 continue
-            parent = page_item(v.page)
+            parent = cam_item(v.camera_id) if v.from_camera else page_item(v.page)
             it = QTreeWidgetItem([v.name])
             it.setData(C_NAME, ROLE, ("var", v.id))
             if v.numeric:
@@ -114,12 +125,12 @@ class VariableTree(QTreeWidget):
                 continue
             sp = snap.statuses.get(self._pair_sp.get(vid, ""))
             level = self._fill(it, st, sp)
-            pid = st.var.page
+            pid = f"cam:{st.var.camera_id}" if st.var.from_camera else st.var.page
             while True:
                 cur = page_levels.get(pid)
                 if level is not None and (cur is None or level > cur):
                     page_levels[pid] = level
-                page = self.config.page(pid) if (self.config and pid) else None
+                page = self.config.page(pid) if (self.config and pid and not pid.startswith("cam:")) else None
                 if page is None or not page.parent:
                     break
                 pid = page.parent

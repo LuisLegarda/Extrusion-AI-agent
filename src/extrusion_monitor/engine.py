@@ -15,6 +15,7 @@ from .config import AppConfig, Workspace
 from .ocr import OcrEngine
 from .analysis.behavior import BehaviorMonitor, BehaviorStore
 from .analysis.oee import ASSUMED, RUNNING, SLOW, OeeSample, classify
+from .camera import CameraManager
 from .capture import ScreenUnavailable, load_png
 from .navigation import Clicker, TourResult, TourRunner, UnavailableClicker
 from .pages import PageDetector
@@ -56,7 +57,8 @@ class MonitorEngine:
     def __init__(self, workspace: Workspace, config: AppConfig, recipes: RecipeStore,
                  source: FrameSource, ocr: OcrEngine, historian: Optional[Historian] = None,
                  clock: Callable[[], float] = time.time, clicker: Optional[Clicker] = None,
-                 sleep: Callable[[float], None] = time.sleep):
+                 sleep: Callable[[float], None] = time.sleep, cameras: Optional[CameraManager] = None):
+        self.cameras = cameras or CameraManager()
         self.workspace = workspace
         self.config = config
         self.recipes = recipes
@@ -98,6 +100,7 @@ class MonitorEngine:
         old_trends = getattr(self, "trends", None)
         self.pages = PageDetector.from_workspace(self.config, self.workspace)
         self.acquirer = Acquirer(self.config, self.ocr, self.pages, self._selector_images())
+        self.cameras.configure(self.config.used_cameras())  # solo se abren las cámaras en uso
         if old_acq is not None:
             # Al cambiar de receta/perfil se conservan las lecturas de las variables que no cambiaron
             # (p. ej. las leídas en el recorrido) y la variante de OCR aprendida.
@@ -246,6 +249,15 @@ class MonitorEngine:
         with self._data_lock:
             return self.scheduler.pending_prompts()
 
+    def _camera_frames(self) -> Optional[dict]:
+        return self.cameras.frames() if self.cameras.sources else None
+
+    def _read_cameras(self, now: float):
+        cams = self._camera_frames()
+        if cams is None:
+            return self.acquirer.readings
+        return self.acquirer.read(None, now, cams)[1]
+
     def _check_screen(self, frame):
         """La captura debe tener la resolución con la que se configuraron las regiones."""
         # Resolución de referencia: la del configurador o, en configuraciones anteriores, la última
@@ -314,11 +326,11 @@ class MonitorEngine:
                 if job is not None:
                     tour_result = self._run_job(job, pages)
                 if tour_result is not None and not tour_result.skipped:
-                    readings = self.acquirer.readings
                     now = self.clock()
+                    readings = self._read_cameras(now)
                 else:
                     frame = self._check_screen(self.source.grab())
-                    pages, readings = self.acquirer.read(frame, now)
+                    pages, readings = self.acquirer.read(frame, now, self._camera_frames())
                     if pages and any(p.anchor is not None for p in self.config.pages if p.id in pages):
                         self._good_size = (frame.shape[1], frame.shape[0])
                 self._last_pages = set(pages)
@@ -326,6 +338,7 @@ class MonitorEngine:
             except ScreenUnavailable as exc:
                 error = f"Pantalla no disponible: {exc}"
                 self._screen_state(str(exc))
+                readings = self._read_cameras(now)  # las cámaras se siguen leyendo
             except Exception as exc:
                 log.exception("Fallo de captura")
                 error = f"Fallo de captura: {exc}"

@@ -440,6 +440,37 @@ EN: dict[str, str] = {
         "<br>Weak reading: adjust the region (the number only, without the unit).",
     "No se pudo enseñar": "Could not teach", "Error": "Error", "pestaña": "tab", "VISIBLE": "VISIBLE",
     "no válido": "invalid", "no numérico": "not numeric", "no reconocido": "not recognized",
-    "Selector": "Selector", "Texto": "Text", "Serie": "Series", "texto": "text", "selector": "selector",
+    "Selector": "Selector", "Texto": "Text", "Serie": "Series",
+    # --- cámaras ---
+    "Imagen:": "Image:", "📷 Capturar": "📷 Capture", "Pantalla del HMI": "HMI screen", "Cámara": "Camera",
+    "cámara": "camera", "Tipo de captura": "Capture type",
+    "Origen de la imagen mostrada: la pantalla del HMI o una cámara": "Source of the image shown: the HMI screen or a camera",
+    "De dónde se lee la variable: de la pantalla del HMI o de una cámara (display, indicador o selector físico)":
+        "Where the variable is read from: the HMI screen or a camera (physical display, indicator or selector)",
+    "+ Nueva cámara": "+ New camera", "Eliminar cámara": "Delete camera", "Fuente": "Source",
+    "🔍 Buscar cámaras": "🔍 Find cameras", "Controlador": "Driver", "DirectShow (Windows, recomendado)":
+        "DirectShow (Windows, recommended)", "Media Foundation (Windows)": "Media Foundation (Windows)",
+    "Resolución (ancho × alto)": "Resolution (width × height)", "predeterminada": "default", "Rotación": "Rotation",
+    "Espejo": "Mirror", "sin espejo": "no mirror", "espejo horizontal": "horizontal mirror",
+    "espejo vertical": "vertical mirror", "Exposición": "Exposure", "automática": "automatic", "Enfoque": "Focus",
+    "Brillo": "Brightness", "de la cámara": "camera default", "Lecturas por segundo": "Readings per second",
+    " img/s": " img/s", "📷 Ver imagen de la cámara": "📷 Show camera image",
+    "Muestra la imagen actual de la cámara a la izquierda para marcar o ajustar la región":
+        "Shows the current camera image on the left to mark or adjust the region",
+    "Imágenes que se procesan por segundo; menos = menos carga en la PC":
+        "Images processed per second; fewer = less load on the PC",
+    "Índice de la cámara USB (0, 1, …) o dirección de red: rtsp://usuario:clave@IP/…, http://IP/video":
+        "USB camera index (0, 1, …) or network address: rtsp://user:password@IP/…, http://IP/video",
+    "Valor del controlador; en DirectShow suele ir de -13 (oscuro) a -1 (claro)":
+        "Driver value; in DirectShow it usually ranges from -13 (dark) to -1 (bright)",
+    "No se pudo obtener imagen de la cámara": "Could not get an image from the camera",
+    "No se pudo obtener imagen de «{c}» ({s}). Revisa la fuente (índice o dirección) y que no la use otro programa.":
+        "Could not get an image from «{c}» ({s}). Check the source (index or address) and that no other program "
+        "is using it.",
+    "Imagen {w}×{h} de «{c}»": "{w}×{h} image from «{c}»", "Cámaras encontradas: {c}": "Cameras found: {c}",
+    "La cámara la usan: {v}. Cambia esas variables primero.": "The camera is used by: {v}. Change those variables first.",
+    "La imagen mostrada no es de la fuente de esta variable: pulsa «📷 Capturar» o «Ver imagen de la cámara».":
+        "The image shown is not from this variable's source: press «📷 Capture» or «Show camera image».",
+    "cámara sin imagen": "camera without image", "texto": "text", "selector": "selector",
     "carpeta": "folder", "ancla de pestaña": "tab anchor", "consigna": "setpoint", "Sin lectura válida": "No valid reading",
 }

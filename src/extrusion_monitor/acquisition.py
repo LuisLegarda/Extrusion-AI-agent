@@ -53,12 +53,27 @@ class Acquirer:
         self.text_accept: dict[str, Callable[[str], bool]] = {}
         self._compile_formulas()
 
-    def read(self, frame: np.ndarray, now: float) -> tuple[set[str], dict[str, Reading]]:
-        visible = self.pages.visible_pages(frame) if self.pages and self.config.pages else set()
+    def read(self, frame: Optional[np.ndarray], now: float,
+             cameras: Optional[dict[str, Optional[np.ndarray]]] = None) -> tuple[set[str], dict[str, Reading]]:
+        """Lee las variables de la pantalla (`frame`, None = no disponible) y de las cámaras."""
+        visible = (self.pages.visible_pages(frame) if frame is not None and self.pages and self.config.pages
+                   else set())
         for var in self.config.variables:
             if var.kind == "formula":
                 continue
             rd = self.readings.setdefault(var.id, Reading(var.id))
+            if var.capture == "camera":
+                if cameras is None:
+                    continue  # este ciclo no incluye cámaras (p. ej. pasos de un recorrido)
+                img = cameras.get(var.camera_id)
+                rd.visible = img is not None
+                if img is None:
+                    rd.ok, rd.raw, rd.reason = False, "", "cámara sin imagen"
+                    continue
+                self._read_var(var, rd, img, now)
+                continue
+            if frame is None:
+                continue  # pantalla no disponible: se conservan los últimos datos
             rd.visible = var.page is None or var.page in visible
             if not rd.visible:
                 rd.ok, rd.raw, rd.reason = False, "", "página no visible"

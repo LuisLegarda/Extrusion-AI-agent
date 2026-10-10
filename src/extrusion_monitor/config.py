@@ -83,6 +83,9 @@ class Variable(BaseModel):
 
     # Fórmula: variable calculada a partir de otras (p. ej. «vel / rpm»).
     formula: str = ""
+    # Origen de la imagen: pantalla del HMI o una cámara (la región es sobre la imagen de esa cámara).
+    capture: Literal["screen", "camera"] = "screen"
+    camera_id: Optional[str] = None
 
     @property
     def numeric(self) -> bool:
@@ -95,8 +98,32 @@ class Variable(BaseModel):
 
     @property
     def screen(self) -> bool:
-        """Se lee de la pantalla (las fórmulas no)."""
-        return self.kind != "formula"
+        """Se lee de la pantalla del HMI (las fórmulas y las variables de cámara no)."""
+        return self.kind != "formula" and self.capture == "screen"
+
+    @property
+    def from_camera(self) -> bool:
+        return self.kind != "formula" and self.capture == "camera"
+
+
+class CameraDef(BaseModel):
+    """Cámara (USB o de red) para leer displays, indicadores o selectores físicos."""
+
+    id: str
+    name: str = "Cámara"
+    # Índice del dispositivo (0, 1, …) o dirección de red (rtsp://…, http://…/video).
+    source: str = "0"
+    backend: Literal["auto", "dshow", "msmf"] = "auto"  # en Windows, DirectShow suele ser el más compatible
+    width: int = Field(0, ge=0, le=7680)  # 0 = resolución predeterminada de la cámara
+    height: int = Field(0, ge=0, le=4320)
+    rotate: Literal[0, 90, 180, 270] = 0
+    flip: Literal["none", "h", "v"] = "none"
+    auto_exposure: bool = True
+    exposure: float = -6.0  # unidades del controlador (en DirectShow, potencia de 2 en segundos)
+    auto_focus: bool = True
+    focus: float = 0.0
+    brightness: Optional[float] = None
+    read_fps: float = Field(4.0, ge=0.2, le=30)  # imágenes que se procesan por segundo
 
 
 OcrEngineName = Literal["windows", "template", "tesseract"]
@@ -275,6 +302,7 @@ class AppConfig(BaseModel):
     tours_paused: bool = False
     oee: OeeSettings = Field(default_factory=OeeSettings)
     reports: list[ReportDef] = Field(default_factory=list)
+    cameras: list[CameraDef] = Field(default_factory=list)
 
     @model_validator(mode="after")
     def _migrate_tour(self) -> "AppConfig":
@@ -307,6 +335,13 @@ class AppConfig(BaseModel):
         """Vigencia de los datos leídos en recorridos: 2.5 × el intervalo más largo entre lecturas."""
         ints = [t.interval_s for t in self.tours if t.enabled and t.read_data and t.interval_s]
         return 2.5 * max(ints) if ints else 3600.0
+
+    def camera(self, camera_id: Optional[str]) -> Optional[CameraDef]:
+        return next((c for c in self.cameras if c.id == camera_id), None) if camera_id else None
+
+    def used_cameras(self) -> list[CameraDef]:
+        ids = {v.camera_id for v in self.variables if v.from_camera}
+        return [c for c in self.cameras if c.id in ids]
 
     def variable(self, var_id: str) -> Optional[Variable]:
         return next((v for v in self.variables if v.id == var_id), None)
@@ -374,6 +409,12 @@ class AppConfig(BaseModel):
                     problems.append(f"{v.id}: la consigna '{v.setpoint_var}' no existe")
                 elif sp.kind != "setpoint":
                     problems.append(f"{v.id}: '{v.setpoint_var}' no es de tipo consigna")
+        for v in self.variables:
+            if v.from_camera and self.camera(v.camera_id) is None:
+                problems.append(f"{v.id}: elige la cámara de la que se lee")
+        cids = [c.id for c in self.cameras]
+        if len(cids) != len(set(cids)):
+            problems.append("IDs de cámara duplicados")
         for t in self.tours:
             name = f"Recorrido «{t.name}»"
             for pid in (t.start_page, t.return_page, t.off_page):

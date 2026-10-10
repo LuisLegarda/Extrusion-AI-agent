@@ -308,3 +308,36 @@ def test_language_and_theme_switch(ctx, tmp_path):
     dark.on_snapshot(ctx.engine.step())
     apply_ui_prefs({})  # vuelve a español / claro para las demás pruebas
     dark.close()
+
+
+def test_camera_capture_in_setup(ctx, monkeypatch):
+    from PySide6.QtWidgets import QMessageBox
+
+    from extrusion_monitor.ui.setup_dialog import SetupDialog
+    monkeypatch.setattr(QMessageBox, "warning", lambda *a, **k: pytest.fail(str(a[2])))
+    ctx.engine.step()
+    dlg = SetupDialog(ctx)
+    assert dlg.cmb_source.findData("cam1") >= 0
+    dlg._select_key(("var", "laser"))  # variable de cámara: la vista pasa a la cámara
+    assert dlg.frame_source == "cam1" and dlg.cam_panel.isVisibleTo(dlg)
+    assert dlg.frame.shape[:2] == (400, 640)
+    assert "3." in dlg.lbl_result.text() or "acuerdo" in dlg.lbl_result.text().lower()
+    # Una variable de pantalla pasada a cámara: la página se quita y aparece la cámara elegida.
+    dlg._select_key(("var", "exc"))
+    assert dlg.frame_source == "screen"
+    dlg.cmb_capture.setCurrentIndex(dlg.cmb_capture.findData("camera"))
+    v = dlg.config.variable("exc")
+    assert v.capture == "camera" and v.camera_id == "cam1" and v.page is None
+    dlg.cmb_capture.setCurrentIndex(dlg.cmb_capture.findData("screen"))
+    # Nueva cámara y región marcada sobre su imagen → la variable nueva es de cámara.
+    dlg.cam_panel.new_camera()
+    assert len(dlg.config.cameras) == 2
+    dlg.show_source("cam1")
+    from extrusion_monitor.config import Rect
+    dlg.view.selection = Rect(x=230, y=175, w=180, h=36)
+    monkeypatch.setattr("extrusion_monitor.ui.setup_dialog.QInputDialog.getText", lambda *a, **k: ("Lectura 2", True))
+    dlg._new_var("actual")
+    nv = next(x for x in dlg.config.variables if x.name == "Lectura 2")
+    assert nv.from_camera and nv.camera_id == "cam1"
+    dlg.config.cameras.pop()  # la cámara nueva sin uso (fuente «1») no se puede abrir aquí
+    dlg._save()
