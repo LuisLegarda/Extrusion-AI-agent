@@ -751,7 +751,14 @@ EN: dict[str, str] = {
     "ninguna": "none", "Sin imagen": "No image", "perspectiva corregida": "perspective corrected", "Imagen": "Image",
     "Haz clic en la esquina": "Click the corner", "superior izquierda": "top left", "superior derecha": "top right",
     "inferior derecha": "bottom right", "inferior izquierda": "bottom left", "Quitar cámara": "Remove camera",
-    "Apagado": "Off", "Cámara del tablero": "Panel camera", "luz sin colores enseñados": "light without taught colors",
+    "Apagado": "Off", "Cámara del tablero": "Panel camera", "Espejo": "Mirror", "sin espejo": "no mirror",
+    "espejo horizontal": "horizontal mirror", "espejo vertical": "vertical mirror", "Controlador": "Driver",
+    "DirectShow (más compatible)": "DirectShow (most compatible)", "Media Foundation": "Media Foundation",
+    "Solo para cámaras USB en Windows: si una cámara no abre o se ve mal, prueba el otro":
+        "Only for USB cameras on Windows: if a camera does not open or looks wrong, try the other one",
+    "Enfoque fijo": "Fixed focus", "Brillo manual": "Manual brightness",
+    "El autoenfoque suele «buscar» con los reflejos del vidrio: fíjalo cuando se vea nítido":
+        "Autofocus tends to “hunt” with glass reflections: fix it once the image is sharp", "luz sin colores enseñados": "light without taught colors",
     "aguja no encontrada": "needle not found", "nivel no distinguible": "level cannot be distinguished",
 }
 

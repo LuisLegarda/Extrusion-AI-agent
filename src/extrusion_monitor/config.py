@@ -69,11 +69,17 @@ class CameraSettings(BaseModel):
     width: Optional[int] = Field(None, ge=160, le=7680)
     height: Optional[int] = Field(None, ge=120, le=4320)
     rotate: Literal[0, 90, 180, 270] = 0
+    flip: Literal["none", "h", "v"] = "none"  # espejo (cámara frente a un espejo o montada al revés)
+    # Controlador en Windows para cámaras USB: DirectShow suele ser el más compatible.
+    backend: Literal["auto", "dshow", "msmf"] = "auto"
     # Corrección de perspectiva: 4 esquinas [x, y] (sup. izq., sup. der., inf. der., inf. izq.) de la imagen original.
     warp: Optional[list[list[float]]] = None
     # Exposición manual (los LED y displays brillantes se saturan con la automática). None = automática.
     exposure: Optional[float] = None
     fps: float = Field(10.0, ge=1, le=30)  # cuadros que se analizan por segundo (luces y parpadeo)
+    # Enfoque fijo: el autoenfoque «busca» con los reflejos del vidrio del tablero. None = automático.
+    focus: Optional[float] = None
+    brightness: Optional[float] = None  # None = el de la cámara
 
 
 class SevenSegOptions(BaseModel):
@@ -452,7 +458,7 @@ class AppConfig(BaseModel):
     @property
     def needs_screen(self) -> bool:
         """Hay algo que leer en la pantalla del HMI (si todo viene de cámaras, no se captura la pantalla)."""
-        return not self.cameras or any(v.screen and v.source == SCREEN for v in self.variables) or bool(self.pages) or \
+        return not any(v.on_camera for v in self.variables) or any(v.screen and v.source == SCREEN for v in self.variables) or bool(self.pages) or \
             any(t.enabled and t.steps for t in self.tours)
 
     @model_validator(mode="after")

@@ -124,7 +124,9 @@ class MonitorEngine:
         self.tour_runner = TourRunner(self.config, self.workspace, self.source, self.clicker, self.pages,
                                       clock=self.clock, sleep=self.sleep)
         self.scheduler.reconfigure(self.config)
-        self.cameras.configure(self.config.cameras, camera_probes(self.config))
+        # Solo se abren las cámaras que tienen variables (una cámara sin uso no ocupa el dispositivo).
+        used = {v.source for v in self.config.variables if v.on_camera}
+        self.cameras.configure([c for c in self.config.cameras if c.id in used], camera_probes(self.config))
 
     def _selector_images(self) -> dict:
         out = {}

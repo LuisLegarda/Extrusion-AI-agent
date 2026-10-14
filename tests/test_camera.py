@@ -200,3 +200,20 @@ def test_setup_dialog_with_camera(tmp_path):
     assert "Estado detectado" in d.lbl_result.text()
     d._select_key(("var", "vel"))
     assert d.source == "screen"
+
+
+def test_mirror_and_only_used_cameras_are_opened(tmp_path):
+    img = np.zeros((10, 20, 3), np.uint8)
+    img[0, 0] = 255
+    assert process(img, CameraSettings(id="c", flip="h"))[0, -1, 0] == 255
+    assert process(img, CameraSettings(id="c", flip="v"))[-1, 0, 0] == 255
+    from extrusion_monitor.config import Workspace
+    from extrusion_monitor.engine import MonitorEngine
+    from extrusion_monitor.ocr import TemplateOcr
+    from extrusion_monitor.recipes import RecipeStore
+    cams, cam_vars = sm.demo_camera_config()
+    spare = CameraSettings(id="spare", name="Sin uso", device="9")
+    cfg = AppConfig(cameras=cams + [spare], variables=cam_vars)
+    ws = Workspace(tmp_path)
+    eng = MonitorEngine(ws, cfg, RecipeStore(ws.recipes_dir), None, TemplateOcr(ws.glyphs_file))
+    assert set(eng.cameras.feeds) == {"cam1"}

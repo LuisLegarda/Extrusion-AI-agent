@@ -131,6 +131,20 @@ class CamerasDialog(QDialog):
         self.cmb_rot = QComboBox()
         for v in (0, 90, 180, 270):
             self.cmb_rot.addItem(f"{v}°", v)
+        self.cmb_flip = QComboBox()
+        for k, label in (("none", "sin espejo"), ("h", "espejo horizontal"), ("v", "espejo vertical")):
+            self.cmb_flip.addItem(label, k)
+        self.cmb_backend = QComboBox()
+        for k, label in (("auto", "automático"), ("dshow", "DirectShow (más compatible)"), ("msmf", "Media Foundation")):
+            self.cmb_backend.addItem(label, k)
+        self.cmb_backend.setToolTip("Solo para cámaras USB en Windows: si una cámara no abre o se ve mal, prueba el otro")
+        self.chk_focus = QCheckBox("Enfoque fijo")
+        self.chk_focus.setToolTip("El autoenfoque suele «buscar» con los reflejos del vidrio: fíjalo cuando se vea nítido")
+        self.sp_focus = QDoubleSpinBox()
+        self.sp_focus.setRange(0, 1000)
+        self.chk_bright = QCheckBox("Brillo manual")
+        self.sp_bright = QDoubleSpinBox()
+        self.sp_bright.setRange(-255, 255)
         self.chk_exp = QCheckBox("Exposición manual")
         self.chk_exp.setToolTip("Los LED y displays brillantes se «queman» con la exposición automática: baja la "
                                 "exposición hasta que los segmentos se vean nítidos.")
@@ -144,16 +158,25 @@ class CamerasDialog(QDialog):
         exp_row = QHBoxLayout()
         exp_row.addWidget(self.chk_exp)
         exp_row.addWidget(self.sp_exp)
+        focus_row = QHBoxLayout()
+        focus_row.addWidget(self.chk_focus)
+        focus_row.addWidget(self.sp_focus)
+        bright_row = QHBoxLayout()
+        bright_row.addWidget(self.chk_bright)
+        bright_row.addWidget(self.sp_bright)
         for label, w in (("Nombre", self.ed_name), ("Cámara", self.cmb_dev), ("Resolución", self.cmb_res),
-                         ("Rotación", self.cmb_rot), ("", exp_row), ("Análisis", self.sp_fps)):
+                         ("Rotación", self.cmb_rot), ("Espejo", self.cmb_flip), ("Controlador", self.cmb_backend),
+                         ("", exp_row), ("", focus_row), ("", bright_row), ("Análisis", self.sp_fps)):
             f.addRow(label, w)
         ll.addLayout(f)
         self.ed_name.editingFinished.connect(self._commit)
         self.cmb_dev.currentTextChanged.connect(self._commit)
-        for w in (self.cmb_res, self.cmb_rot):
+        for w in (self.cmb_res, self.cmb_rot, self.cmb_flip, self.cmb_backend):
             w.currentIndexChanged.connect(self._commit)
-        self.chk_exp.toggled.connect(self._commit)
-        self.sp_exp.valueChanged.connect(self._commit)
+        for w in (self.chk_exp, self.chk_focus, self.chk_bright):
+            w.toggled.connect(self._commit)
+        for w in (self.sp_exp, self.sp_focus, self.sp_bright):
+            w.valueChanged.connect(self._commit)
         self.sp_fps.valueChanged.connect(self._commit)
         persp = QHBoxLayout()
         self.btn_corners = QPushButton("⬚ Corregir perspectiva (4 clics)")
@@ -218,7 +241,8 @@ class CamerasDialog(QDialog):
 
     def _enable(self, on: bool) -> None:
         for w in (self.ed_name, self.cmb_dev, self.cmb_res, self.cmb_rot, self.chk_exp, self.sp_exp, self.sp_fps,
-                  self.btn_corners):
+                  self.btn_corners, self.cmb_flip, self.cmb_backend, self.chk_focus, self.sp_focus, self.chk_bright,
+                  self.sp_bright):
             w.setEnabled(on)
 
     def _add(self) -> None:
@@ -272,6 +296,14 @@ class CamerasDialog(QDialog):
         self.sp_exp.setValue(c.exposure if c.exposure is not None else -6)
         self.sp_exp.setEnabled(c.exposure is not None)
         self.sp_fps.setValue(c.fps)
+        self.cmb_flip.setCurrentIndex(max(0, self.cmb_flip.findData(c.flip)))
+        self.cmb_backend.setCurrentIndex(max(0, self.cmb_backend.findData(c.backend)))
+        self.chk_focus.setChecked(c.focus is not None)
+        self.sp_focus.setValue(c.focus or 0)
+        self.sp_focus.setEnabled(c.focus is not None)
+        self.chk_bright.setChecked(c.brightness is not None)
+        self.sp_bright.setValue(c.brightness or 0)
+        self.sp_bright.setEnabled(c.brightness is not None)
         self._loading = False
         self._refresh()
 
@@ -282,7 +314,8 @@ class CamerasDialog(QDialog):
         res = self.cmb_res.currentData()
         dev = self.cmb_dev.currentText().strip() or "0"
         rot = self.cmb_rot.currentData()
-        if rot != c.rotate or dev != c.device:
+        flip = self.cmb_flip.currentData()
+        if rot != c.rotate or dev != c.device or flip != c.flip:
             c.warp = None  # las esquinas se marcaron sobre otra imagen
         c.name = self.ed_name.text().strip() or c.name
         c.device = dev
@@ -291,6 +324,12 @@ class CamerasDialog(QDialog):
         c.exposure = self.sp_exp.value() if self.chk_exp.isChecked() else None
         self.sp_exp.setEnabled(self.chk_exp.isChecked())
         c.fps = self.sp_fps.value()
+        c.flip = flip
+        c.backend = self.cmb_backend.currentData()
+        c.focus = self.sp_focus.value() if self.chk_focus.isChecked() else None
+        c.brightness = self.sp_bright.value() if self.chk_bright.isChecked() else None
+        self.sp_focus.setEnabled(self.chk_focus.isChecked())
+        self.sp_bright.setEnabled(self.chk_bright.isChecked())
         item = self.lst.item(self._cur)
         if item:
             item.setText(f"📹 {c.name}  ({c.device})")

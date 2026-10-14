@@ -37,7 +37,8 @@ class OpenCvCamera:
     def __init__(self, s: CameraSettings):
         dev = s.device.strip()
         if dev.isdigit():
-            backend = cv2.CAP_DSHOW if sys.platform == "win32" else cv2.CAP_ANY
+            backend = {"dshow": cv2.CAP_DSHOW, "msmf": cv2.CAP_MSMF}.get(
+                s.backend, cv2.CAP_DSHOW if sys.platform == "win32" else cv2.CAP_ANY)
             self.cap = cv2.VideoCapture(int(dev), backend)
         else:
             self.cap = cv2.VideoCapture(dev)
@@ -46,9 +47,15 @@ class OpenCvCamera:
         if s.width and s.height:
             self.cap.set(cv2.CAP_PROP_FRAME_WIDTH, s.width)
             self.cap.set(cv2.CAP_PROP_FRAME_HEIGHT, s.height)
+        # Exposición, enfoque y brillo dependen del controlador: si no los soporta, se ignoran.
         if s.exposure is not None:
             self.cap.set(cv2.CAP_PROP_AUTO_EXPOSURE, 0.25 if sys.platform == "win32" else 1)
             self.cap.set(cv2.CAP_PROP_EXPOSURE, float(s.exposure))
+        if s.focus is not None:
+            self.cap.set(cv2.CAP_PROP_AUTOFOCUS, 0)
+            self.cap.set(cv2.CAP_PROP_FOCUS, float(s.focus))
+        if s.brightness is not None:
+            self.cap.set(cv2.CAP_PROP_BRIGHTNESS, float(s.brightness))
         self.cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)
 
     def read(self) -> np.ndarray:
@@ -86,6 +93,10 @@ def process(frame: np.ndarray, s: CameraSettings) -> np.ndarray:
         frame = cv2.rotate(frame, cv2.ROTATE_180)
     elif s.rotate == 270:
         frame = cv2.rotate(frame, cv2.ROTATE_90_COUNTERCLOCKWISE)
+    if s.flip == "h":
+        frame = cv2.flip(frame, 1)
+    elif s.flip == "v":
+        frame = cv2.flip(frame, 0)
     if s.warp and len(s.warp) == 4:
         w, h = warp_size(s.warp)
         dst = np.float32([[0, 0], [w - 1, 0], [w - 1, h - 1], [0, h - 1]])
@@ -310,8 +321,8 @@ def grab_for_setup(manager: Optional[CameraManager], s: CameraSettings, stage: s
         feed = manager.feeds.get(s.id)
         if feed is None or feed.settings.device != s.device:
             feed = next((f for f in manager.feeds.values() if f.settings.device == s.device), None)
-    same = feed is not None and (feed.settings.device, feed.settings.width, feed.settings.height,
-                                 feed.settings.exposure) == (s.device, s.width, s.height, s.exposure)
+    key = lambda c: (c.device, c.width, c.height, c.exposure, c.backend, c.focus, c.brightness)  # noqa: E731
+    same = feed is not None and key(feed.settings) == key(s)
     if same:
         if not feed.running:
             feed.poll()
