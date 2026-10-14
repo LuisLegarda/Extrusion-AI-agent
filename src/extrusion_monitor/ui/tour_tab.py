@@ -274,7 +274,7 @@ class TourTab(QWidget):
         self._loading = True
         self.cmb_state.clear()
         self.cmb_state.addItem("cualquier estado", None)
-        for st in (var.states if var else []):
+        for st in (var.state_names if var else []):
             self.cmb_state.addItem(st, st)
         self.cmb_state.setCurrentIndex(max(0, self.cmb_state.findData(cur)))
         self._loading = was

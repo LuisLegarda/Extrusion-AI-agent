@@ -10,6 +10,13 @@ Numeración `MAYOR.MENOR.PARCHE`:
 
 ## [Sin publicar]
 
+### Cámaras para equipos sin HMI (rama `feature/camaras`)
+- Fuente de imagen por cámara USB o IP (RTSP / HTTP MJPEG), con rotación, corrección de perspectiva y
+  exposición manual; reconexión automática y aviso de cámara sin imagen.
+- Lectores nuevos: displays de 7 segmentos (LED/LCD), luces y torres andon por color con detección de
+  parpadeo, agujas (manómetros) y barras de nivel. Pantalla y cámaras se combinan en la misma línea.
+- Cámara simulada en el modo demo.
+
 ### En desarrollo (rama `feature/problemas-proceso`)
 - Problemas de proceso: captura de causas de paro y defectos de calidad por el operador, catálogos en la
   receta, paros planeados fuera del OEE, Pareto en el monitor y en el dashboard global con CSV.
