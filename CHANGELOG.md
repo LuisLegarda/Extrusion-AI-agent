@@ -10,7 +10,14 @@ Numeración `MAYOR.MENOR.PARCHE`:
 
 ## [Sin publicar]
 
-### Cámaras para equipos sin HMI (rama `feature/camaras`)
+### Servidor propio, etapa 1 (rama `feature/servidor`)
+- Envío opcional de cada línea a un servidor propio (nube o planta) por HTTPS, además de la carpeta compartida
+  o en su lugar: cola en disco (no se pierde nada sin red), lotes sin duplicar al reenviar, gzip, solo conexiones
+  de salida desde el HMI. Registro de la línea con una clave de registro.
+- Servidor (`server/`): API FastAPI + PostgreSQL + HTTPS automático (Caddy) + respaldos diarios, en Docker.
+  Claves por línea, claves de lectura y de administración, retención configurable.
+
+### Cámaras para equipos sin HMI (integrado en `develop`)
 - Fuente de imagen por cámara USB o IP (RTSP / HTTP MJPEG), con rotación, corrección de perspectiva y
   exposición manual; reconexión automática y aviso de cámara sin imagen.
 - Lectores nuevos: displays de 7 segmentos (LED/LCD), luces y torres andon por color con detección de

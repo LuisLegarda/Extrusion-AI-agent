@@ -1,0 +1,9 @@
+# Versiones exactas probadas (se actualizan a propósito, en una rama, con las pruebas en verde)
+fastapi==0.143.1
+starlette==1.8.0
+uvicorn==0.54.0
+SQLAlchemy==2.1.4
+psycopg[binary]==3.3.6
+pydantic==2.14.1
+pydantic_core==2.50.1
+anyio==4.15.1

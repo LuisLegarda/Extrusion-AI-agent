@@ -38,6 +38,17 @@ class StationSettings(BaseModel):
     interval_s: float = Field(5.0, ge=1, le=60)
     trend_interval_s: float = Field(60.0, ge=10, le=600)
     retention_days: int = Field(30, ge=1, le=3650)
+    # --- servidor propio (nube o servidor de planta) ---
+    server_enabled: bool = False
+    server_url: str = ""  # p. ej. https://monitor.miempresa.com
+    server_token: str = ""  # clave de esta línea (la entrega el servidor al registrarla)
+    server_verify_tls: bool = True  # solo se apaga con certificados internos de prueba
+    server_interval_s: float = Field(10.0, ge=2, le=300)  # estado actual como máximo cada…
+    server_heartbeat_s: float = Field(60.0, ge=10, le=900)  # …y aunque no cambie nada, cada…
+
+    @property
+    def server_ready(self) -> bool:
+        return self.server_enabled and bool(self.server_url and self.server_token)
 
 
 # --- configuración del dashboard global (fleet.json en la PC de supervisión) ------------------------
