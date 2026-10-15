@@ -1,4 +1,4 @@
-"""Exportación al dashboard global: escribe el estado de la línea en la carpeta compartida.
+"""Exportación al dashboard global: carpeta compartida y/o servidor propio (ver cloud.py).
 
 Corre en su propio hilo: una carpeta de red lenta o caída nunca detiene la lectura del HMI. Si la carpeta
 no está disponible, los eventos y tendencias se guardan en memoria (con límite) y se escriben al volver.
@@ -15,6 +15,7 @@ from typing import Optional
 from . import __version__
 from .analysis.oee import STATE_LABELS, OeeSample, compute, shift_start
 from .analysis.rules import Level
+from .cloud import CloudOutbox
 from .config import Workspace
 from .fleet import (EVENTS_DIR, SCHEMA_VERSION, STATUS_FILE, TREND_DIR, StationSettings, append_lines, day_name,
                     dumps, line_slug, write_atomic)
@@ -57,10 +58,11 @@ class FleetExporter:
         self.settings = settings or load_station(workspace)
         self._lock = threading.Lock()
         self._snap = None
-        self._events: list[str] = []
+        self._events: list[dict] = []
         self._acc: dict[str, list[float]] = {}  # valores del minuto en curso por variable
         self._acc_start = time.time()
-        self._trend: list[tuple[float, str]] = []  # (ts, renglón) pendientes de escribir
+        self._problems: list[dict] = []  # capturas de problemas de proceso (operaciones add/del) para el servidor
+        self._trend: list[dict] = []  # puntos de tendencia pendientes de escribir en la carpeta
         self._oee = None
         self._oee_at = 0.0
         self._last_purge = 0.0
@@ -69,6 +71,7 @@ class FleetExporter:
         self._thread: Optional[threading.Thread] = None
         self.last_ok: Optional[float] = None
         self.last_error = ""
+        self.cloud = CloudOutbox(workspace.home, lambda: self.settings)
         engine.listeners.append(self.offer)
 
     # --- configuración ---------------------------------------------------------------------
@@ -84,21 +87,25 @@ class FleetExporter:
             return None
         return Path(s.export_dir) / self.line_id
 
+    @property
+    def active(self) -> bool:
+        return self.line_dir is not None or self.settings.server_ready
+
     def reconfigure(self, settings: StationSettings) -> None:
         with self._lock:
             self.settings = settings
             self.last_error = ""
+            self.cloud.last_error = ""
         save_station(self.workspace, settings)
         self._wake.set()
+        self.cloud._wake.set()
 
     # --- entrada (hilo del monitoreo: solo copia datos, sin E/S) ------------------------------
     def offer(self, snap) -> None:
-        if not self.settings.enabled:
+        if not self.active:
             return
-        rows = []
-        for e in snap.events:
-            rows.append(dumps({"ts": round(e.ts, 3), "kind": e.kind, "level": LEVELS.get(e.level, str(e.level)),
-                               "rule": e.rule, "var": e.var_id, "msg": e.message, "recipe": snap.recipe}))
+        rows = [{"ts": round(e.ts, 3), "kind": e.kind, "level": LEVELS.get(e.level, str(e.level)), "rule": e.rule,
+                 "var": e.var_id, "msg": e.message, "recipe": snap.recipe} for e in snap.events]
         with self._lock:
             self._snap = snap
             self._events = (self._events + rows)[-MAX_PENDING:]
@@ -107,6 +114,15 @@ class FleetExporter:
                 if v is not None and st.fresh and st.var.numeric:
                     self._acc.setdefault(vid, []).append(v)
 
+    def queue_problem(self, op: str, rec: dict) -> None:
+        """Captura de problemas de proceso agregada («add») o eliminada («del») para el servidor."""
+        if not self.settings.server_ready:
+            return
+        item = {"op": "add", **rec} if op == "add" else {"op": "del", "uid": rec.get("uid")}
+        with self._lock:
+            self._problems.append(item)
+        self._wake.set()
+
     # --- hilo ---------------------------------------------------------------------------------
     def start(self) -> None:
         if self._thread is not None and self._thread.is_alive():
@@ -114,6 +130,7 @@ class FleetExporter:
         self._stop.clear()
         self._thread = threading.Thread(target=self._run, name="fleet-export", daemon=True)
         self._thread.start()
+        self.cloud.start()
 
     def stop(self, closed: bool = True) -> None:
         """Detiene el hilo; con `closed` deja escrito que el programa se cerró (no es una falla de red)."""
@@ -122,16 +139,19 @@ class FleetExporter:
         if self._thread is not None:
             self._thread.join(5.0)
         self._thread = None
-        if closed and self.line_dir is not None:
+        if closed and self.active:
             try:
                 self.write_once(closed=True)
             except OSError:
                 pass
+        self.cloud.stop()
+        if closed and self.settings.server_ready:
+            self.cloud.flush(force_status=True, timeout=3.0)  # «programa cerrado» (sin esperar si no hay red)
 
     def _run(self) -> None:
         while not self._stop.is_set():
             t0 = time.monotonic()
-            if self.line_dir is not None:
+            if self.active:
                 try:
                     self.write_once()
                 except Exception as exc:  # carpeta no disponible: se reintenta en el siguiente ciclo
@@ -143,7 +163,8 @@ class FleetExporter:
 
     def write_once(self, closed: bool = False) -> None:
         d = self.line_dir
-        if d is None:
+        cloud = self.settings.server_ready
+        if d is None and not cloud:
             return
         now = time.time()
         self._roll_trend(now)
@@ -151,20 +172,32 @@ class FleetExporter:
             snap = self._snap
             events, self._events = self._events, []
             trend, self._trend = self._trend, []
+            problems, self._problems = self._problems, []
+        status = self.payload(snap, now, closed)
+        if cloud:  # a disco primero: el hilo de envío lo manda cuando haya red
+            try:
+                self.cloud.enqueue(events, trend, problems)
+            except OSError as exc:
+                log.warning("Cola del servidor: %s", exc)
+            self.cloud.set_status(status)
+            if closed:
+                self.cloud._wake.set()
+        if d is None:
+            return
         try:
             (d / EVENTS_DIR).mkdir(parents=True, exist_ok=True)
             (d / TREND_DIR).mkdir(exist_ok=True)
-            append_lines(d / EVENTS_DIR / day_name(now), events)
+            append_lines(d / EVENTS_DIR / day_name(now), [dumps(e) for e in events])
             by_day: dict[str, list[str]] = {}
-            for ts, row in trend:
-                by_day.setdefault(day_name(ts), []).append(row)
+            for row in trend:
+                by_day.setdefault(day_name(row["ts"]), []).append(dumps(row))
             for name, rows in by_day.items():
                 append_lines(d / TREND_DIR / name, rows)
             events, trend = [], []
-            write_atomic(d / STATUS_FILE, json.dumps(self.payload(snap, now, closed), ensure_ascii=False,
+            write_atomic(d / STATUS_FILE, json.dumps(status, ensure_ascii=False,
                                                      separators=(",", ":")).encode("utf-8"))
         finally:
-            if events or trend:  # no se pudo escribir: vuelven a la cola
+            if events or trend:  # no se pudo escribir en la carpeta: vuelven a su cola
                 with self._lock:
                     self._events = (events + self._events)[-MAX_PENDING:]
                     self._trend = (trend + self._trend)[-MAX_PENDING:]
@@ -183,8 +216,7 @@ class FleetExporter:
             kpis = {k: round(v, 4) for k, v in (self.engine.kpis or {}).items() if v is not None}
             if acc or kpis:
                 v = {vid: [round(sum(xs) / len(xs), 6), min(xs), max(xs), xs[-1]] for vid, xs in acc.items()}
-                self._trend.append((now, dumps({"ts": round(now, 1), "from": round(start, 1), "v": v,
-                                                "k": kpis})))
+                self._trend.append({"ts": round(now, 1), "from": round(start, 1), "v": v, "k": kpis})
                 self._trend = self._trend[-MAX_PENDING:]
 
     def _purge(self, d: Path, now: float) -> None:

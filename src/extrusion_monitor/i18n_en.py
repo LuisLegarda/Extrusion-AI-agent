@@ -760,6 +760,21 @@ EN: dict[str, str] = {
     "El autoenfoque suele «buscar» con los reflejos del vidrio: fíjalo cuando se vea nítido":
         "Autofocus tends to “hunt” with glass reflections: fix it once the image is sharp", "luz sin colores enseñados": "light without taught colors",
     "aguja no encontrada": "needle not found", "nivel no distinguible": "level cannot be distinguished",
+    # --- servidor propio ---
+    "Servidor propio (nube o servidor de planta)": "Own server (cloud or plant server)",
+    "Enviar también al servidor": "Also send to the server", "Dirección del servidor:": "Server address:",
+    "Clave de la línea:": "Line key:", "se obtiene con «Registrar esta línea…»": "obtained with “Register this line…”",
+    "Registrar esta línea…": "Register this line…", "Registrar esta línea": "Register this line",
+    "Pide la clave de registro del servidor (la tiene el administrador) y obtiene la clave de esta línea":
+        "Asks for the server registration key (the administrator has it) and obtains this line's key",
+    "Enviar el estado cada:": "Send the status every:",
+    "Verificar el certificado HTTPS (desactívalo solo con certificados internos de prueba)":
+        "Verify the HTTPS certificate (turn it off only with internal test certificates)",
+    "Probar conexión": "Test connection",
+    "Primero se guarda en disco y luego se envía: si la red falla, los datos esperan y se envían al volver. El servidor nunca envía órdenes a esta PC.":
+        "Data is saved to disk first and then sent: if the network fails, it waits and is sent when it comes back. The server never sends commands to this PC.",
+    "Indica la dirección del servidor.": "Enter the server address.", "Clave de registro del servidor:": "Server registration key:",
+    "Sin enviar": "Not sent", "Conectando…": "Connecting…",
 }
 
 # Textos con valores: la clave es la plantilla en español («{}» = valor) y el resultado su traducción.
@@ -894,4 +909,12 @@ EN_PATTERNS: dict[str, str] = {
     "error de lectura: {}": "reading error: {}", "{}: la cámara '{}' no existe": "{}: the camera '{}' does not exist",
     "«{}»: calibra la aguja (centro, mínimo y máximo)": "“{}”: calibrate the needle (center, minimum and maximum)",
     "«{}» tiene {} variables. Se quitarán también.\n¿Continuar?": "“{}” has {} variables. They will be removed too.\nContinue?",
+    # --- servidor propio ---
+    "Línea registrada como «{}». Pulsa Aceptar para empezar a enviar.":
+        "Line registered as “{}”. Press OK to start sending.",
+    "Servidor en línea (versión {}).": "Server online (version {}).",
+    "Clave válida para la línea «{}».": "Valid key for line “{}”.", "Último envío hace {} s": "Last sent {} s ago",
+    "{} lotes en espera": "{} batches waiting", "sin conexión con el servidor ({})": "no connection to the server ({})",
+    "Clave de línea no válida": "Invalid line key", "Clave de registro incorrecta": "Wrong registration key",
+    "El registro de líneas está desactivado en el servidor": "Line registration is disabled on the server",
 }

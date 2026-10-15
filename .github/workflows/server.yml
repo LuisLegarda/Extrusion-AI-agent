@@ -1,0 +1,46 @@
+# Servidor propio (carpeta server/): pruebas con SQLite y con PostgreSQL real, y construcción de la imagen Docker.
+name: Servidor
+
+on:
+  push:
+    branches: ["**"]
+    paths: ["server/**", "src/extrusion_monitor/cloud.py", "src/extrusion_monitor/fleet.py", ".github/workflows/server.yml"]
+  pull_request:
+    paths: ["server/**", "src/extrusion_monitor/cloud.py", "src/extrusion_monitor/fleet.py", ".github/workflows/server.yml"]
+  workflow_dispatch:
+
+jobs:
+  server:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_DB: extrusion
+          POSTGRES_USER: extrusion
+          POSTGRES_PASSWORD: prueba
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U extrusion" --health-interval 5s --health-timeout 5s --health-retries 20
+    defaults:
+      run:
+        working-directory: server
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Instalar dependencias (versiones fijas)
+        run: pip install -r requirements-dev.txt
+      - name: Pruebas con SQLite
+        run: python -m pytest -q -rs tests
+      - name: Pruebas con PostgreSQL
+        env:
+          TEST_DATABASE_URL: postgresql+psycopg://extrusion:prueba@localhost:5432/extrusion
+        run: python -m pytest -q -rs tests
+      - name: Construir la imagen Docker
+        run: docker build -t extrusion-server:ci .
+      - name: Validar docker-compose
+        run: |
+          cp .env.example .env
+          docker compose config --quiet

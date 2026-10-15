@@ -62,6 +62,13 @@ Cada línea puede publicar su estado en una **carpeta compartida de red** (p. ej
 
 **Consumo de recursos:** la escritura corre en un hilo aparte; si la red está lenta o caída el monitoreo no se detiene y los eventos y tendencias esperan en memoria hasta que vuelva. `status.json` pesa unos 10 KB. El dashboard global solo vuelve a leer un `status.json` cuando cambia y lee los eventos de forma incremental: con 100 líneas cada ciclo tarda unos milisegundos. Una línea sin actualizar en más de 30 s aparece como «Sin comunicación»; al cerrar el programa queda como «Programa cerrado». Los eventos y tendencias se borran después de 30 días (configurable).
 
+### Servidor propio (nube o planta)
+
+Además de la carpeta compartida, o en su lugar, cada línea puede enviar sus datos a un servidor propio por HTTPS.
+Se configura en *Configuración → Dashboard global (exportación) → Servidor propio*: dirección y *Registrar esta
+línea…*. Los datos se guardan primero en disco y se envían en segundo plano, así que un corte de red no pierde
+nada. El servidor (API + PostgreSQL + HTTPS, en Docker) y la guía para montarlo están en [server/README.md](server/README.md).
+
 ## Uso
 
 ```
