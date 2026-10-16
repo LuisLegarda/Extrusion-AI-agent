@@ -17,7 +17,16 @@ CREATE INDEX IF NOT EXISTS ix_events_ts ON events(ts);
 CREATE TABLE IF NOT EXISTS oee (
     ts REAL NOT NULL, dt REAL, state TEXT, speed REAL, nominal REAL, good INTEGER, overall INTEGER);
 CREATE INDEX IF NOT EXISTS ix_oee_ts ON oee(ts);
+CREATE TABLE IF NOT EXISTS problems (
+    id INTEGER PRIMARY KEY AUTOINCREMENT, uid TEXT, kind TEXT NOT NULL, captured_at REAL NOT NULL,
+    start REAL NOT NULL, end REAL NOT NULL, duration_s REAL NOT NULL, category_id TEXT, category TEXT,
+    reason_id TEXT, reason TEXT, planned INTEGER DEFAULT 0, scrap REAL DEFAULT 0, unit TEXT, operator TEXT,
+    comment TEXT, recipe TEXT);
+CREATE INDEX IF NOT EXISTS ix_problems_start ON problems(start);
 """
+
+PROBLEM_FIELDS = ("id", "uid", "kind", "captured_at", "start", "end", "duration_s", "category_id", "category",
+                  "reason_id", "reason", "planned", "scrap", "unit", "operator", "comment", "recipe")
 
 
 class Historian:
@@ -119,6 +128,49 @@ class Historian:
             self._conn.execute("DELETE FROM samples WHERE ts < ?", (cutoff,))
             self._conn.execute("DELETE FROM events WHERE ts < ?", (cutoff,))
             self._conn.execute("DELETE FROM oee WHERE ts < ?", (cutoff,))
+
+    # --- problemas de proceso (capturados por el operador) ------------------------------------
+    def add_problem(self, rec: dict) -> dict:
+        """Guarda una captura (paro o defecto). Devuelve el registro completo (con id y uid)."""
+        import uuid
+        rec = dict(rec)
+        rec.setdefault("uid", uuid.uuid4().hex)
+        rec.setdefault("captured_at", time.time())
+        rec["duration_s"] = max(0.0, float(rec["end"]) - float(rec["start"]))
+        rec["planned"] = int(bool(rec.get("planned")))
+        cols = [f for f in PROBLEM_FIELDS if f != "id"]
+        with self._lock, self._conn:
+            cur = self._conn.execute(f"INSERT INTO problems ({','.join(cols)}) VALUES ({','.join('?' * len(cols))})",
+                                     [rec.get(c) for c in cols])
+            rec["id"] = cur.lastrowid
+        return rec
+
+    def delete_problem(self, pid: int) -> Optional[dict]:
+        rows = self.problems(ids=[pid])
+        if not rows:
+            return None
+        with self._lock, self._conn:
+            self._conn.execute("DELETE FROM problems WHERE id=?", (pid,))
+        return rows[0]
+
+    def problems(self, since: float = 0.0, until: Optional[float] = None, kind: Optional[str] = None,
+                 ids: Optional[list[int]] = None) -> list[dict]:
+        """Capturas que se cruzan con [since, until], ordenadas por inicio."""
+        sql = f"SELECT {','.join(PROBLEM_FIELDS)} FROM problems WHERE end >= ? AND start <= ?"
+        args: list = [since, until if until is not None else time.time() + 86400]
+        if kind:
+            sql += " AND kind=?"
+            args.append(kind)
+        if ids:
+            sql += f" AND id IN ({','.join('?' * len(ids))})"
+            args += list(ids)
+        with self._lock:
+            rows = self._conn.execute(sql + " ORDER BY start", args).fetchall()
+        return [dict(zip(PROBLEM_FIELDS, r)) for r in rows]
+
+    def planned_intervals(self, since: float, until: float) -> list[tuple[float, float]]:
+        """Tramos de paro planeado (no cuentan contra la Disponibilidad del OEE)."""
+        return [(r["start"], r["end"]) for r in self.problems(since, until, kind="downtime") if r["planned"]]
 
     def close(self) -> None:
         with self._lock:

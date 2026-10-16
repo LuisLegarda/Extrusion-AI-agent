@@ -266,6 +266,8 @@ class FleetWindow(QMainWindow):
         for text, slot, tip in (("⚙ Configuración", self.open_setup, "Carpeta de datos, indicadores, áreas y avisos"),
                                 ("✔ Reconocer avisos", self.acknowledge_all, "Detiene el parpadeo de las tarjetas (Ctrl+K)"),
                                 ("⤓ Exportar CSV", self.export_csv, "Estado y OEE de todas las líneas"),
+                                ("📉 Problemas de proceso", self.open_problems,
+                                 "Pareto de paros y defectos capturados en las líneas, con descarga CSV"),
                                 ("📺 Modo TV (F11)", self.toggle_tv, "Pantalla completa con páginas que rotan")):
             b = QPushButton(text)
             b.setToolTip(tip)
@@ -360,6 +362,7 @@ class FleetWindow(QMainWindow):
         m = mb.addMenu("&Archivo")
         act = m.addAction("⤓ Exportar resumen a CSV…", self.export_csv)
         act.setShortcut("Ctrl+E")
+        m.addAction("📉 Problemas de proceso (Pareto y CSV)…", self.open_problems)
         m.addSeparator()
         act = m.addAction("Salir", self.close)
         act.setShortcut("Ctrl+Q")
@@ -755,6 +758,16 @@ class FleetWindow(QMainWindow):
         self._page += 1
         self._layout_key = None
         self.refresh(rescan=False)
+
+    def open_problems(self) -> None:
+        from .fleet_problems import FleetProblemsDialog
+        dlg = getattr(self, "_problems_dlg", None)
+        if dlg is None:
+            dlg = self._problems_dlg = FleetProblemsDialog(self, self)
+        else:
+            dlg.refresh()
+        dlg.show()
+        dlg.raise_()
 
     def export_csv(self, path: Optional[str] = None) -> Optional[str]:
         if not path:

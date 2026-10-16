@@ -39,7 +39,7 @@ RANGES = [("5 min", 300), ("15 min", 900), ("30 min", 1800), ("1 h", 3600), ("4 
 
 
 NAV_ITEMS = [("home", "Inicio", "🏠"), ("variables", "Variables en vivo", "📟"), ("trends", "Tendencias", "📈"),
-             ("kpi", "KPI / OEE", "🏭"), ("spc", "SPC", "📊"), ("corr", "Correlación", "🔗"),
+             ("kpi", "KPI / OEE", "🏭"), ("problems", "Problemas de proceso", "⚠"), ("spc", "SPC", "📊"), ("corr", "Correlación", "🔗"),
              ("behavior", "Estabilidad (IA)", "🧠"), ("events", "Alarmas y eventos", "🔔")]
 NAV_TOOLS = [("recipes", "Recetas", "📋"), ("reports", "Reportes", "📄"), ("setup", "Configurar receta", "⚙")]
 HELP_URL = "https://github.com/LuisLegarda/Extrusion-AI-agent#readme"
@@ -173,6 +173,8 @@ class MainWindow(QMainWindow):
         self.engine = ctx.engine
         self._config_version = ctx.engine.config_version
         self._prompts: dict = {}
+        self._stop_since: Optional[float] = None  # inicio del paro en curso (para el aviso al reanudar)
+        self._stop_prompt = None
         self._series = SeriesCache(ctx.engine)
         self.bridge = SnapshotBridge()
         self.bridge.snapshot.connect(self.on_snapshot, Qt.QueuedConnection)
@@ -255,10 +257,13 @@ class MainWindow(QMainWindow):
 
         from .reports_page import ReportsPage
         self.reports_page = ReportsPage(self.ctx, self)
+        from .problems_page import ProblemsPage
+        self.problems_page = ProblemsPage(self.ctx)
+        self.problems_page.pendingChanged.connect(self._problems_badge)
 
         self.pages: dict[str, QWidget] = {}
         for key, w in (("home", self.home), ("variables", self.table), ("trends", trends_page), ("kpi", self.kpi),
-                       ("spc", self.stats_panel), ("corr", self.corr_panel), ("behavior", self.behavior_panel),
+                       ("problems", self.problems_page), ("spc", self.stats_panel), ("corr", self.corr_panel), ("behavior", self.behavior_panel),
                        ("events", tabs), ("reports", self.reports_page)):
             self.pages[key] = w
             self.stack.addWidget(w)
@@ -322,6 +327,7 @@ class MainWindow(QMainWindow):
                            ("Lectura y análisis (general)…", "General")):
             m.addAction(label, lambda tab=tab: self.open_setup(tab))
         m.addAction("📹 Cámaras (equipos sin pantalla)…", lambda: self.open_setup(cameras=True))
+        m.addAction("⚠ Causas de paro y defectos…", self.open_problems_config)
         m.addAction("🧠 Comportamiento (entrenar)…", self.open_behavior)
         m.addAction("✎ Tablero de Inicio…", self.open_home_config)
         m.addAction("▭ Dock al minimizar…", self.open_dock_config)
@@ -355,7 +361,8 @@ class MainWindow(QMainWindow):
         m = mb.addMenu("&Ver")
         for i, (key, label, _icon) in enumerate(NAV_ITEMS + [("reports", "Reportes", "")], 1):
             act = m.addAction(label, lambda key=key: self.show_page(key))
-            act.setShortcut(f"Ctrl+{i}")
+            if i <= 9:
+                act.setShortcut(f"Ctrl+{i}")
         m.addSeparator()
         m.addAction(self.act_top)
         act = m.addAction("Pantalla completa", self._toggle_fullscreen)
@@ -869,6 +876,7 @@ class MainWindow(QMainWindow):
         if snap.recipe != self.cmb_recipe.currentData():
             self.refresh_recipes()
         self._update_prompts(snap)
+        self._watch_stop(snap)
         if self.dock is not None and self.dock.isVisible():
             self.dock.update_snapshot(snap)
         page = self.stack.currentWidget()
@@ -901,6 +909,56 @@ class MainWindow(QMainWindow):
         self.lbl_side_status.setText(
             f"{tr('● En monitoreo') if self.engine.running else tr('○ Detenido')}<br>"
             f"{tr('Receta: {r}', r=snap.recipe or '—')}<br>{tr('Última lectura: {t}', t=stamp)}")
+
+    # --- problemas de proceso ----------------------------------------------------------------
+    def _problems_badge(self, n: int) -> None:
+        for i in range(self.nav.count()):
+            it = self.nav.item(i)
+            if it.data(Qt.UserRole) == "problems":
+                it.setText(f"⚠  {tr('Problemas de proceso')}" + (f"  ({n})" if n else ""))
+                it.setToolTip(tr("{n} paros sin clasificar en el turno", n=n) if n else "")
+
+    def _watch_stop(self, snap: Snapshot) -> None:
+        """Al reanudar la línea tras un paro largo, avisa para clasificarlo (o queda como pendiente)."""
+        o = self.engine.config.oee
+        pc = self.engine.config.problems
+        st = snap.statuses.get(o.speed_var) if (o.enabled and o.speed_var) else None
+        if st is None or st.reading.value is None or not st.fresh:
+            return
+        stopped = st.reading.value <= o.stop_threshold
+        if stopped:
+            if self._stop_since is None:
+                self._stop_since = snap.ts
+            return
+        a, self._stop_since = self._stop_since, None
+        if a is None or not pc.prompt or snap.ts - a < pc.prompt_min_s:
+            return
+        self.problems_page.refresh()
+        if self._stop_prompt is not None:
+            self._stop_prompt.close()
+        from .problems_page import StopPrompt
+        self._stop_prompt = StopPrompt(a, snap.ts, self._classify_stop)
+        self._stop_prompt.show()
+
+    def _classify_stop(self, a: float, b: float) -> None:
+        self._stop_prompt = None
+        if self.dock is not None and self.dock.isVisible():
+            self.restore_from_dock()
+        self.showNormal()
+        self.raise_()
+        self.activateWindow()
+        self.show_page("problems")
+        self.problems_page.classify(a, b)
+
+    def open_problems_config(self) -> None:
+        from .problems_config import ProblemsConfigDialog
+        dlg = ProblemsConfigDialog(self.engine.config.problems, self)
+        if not dlg.exec():
+            return
+        self.engine.config.problems = dlg.settings()
+        self.ctx.workspace.save_config(self.engine.config)
+        self._save_profile()  # va con la receta activa
+        self.problems_page.reload_config()
 
     def open_behavior(self) -> None:
         from .behavior_dialog import BehaviorDialog
@@ -1007,6 +1065,10 @@ class MainWindow(QMainWindow):
         for dlg in self._prompts.values():
             dlg.dismiss()
         self._prompts.clear()
+        if self._stop_prompt is not None:
+            self._stop_prompt.close()
+            self._stop_prompt = None
+        self.problems_page.timer.stop()
 
     # --- idioma y tema ------------------------------------------------------------
     def _set_ui_pref(self, key: str, value: str) -> None:

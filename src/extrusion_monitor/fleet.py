@@ -25,6 +25,7 @@ SCHEMA_VERSION = 1
 STATUS_FILE = "status.json"
 EVENTS_DIR = "events"
 TREND_DIR = "trend"
+PROBLEMS_DIR = "problems"  # AAAA-MM.jsonl: {"op": "add", …captura} / {"op": "del", "uid": …}
 
 
 class StationSettings(BaseModel):
@@ -133,6 +134,10 @@ def line_slug(text: str) -> str:
 
 def day_name(ts: float) -> str:
     return time.strftime("%Y-%m-%d", time.localtime(ts)) + ".jsonl"
+
+
+def month_name(ts: float) -> str:
+    return time.strftime("%Y-%m", time.localtime(ts)) + ".jsonl"
 
 
 def write_atomic(path: Path, data: bytes, retries: int = 6) -> None:
@@ -376,3 +381,42 @@ class FleetReader:
             except OSError:
                 continue
         return t, mean, lo, hi
+
+
+def _months(since: float, until: float) -> list[str]:
+    out, t = [], since
+    while t <= until + 31 * 86400:
+        out.append(month_name(t))
+        t += 27 * 86400
+    return list(dict.fromkeys(out))
+
+
+def read_problems(line: LineState, since: float, until: Optional[float] = None) -> list[dict]:
+    """Capturas de problemas de una línea (paros y defectos) que tocan el periodo, ya con las eliminaciones."""
+    until = time.time() if until is None else until
+    recs: dict[str, dict] = {}
+    for name in _months(since - 31 * 86400, until):
+        path = line.path / PROBLEMS_DIR / name
+        try:
+            with open(path, "rb") as f:
+                for raw in f:
+                    try:
+                        op = json.loads(raw)
+                    except ValueError:
+                        continue
+                    uid = op.get("uid")
+                    if not uid:
+                        continue
+                    if op.get("op") == "del":
+                        recs.pop(uid, None)
+                    else:
+                        recs[uid] = {k: v for k, v in op.items() if k != "op"}
+        except OSError:
+            continue
+    out = []
+    for r in recs.values():
+        if (r.get("end") or 0) >= since and (r.get("start") or 0) <= until:
+            r["line"] = line.name
+            r["line_id"] = line.line_id
+            out.append(r)
+    return sorted(out, key=lambda r: r.get("start") or 0)
