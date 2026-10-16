@@ -24,9 +24,16 @@ Numeración `MAYOR.MENOR.PARCHE`:
   parpadeo, agujas (manómetros) y barras de nivel. Pantalla y cámaras se combinan en la misma línea.
 - Cámara simulada en el modo demo.
 
-### En desarrollo (rama `feature/problemas-proceso`)
-- Problemas de proceso: captura de causas de paro y defectos de calidad por el operador, catálogos en la
-  receta, paros planeados fuera del OEE, Pareto en el monitor y en el dashboard global con CSV.
+### Problemas de proceso (rama `feature/problemas-proceso`)
+- Página nueva *Problemas de proceso*: el operador clasifica los paros desde la línea de tiempo del estado de
+  la máquina (el rango del paro se propone solo y se ajusta con barras), con causa, scrap, operador y comentario.
+  Un paro se puede dividir en tramos con causas distintas. También se capturan problemas de calidad (defectos).
+- Catálogos de dos niveles (categoría → causa / defecto) y lista de operadores en *Receta → Causas de paro y
+  defectos*. Los paros planeados no cuentan contra la Disponibilidad del OEE.
+- Aviso al reanudar la línea tras un paro largo y contador de paros sin clasificar en la barra lateral.
+- Pareto por causa, categoría u operador (tiempo, frecuencia o scrap), resumen, tabla y CSV para Excel.
+- Dashboard global: botón *📉 Problemas de proceso* con el análisis de todas las líneas (o por área) y CSV.
+- Las capturas viajan a la carpeta compartida (`<línea>/problems/`) y al servidor propio.
 
 ## [0.2.0] - 2026-10-03
 

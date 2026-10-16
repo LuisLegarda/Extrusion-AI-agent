@@ -308,8 +308,10 @@ def demo_config() -> AppConfig:
                TourStep(id="s_linea", page="linea", clicks=[click("c_linea", "linea")], settle_s=0.5)])
     cameras, cam_vars = demo_camera_config()
     variables += cam_vars
+    from .config import ProblemSettings
     return AppConfig(
         cameras=cameras,
+        problems=ProblemSettings(operators=["Juan Pérez", "María López", "Carlos Ruiz"]),
         machine_name="Demo línea de cable",
         general=GeneralSettings(ocr_engine="template", sample_interval_s=1.0, recipe_name_var="receta_hmi",
                                 trend_window_min=5, trend_horizon_min=5, spc_subgroup_s=10,

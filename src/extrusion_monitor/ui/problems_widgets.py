@@ -193,7 +193,7 @@ class ParetoChart(QWidget):
             p.drawText(self.rect(), Qt.AlignCenter, tr(self.empty_text))
             p.end()
             return
-        left, right, top, bottom = 48, 40, 14, 74
+        left, right, top, bottom = 48, 40, 26, 74  # arriba cabe el nombre del eje
         pw, ph = w - left - right, h - top - bottom
         vmax = max(r.value for r in self.rows) or 1.0
         p.setPen(QPen(QColor(theme.c("grid"))))
@@ -207,7 +207,7 @@ class ParetoChart(QWidget):
             p.drawText(QRectF(left + pw + 4, y - 7, right, 14), Qt.AlignLeft | Qt.AlignVCenter, f"{100 - 25 * k}%")
         n = len(self.rows)
         slot = pw / n
-        bw = slot * 0.62
+        bw = min(slot * 0.62, 140.0)  # con pocas causas las barras no ocupan todo el ancho
         path = QPainterPath()
         pts = []
         for i, r in enumerate(self.rows):

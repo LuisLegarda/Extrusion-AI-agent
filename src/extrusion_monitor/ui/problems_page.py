@@ -214,11 +214,12 @@ class CapturePanel(QWidget):
             self._stop_clicked(*it.data(Qt.UserRole))
 
     def _stop_clicked(self, a: float, b: float) -> None:
-        """Paro elegido: se propone la parte que aún no tiene causa (el primer tramo libre)."""
+        """Paro elegido: se propone la parte que aún no tiene causa (el tramo libre más largo)."""
         self.rb_down.setChecked(True)
         ev = next((e for e in self.events if abs(e.start - a) < 1 and abs(e.end - b) < 1), None)
         spans = free_spans(ev) if ev is not None else [(a, b)]
-        self.select_range(*(spans[0] if spans else (a, b)), select_event=False)
+        best = max(spans, key=lambda s: s[1] - s[0]) if spans else (a, b)
+        self.select_range(*best, select_event=False)
 
     def select_range(self, a: float, b: float, select_event: bool = True, kind: str = "downtime") -> None:
         if kind == "quality":
@@ -300,8 +301,9 @@ class CapturePanel(QWidget):
         ev = next((e for e in self.events if e.start <= sel[0] < e.end and not e.classified), None)
         if ev is not None and kind == "downtime":
             spans = free_spans(ev)
-            if spans:
-                self.select_range(*spans[0])
+            if spans:  # el tramo que sigue al guardado; si no hay, el más largo que quede
+                after = [sp for sp in spans if sp[0] >= sel[1] - 1]
+                self.select_range(*(after[0] if after else max(spans, key=lambda sp: sp[1] - sp[0])))
         self.saved.emit()
         return rec
 

@@ -17,8 +17,8 @@ from .analysis.oee import STATE_LABELS, OeeSample, compute, shift_start
 from .analysis.rules import Level
 from .cloud import CloudOutbox
 from .config import Workspace
-from .fleet import (EVENTS_DIR, SCHEMA_VERSION, STATUS_FILE, TREND_DIR, StationSettings, append_lines, day_name,
-                    dumps, line_slug, write_atomic)
+from .fleet import (EVENTS_DIR, PROBLEMS_DIR, SCHEMA_VERSION, STATUS_FILE, TREND_DIR, StationSettings, append_lines,
+                    day_name, dumps, line_slug, month_name, write_atomic)
 
 log = logging.getLogger(__name__)
 
@@ -62,6 +62,7 @@ class FleetExporter:
         self._acc: dict[str, list[float]] = {}  # valores del minuto en curso por variable
         self._acc_start = time.time()
         self._problems: list[dict] = []  # capturas de problemas de proceso (operaciones add/del) para el servidor
+        self._fproblems: list[dict] = []  # las mismas, para la carpeta compartida
         self._trend: list[dict] = []  # puntos de tendencia pendientes de escribir en la carpeta
         self._oee = None
         self._oee_at = 0.0
@@ -115,12 +116,14 @@ class FleetExporter:
                     self._acc.setdefault(vid, []).append(v)
 
     def queue_problem(self, op: str, rec: dict) -> None:
-        """Captura de problemas de proceso agregada («add») o eliminada («del») para el servidor."""
-        if not self.settings.server_ready:
-            return
-        item = {"op": "add", **rec} if op == "add" else {"op": "del", "uid": rec.get("uid")}
+        """Captura de problemas de proceso agregada («add») o eliminada («del»): carpeta y/o servidor."""
+        item = {"op": "add", **rec} if op == "add" else {"op": "del", "uid": rec.get("uid"), "ts": time.time()}
+        item.pop("id", None)  # el id local no significa nada fuera de esta PC (se identifica por uid)
         with self._lock:
-            self._problems.append(item)
+            if self.settings.server_ready:
+                self._problems.append(item)
+            if self.line_dir is not None:
+                self._fproblems.append(item)
         self._wake.set()
 
     # --- hilo ---------------------------------------------------------------------------------
@@ -173,6 +176,7 @@ class FleetExporter:
             events, self._events = self._events, []
             trend, self._trend = self._trend, []
             problems, self._problems = self._problems, []
+            fprob, self._fproblems = self._fproblems, []
         status = self.payload(snap, now, closed)
         if cloud:  # a disco primero: el hilo de envío lo manda cuando haya red
             try:
@@ -193,12 +197,20 @@ class FleetExporter:
                 by_day.setdefault(day_name(row["ts"]), []).append(dumps(row))
             for name, rows in by_day.items():
                 append_lines(d / TREND_DIR / name, rows)
-            events, trend = [], []
+            if fprob:
+                (d / PROBLEMS_DIR).mkdir(exist_ok=True)
+                by_month: dict[str, list[str]] = {}
+                for p in fprob:
+                    by_month.setdefault(month_name(p.get("captured_at") or p.get("ts") or now), []).append(dumps(p))
+                for name, rows in by_month.items():
+                    append_lines(d / PROBLEMS_DIR / name, rows)
+            events, trend, fprob = [], [], []
             write_atomic(d / STATUS_FILE, json.dumps(status, ensure_ascii=False,
                                                      separators=(",", ":")).encode("utf-8"))
         finally:
-            if events or trend:  # no se pudo escribir en la carpeta: vuelven a su cola
+            if events or trend or fprob:  # no se pudo escribir en la carpeta: vuelven a su cola
                 with self._lock:
+                    self._fproblems = fprob + self._fproblems
                     self._events = (events + self._events)[-MAX_PENDING:]
                     self._trend = (trend + self._trend)[-MAX_PENDING:]
         self.last_ok = now

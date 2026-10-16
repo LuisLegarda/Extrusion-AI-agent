@@ -775,6 +775,56 @@ EN: dict[str, str] = {
         "Data is saved to disk first and then sent: if the network fails, it waits and is sent when it comes back. The server never sends commands to this PC.",
     "Indica la dirección del servidor.": "Enter the server address.", "Clave de registro del servidor:": "Server registration key:",
     "Sin enviar": "Not sent", "Conectando…": "Connecting…",
+    # --- problemas de proceso ---
+    "Problemas de proceso": "Process problems", "Últimos 30 días": "Last 30 days", "Últimos 90 días": "Last 90 days",
+    "Últimas 24 h": "Last 24 h", "Últimos 7 días": "Last 7 days", "Problema de calidad": "Quality problem",
+    "Problemas de calidad": "Quality problems", "Categoría:": "Category:", "Causa / defecto:": "Cause / defect:",
+    "Causa / defecto": "Cause / defect", "Categoría": "Category", "Causa": "Cause", "Defecto": "Defect",
+    "📊 Análisis (Pareto)": "📊 Analysis (Pareto)",
+    "Clic en un paro (rojo) para seleccionarlo; arrastra las manijas o usa las barras para ajustar el inicio y el fin.":
+        "Click a stop (red) to select it; drag the handles or use the sliders to adjust the start and end.",
+    "Paros del turno (de al menos el tiempo del aviso) que aún no tienen causa.":
+        "Shift stops (at least the prompt time) that still have no cause.",
+    "Clasificar paro": "Classify stop", "Después": "Later",
+    "Queda en la lista de paros sin clasificar": "It stays in the list of unclassified stops",
+    "(sin operadores: agrégalos en Receta → Causas de paro y defectos)":
+        "(no operators: add them in Recipe → Stop causes and defects)",
+    "Selecciona el rango de tiempo en la línea de tiempo.": "Select the time range on the timeline.",
+    "Elige la categoría y la causa (o el defecto).": "Choose the category and the cause (or the defect).",
+    "Elige el operador.": "Choose the operator.", "¿Eliminar la captura seleccionada?": "Delete the selected entry?",
+    "Línea": "Line", "Sin datos en el periodo": "No data in the period", "Incluir paros planeados": "Include planned stops",
+    "Por causa / defecto": "By cause / defect", "Por categoría": "By category", "Por operador": "By operator",
+    "Eliminar captura": "Delete entry",
+    "Borra la captura seleccionada en la tabla (por ejemplo, si se capturó mal)":
+        "Deletes the entry selected in the table (for example, if it was entered wrong)",
+    "Exportar problemas de proceso": "Export process problems", "Doble clic para cambiar un nombre.": "Double-click to rename.",
+    "Nueva categoría": "New category", "Causas de paro y defectos": "Stop causes and defects",
+    "Catálogos que el operador usa para clasificar los paros y los problemas de calidad. Se guardan con la receta activa. Cambiar un nombre no altera las capturas ya hechas.":
+        "Catalogs the operator uses to classify stops and quality problems. They are saved with the active recipe. Renaming does not change entries already made.",
+    "Al reanudar la línea, avisar para clasificar el paro": "When the line restarts, prompt to classify the stop",
+    "Solo paros de al menos": "Only stops of at least", "Nueva causa": "New cause", "Nuevo defecto": "New defect",
+    "Operadores que pueden capturar (aparecen en una lista al capturar):":
+        "Operators who can enter data (shown in a list when entering):",
+    "Nuevo operador": "New operator", "Paro planeado": "Planned stop",
+    "Los paros planeados (cambio de producto, comida…) no cuentan contra la Disponibilidad del OEE.":
+        "Planned stops (product change, lunch…) do not count against OEE Availability.",
+    "⏸ Causas de paro": "⏸ Stop causes", "✗ Defectos de calidad": "✗ Quality defects",
+    "👷 Operadores y aviso": "👷 Operators and prompt", "+ Operador": "+ Operator",
+    "Problemas de proceso · todas las líneas": "Process problems · all lines",
+    "Las capturas las hace el operador en el monitor de cada línea (Problemas de proceso). Aquí solo se analizan y se descargan.":
+        "Entries are made by the operator in each line's monitor (Process problems). Here they are only analyzed and downloaded.",
+    "Líneas:": "Lines:", "Todas las líneas": "All lines", "Área": "Area", "Periodo:": "Period:", "⟳ Actualizar": "⟳ Refresh",
+    "📉 Problemas de proceso": "📉 Process problems", "📉 Problemas de proceso (Pareto y CSV)…": "📉 Process problems (Pareto and CSV)…",
+    "Pareto de paros y defectos capturados en las líneas, con descarga CSV":
+        "Pareto of stops and defects entered on the lines, with CSV download",
+    "⚠ Causas de paro y defectos…": "⚠ Stop causes and defects…", "📝 Clasificar ahora": "📝 Classify now",
+    "La línea estuvo detenida <b>{m}</b> ({a}–{b}).<br>¿Cuál fue la causa?":
+        "The line was stopped for <b>{m}</b> ({a}–{b}).<br>What was the cause?",
+    "Problemas de calidad: <b>{n}</b> · scrap total <b>{s}</b> {u}": "Quality problems: <b>{n}</b> · total scrap <b>{s}</b> {u}",
+    "Paros capturados: <b>{n}</b> · <b>{t}</b> (no planeados {u}, planeados {p})":
+        "Stops entered: <b>{n}</b> · <b>{t}</b> (unplanned {u}, planned {p})",
+    "{n} paros sin clasificar en el turno": "{n} unclassified stops in the shift",
+    "{n} paros sin clasificar": "{n} unclassified stops",
 }
 
 # Textos con valores: la clave es la plantilla en español («{}» = valor) y el resultado su traducción.

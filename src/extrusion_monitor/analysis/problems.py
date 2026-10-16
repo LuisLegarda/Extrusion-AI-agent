@@ -71,7 +71,10 @@ def stop_events(intervals: Iterable[Interval], records: Iterable[dict], min_s: f
     return out
 
 
-def free_spans(ev: StopEvent) -> list[tuple[float, float]]:
+MIN_FREE_S = 30.0  # restos más cortos son solo la resolución de las muestras (no un tramo por clasificar)
+
+
+def free_spans(ev: StopEvent, min_s: float = MIN_FREE_S) -> list[tuple[float, float]]:
     """Partes del paro que aún no tienen causa (para proponer el siguiente tramo)."""
     spans = [(ev.start, ev.end)]
     for r in sorted(ev.records, key=lambda r: r["start"]):
@@ -85,7 +88,7 @@ def free_spans(ev: StopEvent) -> list[tuple[float, float]]:
             if r["end"] < b:
                 nxt.append((r["end"], b))
         spans = nxt
-    return [(a, b) for a, b in spans if b - a >= 1.0]
+    return [(a, b) for a, b in spans if b - a >= min_s]
 
 
 # --- Paretos ---------------------------------------------------------------------------------------
