@@ -203,6 +203,9 @@ class SetupDialog(QDialog):
         from .report_tab import ReportTab
         self.report_tab = ReportTab(self)
         self.tabs.addTab(self.report_tab, "Reportes")
+        from .control_tab import ControlTab
+        self.control_tab = ControlTab(self)
+        self.tabs.addTab(self.control_tab, "Control")
         self.tabs.addTab(self._build_general_tab(), "General")
         self.tabs.currentChanged.connect(self._tab_changed)
         split.addWidget(self.tabs)
@@ -224,6 +227,9 @@ class SetupDialog(QDialog):
             self.oee_tab.load()
         elif self.tabs.widget(index) is getattr(self, "report_tab", None):
             self.report_tab.refresh()  # variables y recorridos nuevos
+        elif self.tabs.widget(index) is getattr(self, "control_tab", None):
+            self.control_tab.refresh()  # variables, recorridos y comportamientos nuevos
+            self.control_tab.show_markers()
         else:
             if self.tour_tab.recording is not None:
                 self.tour_tab.stop_recording()
@@ -1359,6 +1365,8 @@ class SetupDialog(QDialog):
         self._refresh_tree(("var", pv.id))
 
     def keyPressEvent(self, event) -> None:
+        if event.key() == Qt.Key_Escape and getattr(self, "control_tab", None) and self.control_tab.cancel_mark():
+            return
         if event.key() == Qt.Key_Escape and self._gauge_cal is not None:
             self._gauge_cal = None
             self.view.point_mode = False
@@ -1784,7 +1792,7 @@ class SetupDialog(QDialog):
     def _commit_all(self) -> list[str]:
         """Pasa a la configuración lo que está en los formularios; devuelve los problemas de las pestañas."""
         self._commit_general()
-        return self.tour_tab.commit() + self.oee_tab.commit() + self.report_tab.commit()
+        return self.tour_tab.commit() + self.oee_tab.commit() + self.report_tab.commit() + self.control_tab.commit()
 
     def _fingerprint(self) -> tuple:
         return (self.config.model_dump_json(), sorted(self.tour_tab.patches), sorted(self.anchors),

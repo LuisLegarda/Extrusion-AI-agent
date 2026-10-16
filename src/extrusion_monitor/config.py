@@ -502,7 +502,8 @@ class ControlWrite(BaseModel):
     verify_s: float = Field(10.0, ge=1, le=120)  # tiempo máximo para ver el valor nuevo en el HMI
 
     def clicks(self) -> list[Click]:
-        return [c for c in (self.field, self.confirm, self.inc, self.dec) if c is not None]
+        """Clics verificados por imagen. El del campo no: muestra el valor que cambia (se verifica la pantalla)."""
+        return [c for c in (self.confirm, self.inc, self.dec) if c is not None]
 
 
 class ControlLoop(BaseModel):

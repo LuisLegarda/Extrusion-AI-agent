@@ -39,8 +39,17 @@ RANGES = [("5 min", 300), ("15 min", 900), ("30 min", 1800), ("1 h", 3600), ("4 
 
 
 NAV_ITEMS = [("home", "Inicio", "🏠"), ("variables", "Variables en vivo", "📟"), ("trends", "Tendencias", "📈"),
-             ("kpi", "KPI / OEE", "🏭"), ("problems", "Problemas de proceso", "⚠"), ("spc", "SPC", "📊"), ("corr", "Correlación", "🔗"),
+             ("kpi", "KPI / OEE", "🏭"), ("problems", "Problemas de proceso", "⚠"), ("control", "Control", "🎛"),
+             ("spc", "SPC", "📊"), ("corr", "Correlación", "🔗"),
              ("behavior", "Estabilidad (IA)", "🧠"), ("events", "Alarmas y eventos", "🔔")]
+def _close_quietly(dlg) -> None:
+    """Cierra un aviso que pudo cerrarse (y destruirse) ya por su cuenta."""
+    try:
+        dlg.close()
+    except RuntimeError:
+        pass
+
+
 NAV_TOOLS = [("recipes", "Recetas", "📋"), ("reports", "Reportes", "📄"), ("setup", "Configurar receta", "⚙")]
 HELP_URL = "https://github.com/LuisLegarda/Extrusion-AI-agent#readme"
 
@@ -175,6 +184,7 @@ class MainWindow(QMainWindow):
         self._prompts: dict = {}
         self._stop_since: Optional[float] = None  # inicio del paro en curso (para el aviso al reanudar)
         self._stop_prompt = None
+        self._control_prompts: dict = {}  # lazo -> (aviso, propuesta) del modo asistido
         self._series = SeriesCache(ctx.engine)
         self.bridge = SnapshotBridge()
         self.bridge.snapshot.connect(self.on_snapshot, Qt.QueuedConnection)
@@ -260,10 +270,13 @@ class MainWindow(QMainWindow):
         from .problems_page import ProblemsPage
         self.problems_page = ProblemsPage(self.ctx)
         self.problems_page.pendingChanged.connect(self._problems_badge)
+        from .control_page import ControlPage
+        self.control_page = ControlPage(self.ctx, on_config_changed=self._save_profile)
 
         self.pages: dict[str, QWidget] = {}
         for key, w in (("home", self.home), ("variables", self.table), ("trends", trends_page), ("kpi", self.kpi),
-                       ("problems", self.problems_page), ("spc", self.stats_panel), ("corr", self.corr_panel), ("behavior", self.behavior_panel),
+                       ("problems", self.problems_page), ("control", self.control_page),
+                       ("spc", self.stats_panel), ("corr", self.corr_panel), ("behavior", self.behavior_panel),
                        ("events", tabs), ("reports", self.reports_page)):
             self.pages[key] = w
             self.stack.addWidget(w)
@@ -335,6 +348,8 @@ class MainWindow(QMainWindow):
         # --- Acciones: lo que se hace en el momento ---
         m = mb.addMenu("A&cciones")
         m.addAction(self.act_tour_pause)
+        act = m.addAction("■ Detener todo el control", self.stop_all_control)
+        act.setShortcut("Ctrl+Shift+X")
         m.addMenu(self._tour_menu)
         m.addMenu(self._report_menu)
 
@@ -877,6 +892,9 @@ class MainWindow(QMainWindow):
             self.refresh_recipes()
         self._update_prompts(snap)
         self._watch_stop(snap)
+        self._control_proposals(snap)
+        if self.stack.currentWidget() is self.control_page:
+            self.control_page.refresh(snap)
         if self.dock is not None and self.dock.isVisible():
             self.dock.update_snapshot(snap)
         page = self.stack.currentWidget()
@@ -949,6 +967,31 @@ class MainWindow(QMainWindow):
         self.activateWindow()
         self.show_page("problems")
         self.problems_page.classify(a, b)
+
+    def _control_proposals(self, snap: Snapshot) -> None:
+        """Modo asistido: aviso flotante con la propuesta (se cierra solo si la propuesta cambia o desaparece)."""
+        from .control_page import ProposalPrompt
+        ctl = self.engine.control
+        for lid, info in (snap.control or {}).items():
+            prop = info.get("proposal") if info.get("active") and info.get("mode") == "assist" else None
+            cur = self._control_prompts.get(lid)
+            if cur is not None and cur[1] != prop:
+                _close_quietly(cur[0])
+                self._control_prompts.pop(lid, None)
+                cur = None
+            if prop and cur is None and self.stack.currentWidget() is not self.control_page:
+                lp = self.engine.config.control(lid)
+                var = self.engine.config.variable(lp.input_var or "") if lp else None
+                dec = var.decimals if var is not None and var.decimals is not None else 2
+                dlg = ProposalPrompt(info.get("name", lid), f"{prop[0]:.{dec}f}", f"{prop[1]:.{dec}f}",
+                                     lambda lid=lid: ctl.accept_proposal(lid), lambda lid=lid: ctl.reject_proposal(lid))
+                dlg.show()
+                self._control_prompts[lid] = (dlg, prop)
+
+    def stop_all_control(self) -> None:
+        self.engine.control.stop_all()
+        self.control_page.refresh()
+        self.statusBar().showMessage(tr("Control detenido en todos los lazos"), 5000)
 
     def open_problems_config(self) -> None:
         from .problems_config import ProblemsConfigDialog
@@ -1068,6 +1111,9 @@ class MainWindow(QMainWindow):
         if self._stop_prompt is not None:
             self._stop_prompt.close()
             self._stop_prompt = None
+        for dlg, _p in self._control_prompts.values():
+            _close_quietly(dlg)
+        self._control_prompts.clear()
         self.problems_page.timer.stop()
 
     # --- idioma y tema ------------------------------------------------------------

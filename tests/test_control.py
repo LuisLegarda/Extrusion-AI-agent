@@ -312,3 +312,45 @@ def test_demo_closed_loop_writes_and_verifies(tmp_path):
     assert sim.sp["vel"] > 340.0  # aceleró para bajar el diámetro
     assert not any("detenido" in m for m in msgs)
     assert eng.last.control["diam_vel"]["active"]
+
+
+def test_control_screens(tmp_path):
+    from PySide6.QtWidgets import QApplication
+    QApplication.instance() or QApplication([])
+    from extrusion_monitor.bootstrap import build
+    from extrusion_monitor.ui.main_window import NAV_ITEMS, MainWindow
+    from extrusion_monitor.ui.setup_dialog import SetupDialog
+    ctx = build(tmp_path, demo=True)
+    win = MainWindow(ctx)
+    assert "control" in {k for k, _, _ in NAV_ITEMS}
+    win.show_page("control")
+    card = win.control_page.cards["diam_vel"]
+    assert not ctx.engine.control.state("diam_vel").active  # al abrir, desactivado
+    card._toggle()  # modo simulación: no pide confirmación
+    assert ctx.engine.control.state("diam_vel").active
+    snap = ctx.engine.step()
+    win.control_page.refresh(snap)
+    assert "Desactivar" in card.btn.text()
+    win.stop_all_control()
+    assert not ctx.engine.control.state("diam_vel").active
+    d = SetupDialog(ctx)
+    tab = d.control_tab
+    d.tabs.setCurrentWidget(tab)
+    tab.refresh()
+    assert tab.loop().id == "diam_vel" and tab.cmb_in.currentData() == "vel_sp"
+    tab._start_mark("confirm")
+    tab._point(700, 400)
+    assert d.config.control("diam_vel").write.confirm is not None
+    assert d.config.control("diam_vel").write.confirm.id in d.tour_tab.patches
+    tab._no_confirm()
+    assert d.config.control("diam_vel").write.confirm is None
+    win._detach()
+
+
+def test_status_export_includes_control(tmp_path):
+    from extrusion_monitor.bootstrap import build
+    ctx = build(tmp_path, demo=True)
+    ctx.engine.control.set_active("diam_vel", True)
+    snap = ctx.engine.step()
+    payload = ctx.exporter.payload(snap, snap.ts)
+    assert payload["control"][0]["id"] == "diam_vel" and payload["control"][0]["active"]

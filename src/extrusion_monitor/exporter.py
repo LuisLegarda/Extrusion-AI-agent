@@ -278,6 +278,9 @@ class FleetExporter:
                            for f in sorted(snap.findings, key=lambda f: (-int(f.level), f.since))
                            if f.level >= Level.WARN][:50],
                 "variables": [self._var(st, cfg) for st in snap.statuses.values()],
+                "control": [{"id": lid, "name": c.get("name"), "mode": c.get("mode"), "active": c.get("active"),
+                             "status": c.get("status"), "detail": c.get("detail")}
+                            for lid, c in (snap.control or {}).items()],
             })
         try:
             res = self._oee_now(now)
