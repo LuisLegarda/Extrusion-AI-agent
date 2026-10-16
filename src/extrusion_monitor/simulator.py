@@ -150,14 +150,41 @@ class HmiSimulator:
         self.page = "principal"
         self.selector = "ON"
         self.clicks: list[tuple[int, int]] = []
+        self.focus: Optional[str] = None  # consigna con el foco (clic en su caja) y lo escrito
+        self.typed = ""
+        self._vel_sp_hist: list[float] = []  # la consigna de velocidad tarda en verse en el diámetro
 
     def click(self, x: int, y: int) -> None:
-        """Clic en la pantalla simulada: los botones de la barra inferior cambian de página."""
+        """Clic en la pantalla simulada: barra de navegación o caja de una consigna (para escribirla)."""
         self.clicks.append((x, y))
+        self.focus = None
         for pid, _ in SIM_PAGES:
             r = nav_rect(pid)
             if r.x <= x < r.x + r.w and r.y <= y < r.y + r.h:
                 self.page = pid
+        for i, v in enumerate(page_vars(self.page)):
+            r = _box(COL_SP, i)
+            if v.has_sp and r.x <= x < r.x + r.w and r.y <= y < r.y + r.h:
+                self.focus, self.typed = v.id, self.displayed(v.id, "sp")
+
+    def type_text(self, text: str) -> None:
+        if self.focus:
+            self.typed += text
+
+    def key(self, name: str) -> None:
+        if not self.focus:
+            return
+        if name == "ctrl+a":
+            self.typed = ""
+        elif name == "enter":
+            try:
+                self.set_setpoint(self.focus, float(self.typed.replace(",", ".")))
+                self.sp[self.focus] = self.overrides[self.focus]
+            except ValueError:
+                pass
+            self.focus = None
+        elif name == "escape":
+            self.focus = None
 
     def set_setpoint(self, var_id: str, value: float) -> None:
         self.overrides[var_id] = value
@@ -173,11 +200,21 @@ class HmiSimulator:
         self.selector = "OFF" if disturb.get("_selector_off") else "ON"
         rpm_dev = self.act["rpm"] - sp["rpm"]
         coupled = {"carga": 6.0 * rpm_dev, "presion": 12.0 * rpm_dev}
+        # Diámetro según la velocidad de jalado (consigna, con ~8 s de retardo de transporte): más rápido, más
+        # delgado. Con la consigna nominal no cambia nada.
+        self._vel_sp_hist = (self._vel_sp_hist + [sp["vel"]])[-9:]
+        vel_sp = self._vel_sp_hist[0]
+        if vel_sp > 1:
+            coupled["diam"] = self.act_nominal("diam") * (math.sqrt(self.act_nominal("vel") / vel_sp) - 1.0)
         for v in SIM_VARS:
             target = sp[v.id] + disturb.get(v.id, 0.0) + coupled.get(v.id, 0.0)
             self.act[v.id] += (target - self.act[v.id]) * v.lag + self.rng.gauss(0, v.noise)
             if v.id == "vel" and target == 0:
                 self.act[v.id] = self.act[v.id] * 0.5 if self.act[v.id] > 2 else 0.0  # frena hasta 0
+
+    @staticmethod
+    def act_nominal(var_id: str) -> float:
+        return next(v.nominal for v in SIM_VARS if v.id == var_id)
 
     def displayed(self, var_id: str, kind: str) -> str:
         v = next(x for x in SIM_VARS if x.id == var_id)
@@ -263,6 +300,14 @@ class SimClicker:
         self.sim.click(x, y)
         self._last_any = self.sim.clock()
 
+    def type_text(self, text: str) -> None:
+        self.sim.type_text(text)
+        self._last_any = self.sim.clock()
+
+    def key(self, name: str) -> None:
+        self.sim.key(name)
+        self._last_any = self.sim.clock()
+
     def operator_input(self) -> None:
         self._last_operator = self._last_any = self.sim.clock()
 
@@ -308,8 +353,17 @@ def demo_config() -> AppConfig:
                TourStep(id="s_linea", page="linea", clicks=[click("c_linea", "linea")], settle_s=0.5)])
     cameras, cam_vars = demo_camera_config()
     variables += cam_vars
-    from .config import ProblemSettings
+    from .config import ControlLoop, ControlWrite, ProblemSettings
+    vel_i = [v.id for v in page_vars("principal")].index("vel")
+    vel_box = _box(COL_SP, vel_i)
+    control = ControlLoop(
+        id="diam_vel", name="Diámetro con velocidad del capstan", mode="simulate", pv_var="diam", input_var="vel_sp",
+        target="recipe", tuning="manual", action="inc_when_high", kp=100.0, ti_s=30.0, u_min=300.0, u_max=400.0,
+        max_step=5.0, max_rate_min=15.0, deadband=0.005, resolution=0.1, interval_s=15.0, operator_idle_s=5.0,
+        write=ControlWrite(method="type", field=Click(id="ctl_vel", x=vel_box.x + vel_box.w // 2,
+                                                      y=vel_box.y + vel_box.h // 2), settle_s=1.0, verify_s=8.0))
     return AppConfig(
+        controls=[control],
         cameras=cameras,
         problems=ProblemSettings(operators=["Juan Pérez", "María López", "Carlos Ruiz"]),
         machine_name="Demo línea de cable",
