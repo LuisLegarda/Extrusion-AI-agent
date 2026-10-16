@@ -24,6 +24,18 @@ Numeración `MAYOR.MENOR.PARCHE`:
   parpadeo, agujas (manómetros) y barras de nivel. Pantalla y cámaras se combinan en la misma línea.
 - Cámara simulada en el modo demo.
 
+### Control PID con aprendizaje (rama `feature/control`)
+- Lazos de control que ajustan un input del HMI (p. ej. velocidad del capstan) según una medición (diámetro)
+  hacia el nominal de la receta. Solo para la pantalla del HMI: escribe el valor (clic en el campo, valor y
+  Enter, con confirmación opcional) o usa botones + / −, con ruta opcional a otra pestaña.
+- Modos *simulación*, *asistido* (propone y el operador aplica, también con aviso flotante) y *automático*.
+- PID manual por receta o aprendido de los cambios del operador: se observa la respuesta de la medición y se
+  ajusta un modelo de primer orden con retardo; el PID sale por la regla SIMC.
+- Seguridad: desactivado al abrir, límites, paso máximo por ajuste y por minuto, banda muerta, intervalo
+  mínimo, verificación del valor escrito, paro por alarma, línea detenida, operador usando el HMI, dato viejo,
+  comportamiento anormal o cambio de receta, y botón *Detener todo el control* (Ctrl+Shift+X).
+- Página *Control* y pestaña *Control* en la configuración. El estado del control viaja al dashboard global.
+
 ### Problemas de proceso (rama `feature/problemas-proceso`)
 - Página nueva *Problemas de proceso*: el operador clasifica los paros desde la línea de tiempo del estado de
   la máquina (el rango del paro se propone solo y se ajusta con barras), con causa, scrap, operador y comentario.

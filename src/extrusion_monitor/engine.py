@@ -11,6 +11,7 @@ from .acquisition import Acquirer
 from .analysis.rules import Event, Finding, Level, RuleEngine, VarStatus
 from .analysis.trends import TrendTracker
 from .camera import CameraManager
+from .control import ControlManager, ControlWriter, ModelStore
 from .capture import FrameSource
 from .config import AppConfig, Workspace
 from .ocr import OcrEngine
@@ -46,6 +47,7 @@ class Snapshot:
     tour: Optional[TourResult] = None  # recorrido ejecutado en este ciclo
     # Recorridos anunciados con cuenta regresiva: id -> (hora límite, motivo)
     prompts: dict = field(default_factory=dict)
+    control: dict = field(default_factory=dict)  # estado de cada lazo de control (ControlManager.snapshot)
 
 
 @dataclass
@@ -97,6 +99,7 @@ class MonitorEngine:
         self._report_events: list[Event] = []
         self._manual_reports: list[str] = []
         self.cameras = CameraManager(clock=clock)
+        self.control = ControlManager(ModelStore(workspace.home / "control_models.json"), clock)
         self._cam_problems: dict[str, Optional[str]] = {}
         self._build()
 
@@ -284,6 +287,48 @@ class MonitorEngine:
                                               "Pantalla disponible de nuevo: se reanuda la lectura"))
         self._screen_problem = problem
 
+    def _run_control(self, now: float, readings, statuses) -> list[Event]:
+        """Lazos de control: calcula, aplica las compuertas de seguridad y escribe en el HMI si toca."""
+        if not self.config.controls:
+            return []
+        cfg = self.config
+        o = cfg.oee
+        sp = readings.get(o.speed_var) if o.speed_var else None
+        line_stopped = bool(sp is not None and sp.value is not None and sp.value <= o.stop_threshold)
+
+        def behavior_ok(model_id: str):
+            h = self.behaviors.history.get(model_id)
+            if not h:
+                return None
+            ts, d2, thr = h[-1]
+            return None if now - ts > 120 else d2 <= thr
+
+        try:
+            idle = self.clicker.idle_seconds()
+        except Exception:
+            idle = 0.0
+        with self._data_lock:
+            findings = self.rules.active_findings()
+        events, writes = self.control.evaluate(cfg, now, readings, statuses, findings, self.state.recipe,
+                                               self.recipe, line_stopped, idle, behavior_ok)
+        for req in writes:
+            lp = cfg.control(req.loop_id)
+            if lp is None:
+                continue
+            if self._screen_problem is not None or self.tour_paused:
+                why = "pantalla no disponible" if self._screen_problem else "clics automáticos en pausa"
+                self.control.state(lp.id).detail = why
+                continue
+            in_var = cfg.variable(lp.input_var or "")
+            rd = readings.get(lp.input_var)
+            dec = in_var.decimals if in_var and in_var.decimals is not None else (rd.decimals if rd else 2) or 0
+            sep = "," if in_var is not None and in_var.decimal_separator == "," else "."
+            writer = ControlWriter(self.tour_runner, lambda f: self.acquirer.read(f, self.clock())[1],
+                                   clock=self.clock, sleep=self.sleep)
+            ok, msg = writer.write(cfg, lp, req.u_to, req.u_from, dec, sep)
+            self.control.wrote(lp, req, ok, msg, self.clock(), events)
+        return events
+
     def _camera_events(self, cams) -> None:
         """Registra una sola vez cuándo una cámara se queda sin imagen y cuándo vuelve."""
         for cid, view in (cams or {}).items():
@@ -383,6 +428,7 @@ class MonitorEngine:
                     now, self.rules.fresh_values(now, readings), self.state.recipe,
                     lambda vid: self.config.var_label(self.config.variable(vid)) if self.config.variable(vid) else vid)
                 statuses, events = self.rules.evaluate(now, readings, self.recipe, self.trends, extra)
+            events = events + self._run_control(now, readings, statuses)
             report_events = []
             while self._report_events:
                 report_events.append(self._report_events.pop(0))
@@ -395,7 +441,7 @@ class MonitorEngine:
                 ts=now, cycle_ms=(time.perf_counter() - t0) * 1000, pages=pages, statuses=statuses,
                 findings=findings, events=events, recipe=self.state.recipe, ocr_engine=self.ocr.name,
                 error=error, overall=overall, read_ok=sum(r.ok for r in visible), read_total=len(visible),
-                tour=tour_result, prompts=self.pending_prompts())
+                tour=tour_result, prompts=self.pending_prompts(), control=self.control.snapshot(self.config))
             if self._screen_problem is None:
                 # Sin pantalla no hay observación: queda como hueco (productivo si al volver todo está bien).
                 self._record_oee(snap)
@@ -560,6 +606,7 @@ class MonitorEngine:
         self._thread.start()
 
     def stop(self, timeout: float = 5.0) -> None:
+        self.control.stop_all()  # al detener el monitoreo (o abrir la configuración) el control se desactiva
         self._stop.set()
         if self._thread:
             self._thread.join(timeout)

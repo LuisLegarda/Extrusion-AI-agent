@@ -486,6 +486,69 @@ class ProblemSettings(BaseModel):
         return next((c for c in (self.downtime if kind == "downtime" else self.defects) if c.id == cid), None)
 
 
+class ControlWrite(BaseModel):
+    """Cómo se cambia el input en el HMI: escribiendo el valor o con botones + / −."""
+
+    method: Literal["type", "buttons"] = "type"
+    field: Optional[Click] = None  # «type»: clic en el campo del valor
+    select_all: bool = True  # «type»: Ctrl+A antes de escribir (reemplaza el valor anterior)
+    confirm: Optional[Click] = None  # botón de confirmación del HMI tras Enter (p. ej. «OK»), si lo hay
+    inc: Optional[Click] = None  # «buttons»: botón que sube el valor
+    dec: Optional[Click] = None  # «buttons»: botón que lo baja
+    step: float = Field(1.0, gt=0)  # cuánto cambia el valor con cada clic de botón
+    max_clicks: int = Field(20, ge=1, le=200)
+    route_tour: Optional[str] = None  # recorrido para llegar a la pantalla del input (su regreso se usa al final)
+    settle_s: float = Field(1.0, ge=0.1, le=30)  # espera tras escribir antes de verificar
+    verify_s: float = Field(10.0, ge=1, le=120)  # tiempo máximo para ver el valor nuevo en el HMI
+
+    def clicks(self) -> list[Click]:
+        """Clics verificados por imagen. El del campo no: muestra el valor que cambia (se verifica la pantalla)."""
+        return [c for c in (self.confirm, self.inc, self.dec) if c is not None]
+
+
+class ControlLoop(BaseModel):
+    """Lazo de control: ajusta un input del HMI (p. ej. velocidad del capstan) según una medición (diámetro).
+
+    Seguridad: límites absolutos, paso máximo por ajuste y por minuto, banda muerta, intervalo mínimo,
+    verificación del valor escrito y paro automático (alarma, línea detenida, operador usando el HMI, dato viejo,
+    comportamiento anormal, cambio de receta). Al abrir el programa los lazos quedan desactivados.
+    """
+
+    id: str
+    name: str = "Lazo de control"
+    mode: Literal["simulate", "assist", "auto"] = "simulate"  # solo calcular · proponer al operador · automático
+    pv_var: Optional[str] = None  # medición a controlar (p. ej. diámetro)
+    input_var: Optional[str] = None  # input del HMI que se ajusta (consigna leída de la pantalla)
+    target: Literal["recipe", "fixed"] = "recipe"
+    target_value: Optional[float] = None
+    # PID: manual (por receta) o aprendido de los cambios del operador
+    tuning: Literal["manual", "learned"] = "manual"
+    action: Literal["inc_when_high", "dec_when_high"] = "inc_when_high"  # p. ej. diámetro alto → acelerar capstan
+    kp: float = Field(1.0, ge=0)  # unidades de input por unidad de error de la medición
+    ti_s: float = Field(120.0, ge=0)  # tiempo integral (0 = sin integral)
+    td_s: float = Field(0.0, ge=0)  # tiempo derivativo
+    aggressiveness: float = Field(1.0, ge=0.2, le=5)  # PID aprendido: 0.5 = rápido · 1 = normal · 2 = suave
+    # límites del input
+    u_min: Optional[float] = None
+    u_max: Optional[float] = None
+    max_step: Optional[float] = None  # cambio máximo por ajuste
+    max_rate_min: Optional[float] = None  # cambio máximo acumulado por minuto
+    deadband: float = Field(0.0, ge=0)  # error de la medición que se tolera sin ajustar
+    resolution: Optional[float] = None  # el input se redondea a esto (vacío = según sus decimales)
+    interval_s: float = Field(30.0, ge=2, le=3600)  # tiempo mínimo entre ajustes
+    write: ControlWrite = Field(default_factory=ControlWrite)
+    # seguridad
+    stop_on_alarm: bool = True  # alarma activa en otra variable
+    stop_when_line_stopped: bool = True
+    operator_idle_s: float = Field(20.0, ge=0, le=3600)  # sin uso del HMI por el operador durante…
+    operator_hold_s: float = Field(120.0, ge=0, le=86400)  # tras un cambio del operador, esperar…
+    max_pv_age_s: float = Field(20.0, ge=1, le=3600)
+    gate_behavior: Optional[str] = None  # comportamiento entrenado que debe estar normal para ajustar
+    # aprendizaje del comportamiento del proceso
+    learn: bool = True
+    learn_window_s: float = Field(300.0, ge=30, le=7200)  # observación de la medición tras cada cambio
+
+
 class AppConfig(BaseModel):
     version: int = CONFIG_VERSION
     machine_name: str = "Línea de extrusión"
@@ -501,6 +564,10 @@ class AppConfig(BaseModel):
     dock: DockSettings = Field(default_factory=DockSettings)
     problems: ProblemSettings = Field(default_factory=ProblemSettings)
     cameras: list[CameraSettings] = Field(default_factory=list)
+    controls: list[ControlLoop] = Field(default_factory=list)
+
+    def control(self, loop_id: str) -> Optional[ControlLoop]:
+        return next((c for c in self.controls if c.id == loop_id), None)
 
     def camera(self, cam_id: str) -> Optional[CameraSettings]:
         return next((c for c in self.cameras if c.id == cam_id), None)
@@ -527,7 +594,8 @@ class AppConfig(BaseModel):
         return next((t for t in self.tours if t.id == tour_id), None)
 
     def all_tour_clicks(self) -> list[Click]:
-        return [c for t in self.tours for c in t.all_clicks()]
+        """Clics verificados por imagen: recorridos y escritura de los lazos de control."""
+        return [c for t in self.tours for c in t.all_clicks()] + [c for lp in self.controls for c in lp.write.clicks()]
 
     def toured_pages(self) -> set[str]:
         """Páginas que se leen durante recorridos (con sus ancestros): su dato vale hasta el siguiente."""
@@ -665,6 +733,26 @@ class AppConfig(BaseModel):
             evaluation_order(formulas)
         except FormulaError as exc:
             problems.append(str(exc))
+        for lp in self.controls:
+            name = f"Control «{lp.name}»"
+            pv, inp = self.variable(lp.pv_var or ""), self.variable(lp.input_var or "")
+            if pv is None or not pv.numeric:
+                problems.append(f"{name}: elige la medición a controlar")
+            if inp is None or not inp.numeric:
+                problems.append(f"{name}: elige el input del HMI que se ajusta")
+            elif inp.on_camera or inp.kind == "formula":
+                problems.append(f"{name}: el input debe leerse de la pantalla del HMI")
+            if lp.u_min is None or lp.u_max is None or lp.u_min >= lp.u_max:
+                problems.append(f"{name}: indica los límites mínimo y máximo del input")
+            if lp.target == "fixed" and lp.target_value is None:
+                problems.append(f"{name}: indica el valor objetivo")
+            w = lp.write
+            if w.method == "type" and w.field is None:
+                problems.append(f"{name}: graba el clic del campo del input")
+            if w.method == "buttons" and (w.inc is None or w.dec is None):
+                problems.append(f"{name}: graba los botones + y −")
+            if w.route_tour and self.get_tour(w.route_tour) is None:
+                problems.append(f"{name}: el recorrido de la ruta no existe")
         rn = self.general.recipe_name_var
         if rn:
             var = self.variable(rn)

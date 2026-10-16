@@ -39,6 +39,14 @@ class Clicker(Protocol):
         """Segundos desde la última entrada del operador (mouse/teclado)."""
         ...
 
+    def type_text(self, text: str) -> None:
+        """Escribe texto en el campo que tiene el foco (control: valor del input)."""
+        ...
+
+    def key(self, name: str) -> None:
+        """Tecla o combinación: «enter», «ctrl+a», «tab», «escape»."""
+        ...
+
 
 def click_rect(c: Click) -> Rect:
     h = c.patch // 2
@@ -230,6 +238,47 @@ class WindowsClicker:
         time.sleep(0.05)
         self.user32.SetCursorPos(prev.x, prev.y)
 
+    VK = {"enter": 0x0D, "tab": 0x09, "escape": 0x1B, "backspace": 0x08, "delete": 0x2E, "ctrl": 0x11,
+          "shift": 0x10, "a": 0x41}
+
+    def key(self, name: str) -> None:
+        KEYUP = 0x0002
+        keys = [self.VK[k] for k in name.lower().split("+")]
+        overlays_pass_clicks()
+        for vk in keys:
+            self.user32.keybd_event(vk, 0, 0, 0)
+            time.sleep(0.02)
+        for vk in reversed(keys):
+            self.user32.keybd_event(vk, 0, KEYUP, 0)
+            time.sleep(0.02)
+        time.sleep(0.05)
+
+    def type_text(self, text: str) -> None:
+        """Caracteres Unicode con SendInput (no depende de la distribución del teclado)."""
+        ct, wt = self.ctypes, self.wintypes
+        ULONG_PTR = ct.c_size_t
+
+        class KEYBDINPUT(ct.Structure):
+            _fields_ = [("wVk", wt.WORD), ("wScan", wt.WORD), ("dwFlags", wt.DWORD), ("time", wt.DWORD),
+                        ("dwExtraInfo", ULONG_PTR)]
+
+        class MOUSEINPUT(ct.Structure):
+            _fields_ = [("dx", wt.LONG), ("dy", wt.LONG), ("mouseData", wt.DWORD), ("dwFlags", wt.DWORD),
+                        ("time", wt.DWORD), ("dwExtraInfo", ULONG_PTR)]
+
+        class _U(ct.Union):
+            _fields_ = [("ki", KEYBDINPUT), ("mi", MOUSEINPUT)]
+
+        class INPUT(ct.Structure):
+            _fields_ = [("type", wt.DWORD), ("u", _U)]
+
+        KEYEVENTF_UNICODE, KEYUP, INPUT_KEYBOARD = 0x0004, 0x0002, 1
+        for ch in text:
+            for flags in (KEYEVENTF_UNICODE, KEYEVENTF_UNICODE | KEYUP):
+                inp = INPUT(type=INPUT_KEYBOARD, u=_U(ki=KEYBDINPUT(0, ord(ch), flags, 0, 0)))
+                self.user32.SendInput(1, ct.byref(inp), ct.sizeof(INPUT))
+            time.sleep(0.03)
+
     def idle_seconds(self) -> float:
         class LASTINPUTINFO(self.ctypes.Structure):
             _fields_ = [("cbSize", self.wintypes.UINT), ("dwTime", self.wintypes.DWORD)]
@@ -247,6 +296,12 @@ class UnavailableClicker:
 
     def click(self, x: int, y: int) -> None:
         raise TourAborted("los clics automáticos solo están disponibles en Windows")
+
+    def type_text(self, text: str) -> None:
+        raise TourAborted("escribir en el HMI solo está disponible en Windows")
+
+    def key(self, name: str) -> None:
+        raise TourAborted("escribir en el HMI solo está disponible en Windows")
 
     def idle_seconds(self) -> float:
         return 0.0
