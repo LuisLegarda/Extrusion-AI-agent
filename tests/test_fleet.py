@@ -80,15 +80,19 @@ def test_exporter_thread_does_not_block_monitoring(ctx, tmp_path, monkeypatch):
 
     ex = ctx.exporter
     ex.reconfigure(StationSettings(enabled=True, export_dir=str(tmp_path), line_id="L1", interval_s=1))
+    t0 = time.perf_counter()
+    for _ in range(5):
+        ctx.engine.step()
+    normal = time.perf_counter() - t0  # lo que tardan 5 ciclos sin exportar (depende de la PC)
     calls = []
-    monkeypatch.setattr(exporter, "write_atomic", lambda *a, **k: (calls.append(1), time.sleep(3)))  # red lenta
+    monkeypatch.setattr(exporter, "write_atomic", lambda *a, **k: (calls.append(1), time.sleep(20)))  # red lenta
     ex.start()
     time.sleep(0.3)
     assert calls  # el hilo de exportación está atorado escribiendo…
     t0 = time.perf_counter()
     for _ in range(5):
         ctx.engine.step()
-    assert time.perf_counter() - t0 < 2.5  # …y el monitoreo no lo espera
+    assert time.perf_counter() - t0 < normal * 2 + 2  # …y el monitoreo no lo espera (esperarlo serían 20 s)
     ex._stop.set()
     ex._wake.set()
 
