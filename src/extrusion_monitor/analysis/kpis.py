@@ -12,6 +12,7 @@ from .rules import Level
 
 KPI_EVERY_S = 30.0
 STABILITY_WINDOW_S = 1800.0
+STABILITY_MIN_POINTS = 20  # con menos evaluaciones el % no es representativo (p. ej. recién abierto)
 KPI_PREFIX = "kpi:"
 
 # clave -> (título, unidad, (umbral rojo, umbral verde), (mín, máx), decimales)
@@ -54,7 +55,7 @@ def stability(engine, now: float) -> tuple[Optional[float], Optional[str], int]:
     scores = []
     for m in mons.active(engine.state.recipe):
         h = [x for x in mons.history.get(m.id, ()) if x[0] >= now - STABILITY_WINDOW_S]
-        if h:
+        if len(h) >= STABILITY_MIN_POINTS:
             scores.append((100.0 * sum(d2 <= thr for _, d2, thr in h) / len(h), m.name))
     if not scores:
         return None, None, 0

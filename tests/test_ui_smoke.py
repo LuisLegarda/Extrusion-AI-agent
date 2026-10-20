@@ -309,3 +309,61 @@ def test_language_and_theme_switch(ctx, tmp_path):
     dark.on_snapshot(ctx.engine.step())
     apply_ui_prefs({})  # vuelve a español / claro para las demás pruebas
     dark.close()
+
+
+def test_view_preferences_are_saved_and_restored(ctx):
+    from PySide6.QtWidgets import QApplication
+
+    from extrusion_monitor.ui.main_window import MainWindow
+    win = MainWindow(ctx)
+    win._plotted = []
+    for vid in ("diam", "vel"):
+        win._plot_toggled(vid, True)
+    win.trends.cmb_range.setCurrentIndex(3)
+    win.trends.chk_ctrl.setChecked(False)
+    item = next(win.stats_panel.lst.item(i) for i in range(win.stats_panel.lst.count())
+                if win.stats_panel.lst.item(i).data(0x0100) == "presion")
+    from PySide6.QtCore import Qt
+    item.setCheckState(Qt.Checked)
+    win.show_page("spc")
+    win._view_timer.stop()
+    win._write_view()
+    QApplication.processEvents()
+    view = ctx.workspace.load_state()["view"]
+    assert view["plotted"][-2:] == ["diam", "vel"] and view["page"] == "spc" and not view["ctrl"]
+    assert "presion" in view["spc"]
+    win._detach()
+    again = MainWindow(ctx)  # al volver a abrir el programa
+    assert again._plotted[-2:] == ["diam", "vel"]
+    assert again.current_page() == "spc"
+    assert again.trends.cmb_range.currentIndex() == 3 and not again.trends.chk_ctrl.isChecked()
+    assert "presion" in again.stats_panel.selected
+    again._detach()
+
+
+def test_branding_logo_text_and_line(ctx, tmp_path):
+    import cv2
+    import numpy as np
+
+    from extrusion_monitor.ui.branding import Branding, BrandingDialog, header_widget
+    from extrusion_monitor.ui.main_window import MainWindow
+    img = np.zeros((60, 200, 3), np.uint8)
+    img[:, :100] = (40, 120, 220)
+    src = tmp_path / "logo_empresa.png"
+    cv2.imwrite(str(src), img)
+    home = ctx.workspace.home
+    dlg = BrandingDialog(home)
+    dlg.set_logo(str(src))
+    dlg.ed_text.setText("Planta Norte · Extrusión")
+    dlg.ed_line.setText("Línea 3")
+    dlg.accept()
+    b = Branding.load(home)
+    assert b.logo == "logo.png" and b.logo_path(home).exists() and b.line == "Línea 3"
+    w = header_widget(home)
+    from PySide6.QtWidgets import QLabel
+    labels = w.findChildren(QLabel)
+    assert any(lbl.pixmap() is not None and not lbl.pixmap().isNull() for lbl in labels)
+    assert any("Línea 3" in lbl.text() for lbl in labels) and any("Planta Norte" in lbl.text() for lbl in labels)
+    win = MainWindow(ctx)
+    assert any("Línea 3" in lbl.text() for lbl in win.brand.findChildren(QLabel))
+    win._detach()

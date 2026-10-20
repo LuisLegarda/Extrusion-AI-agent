@@ -39,12 +39,31 @@ def test_monitor_condition_and_recipe_filter(tmp_path):
     m.recipe = "R1"
     store.upsert(m)
     mon = BehaviorMonitor(BehaviorStore(tmp_path / "b.json"))
-    conds, ev = mon.evaluate(0, {"rpm": 44.2, "pres": 258.0}, "R1", lambda v: v)
+    good = {"rpm": 45.0, "pres": 250.0}
+    for t in range(0, 70, 2):  # calentamiento: datos completos y seguidos
+        mon.evaluate(t, good, "R1", lambda v: v)
+    conds, ev = mon.evaluate(70, {"rpm": 44.2, "pres": 258.0}, "R1", lambda v: v)
     assert ("COMPORTAMIENTO", "@m") in conds and "@m" in ev
-    conds, ev = mon.evaluate(0, {"rpm": 44.2, "pres": 258.0}, "OTRA", lambda v: v)
+    conds, ev = mon.evaluate(72, {"rpm": 44.2, "pres": 258.0}, "OTRA", lambda v: v)
     assert not conds and not ev
-    conds, ev = mon.evaluate(0, {"rpm": 44.2}, "R1", lambda v: v)  # falta un dato: no se evalúa
+    conds, ev = mon.evaluate(74, {"rpm": 44.2}, "R1", lambda v: v)  # falta un dato: no se evalúa
     assert not ev
+
+
+def test_no_false_spike_at_start_or_after_lost_variable(tmp_path):
+    store = BehaviorStore(tmp_path / "b.json")
+    store.upsert(train(model(), correlated(), 0, 1200, 4, 10))
+    mon = BehaviorMonitor(BehaviorStore(tmp_path / "b.json"))
+    odd = {"rpm": 44.2, "pres": 258.0}  # combinación anormal (p. ej. una lectura rara al abrir)
+    conds, ev = mon.evaluate(0, odd, None, lambda v: v)
+    assert not conds and not ev and not mon.history.get("m")  # recién abierto: aún no se evalúa
+    for t in range(0, 70, 2):
+        mon.evaluate(t, {"rpm": 45.0, "pres": 250.0}, None, lambda v: v)
+    assert mon.history.get("m")
+    n = len(mon.history["m"])
+    mon.evaluate(72, {"rpm": 45.0}, None, lambda v: v)  # se pierde la presión…
+    conds, ev = mon.evaluate(74, odd, None, lambda v: v)  # …y al volver hay que calentar otra vez
+    assert not conds and len(mon.history["m"]) == n
 
 
 def test_training_needs_data():

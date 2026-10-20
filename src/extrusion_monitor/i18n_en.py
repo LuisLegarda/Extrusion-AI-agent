@@ -899,6 +899,33 @@ EN: dict[str, str] = {
     "El programa va a cambiar «{i}» en el HMI dentro de los límites configurados ({lo} – {hi}).\n\n¿Activar?":
         "The program will change “{i}” on the HMI within the configured limits ({lo} – {hi}).\n\nActivate?",
     "«{n}» propone cambiar el input<br><b>{a} → {b}</b>": "“{n}” proposes changing the input<br><b>{a} → {b}</b>",
+    # --- mejoras de interfaz ---
+    "⏳ Paros por identificar": "⏳ Stops to identify", "📋 Capturas": "📋 Entries", "Calidad": "Quality",
+    "Borra la captura seleccionada (por ejemplo, si se capturó mal)": "Deletes the selected entry (e.g. if it was entered wrong)",
+    "Escribe la hora (hh:mm:ss) o usa las flechas": "Type the time (hh:mm:ss) or use the arrows",
+    "Variables para SPC": "Variables for SPC",
+    "Marca una variable para ver su distribución, capacidad (Cp, Cpk, Pp, Ppk) y carta de control.":
+        "Check a variable to see its distribution, capability (Cp, Cpk, Pp, Ppk) and control chart.",
+    "Límites de control y Cpk / Ppk": "Control limits and Cpk / Ppk",
+    "LCS / LCI = media ± 3σ de corto plazo de los datos visibles (carta de individuos). Cpk y Ppk contra los límites de alarma de la receta.":
+        "UCL / LCL = mean ± 3σ short-term of the visible data (individuals chart). Cpk and Ppk against the recipe's alarm limits.",
+    "LCS": "UCL", "LCI": "LCL", "🖥 Variables del HMI": "🖥 HMI variables",
+    "📹 Indicadores físicos (cámaras)": "📹 Physical indicators (cameras)", "Agregar o ajustar cámaras (USB o IP)": "Add or adjust cameras (USB or IP)",
+    "+ Número (OCR)": "+ Number (OCR)", "+ Texto (OCR)": "+ Text (OCR)", "+ Selector por imagen": "+ Selector by image",
+    "Display o pantalla con números legibles por OCR": "Display or screen with numbers readable by OCR",
+    "Texto legible por OCR (p. ej. una etiqueta o mensaje)": "Text readable by OCR (e.g. a label or message)",
+    "Interruptor o perilla: se reconoce su posición por imagen": "Switch or knob: its position is recognized by image",
+    "Sin cámaras: agrega una con «📹 Cámaras…»": "No cameras: add one with “📹 Cameras…”",
+    "Agrega una cámara con «📹 Cámaras…» para leer indicadores físicos.": "Add a camera with “📹 Cameras…” to read physical indicators.",
+    "🏷 Identidad de la estación (logo, texto, línea)…": "🏷 Station identity (logo, text, line)…",
+    "Identidad de la estación": "Station identity",
+    "Logo, texto y número de línea: Configuración → Identidad de la estación": "Logo, text and line number: Settings → Station identity",
+    "Logo de la empresa, un texto propio (p. ej. la planta o el área) y el número de línea. Se muestran arriba a la izquierda del programa. Son de este equipo, no de la receta.":
+        "Company logo, your own text (e.g. the plant or area) and the line number. They are shown at the top left of the program. They belong to this PC, not to the recipe.",
+    "Logo": "Logo", "Elegir imagen…": "Choose image…", "Quitar logo": "Remove logo", "Texto": "Text",
+    "Número de línea": "Line number", "p. ej. Planta Monterrey · Extrusión": "e.g. Monterrey plant · Extrusion",
+    "p. ej. Línea 3": "e.g. Line 3", "sin logo": "no logo", "Logo de la empresa": "Company logo",
+    "Imágenes (*.png *.jpg *.jpeg *.bmp *.svg)": "Images (*.png *.jpg *.jpeg *.bmp *.svg)",
 }
 
 # Textos con valores: la clave es la plantilla en español («{}» = valor) y el resultado su traducción.
