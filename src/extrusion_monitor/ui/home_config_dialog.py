@@ -7,7 +7,7 @@ from typing import Optional
 from PySide6.QtCore import Qt
 from PySide6.QtGui import QDoubleValidator
 from PySide6.QtWidgets import (
-    QComboBox, QDialog, QDialogButtonBox, QFormLayout, QHBoxLayout, QLabel, QLineEdit, QListWidget,
+    QCheckBox, QComboBox, QDialog, QDialogButtonBox, QFormLayout, QHBoxLayout, QLabel, QLineEdit, QListWidget,
     QListWidgetItem, QMessageBox, QPushButton, QSpinBox, QVBoxLayout, QWidget,
 )
 
@@ -43,6 +43,13 @@ class HomeConfigDialog(QDialog):
         self.sp_cols.setValue(self.home.columns)
         self.sp_cols.valueChanged.connect(self._cols_changed)
         top.addWidget(self.sp_cols)
+        top.addSpacing(16)
+        self.chk_status = None
+        if home is None:  # solo el tablero de Inicio (el dock reutiliza este editor)
+            self.chk_status = QCheckBox("Tarjetas de estado arriba (marcha, paros, alarmas, calidad, OEE)")
+            self.chk_status.setChecked(self.home.status_bar)
+            self.chk_status.toggled.connect(lambda on: setattr(self.home, "status_bar", on))
+            top.addWidget(self.chk_status)
         top.addStretch(1)
         root.addLayout(top)
 
@@ -206,6 +213,8 @@ class HomeConfigDialog(QDialog):
             return
         self.home = self._default_home()
         self.sp_cols.setValue(self.home.columns)
+        if self.chk_status is not None:
+            self.chk_status.setChecked(self.home.status_bar)
         self._fill_list()
         self._update_form()
 

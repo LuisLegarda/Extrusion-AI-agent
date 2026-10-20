@@ -6,8 +6,8 @@ from typing import Optional
 
 import numpy as np
 import pyqtgraph as pg
-from PySide6.QtCore import QEvent, Qt, QTimer, QUrl
-from PySide6.QtGui import QAction, QActionGroup, QBrush, QColor, QDesktopServices
+from PySide6.QtCore import QEvent, QSize, Qt, QTimer, QUrl
+from PySide6.QtGui import QAction, QActionGroup, QBrush, QColor, QDesktopServices, QShortcut
 from PySide6.QtWidgets import (
     QApplication, QCheckBox, QComboBox, QFileDialog, QFrame, QHeaderView, QLabel, QListWidget,
     QHBoxLayout, QListWidgetItem, QMainWindow, QMenu, QMessageBox, QSplitter, QStackedWidget, QTableWidget,
@@ -22,7 +22,8 @@ from ..navigation import exclude_window_from_capture
 from ..engine import Snapshot
 from ..recipes import Bounds
 from ..i18n import LANGS, lang as i18n_lang, tr, translate_text
-from . import theme
+from ..personnel import Personnel, crew
+from . import icons, theme
 from .common import (  # noqa: F401 (y_range se reexporta)
     SeriesCache, SnapshotBridge, level_color, level_text, level_text_color, y_range,
 )
@@ -68,6 +69,7 @@ class TrendPanel(QWidget):
             self.cmb_range.addItem(label, secs)
         self.cmb_range.setCurrentIndex(1)
         self.cmb_range.setToolTip("Tiempo mostrado. Más allá de la ventana en memoria se lee del historial.")
+        self.cmb_range.activated.connect(lambda _: self.set_marker(None))  # elegir otro rango quita la hora buscada
         bar.addWidget(self.cmb_range)
         self.chk_auto_y = QCheckBox("Escala Y automática (según límites)")
         self.chk_auto_y.setChecked(True)
@@ -132,10 +134,31 @@ class TrendPanel(QWidget):
             for ln in lines.values():
                 ln.setVisible(False)
                 w.addItem(ln)
+            # hora buscada (barra de búsqueda): línea vertical
+            mark = pg.InfiniteLine(angle=90, pen=pg.mkPen(theme.c("accent"), width=1, style=Qt.DashLine),
+                                   label="", labelOpts={"position": 0.95, "color": theme.c("accent")})
+            mark.setVisible(False)
+            w.addItem(mark, ignoreBounds=True)
+            lines["mark"] = mark
             self.layout_.addWidget(w)
             self.plots[vid] = {"widget": w, "curve": curve, "sp": sp_curve, "lines": lines,
                                "proj": proj, "proj_lo": proj_lo, "proj_hi": proj_hi, "eta": eta, "cap": capt}
+            self._apply_marker(self.plots[vid])
         self.placeholder.setVisible(not self.plots)
+
+    def set_marker(self, ts: Optional[float]) -> None:
+        """Marca una hora en todas las gráficas (None la quita)."""
+        self.marker = ts
+        for p in self.plots.values():
+            self._apply_marker(p)
+
+    def _apply_marker(self, p: dict) -> None:
+        ts = getattr(self, "marker", None)
+        mark = p["lines"]["mark"]
+        mark.setVisible(ts is not None)
+        if ts is not None:
+            mark.setPos(ts)
+            mark.label.setFormat(time.strftime("%d/%m %H:%M:%S", time.localtime(ts)))
 
     @property
     def range_s(self) -> float:
@@ -264,7 +287,9 @@ class MainWindow(QMainWindow):
         right = QWidget()
         right.setObjectName("content")
         rl = QVBoxLayout(right)
-        rl.setContentsMargins(10, 8, 10, 6)
+        rl.setContentsMargins(12, 10, 12, 6)
+        rl.setSpacing(8)
+        rl.addWidget(self._build_topbar())
         rl.addLayout(self._build_header())
         self.stack = QStackedWidget()
         rl.addWidget(self.stack, 1)
@@ -329,6 +354,7 @@ class MainWindow(QMainWindow):
         from .problems_page import ProblemsPage
         self.problems_page = ProblemsPage(self.ctx)
         self.problems_page.pendingChanged.connect(self._problems_badge)
+        QTimer.singleShot(0, lambda: self.home.set_pending(self.problems_page.pending))
         from .control_page import ControlPage
         self.control_page = ControlPage(self.ctx, on_config_changed=self._save_profile)
 
@@ -416,6 +442,7 @@ class MainWindow(QMainWindow):
         m = mb.addMenu("C&onfiguración")
         m.addAction("🌐 Dashboard global (exportación)…", self.open_station)
         m.addAction("🏷 Identidad de la estación (logo, texto, línea)…", self.open_branding)
+        m.addAction("👷 Personal (operadores y supervisores)…", self.open_personnel)
         m.addSeparator()
         lm = m.addMenu("🌐 Idioma / Language")
         grp = QActionGroup(lm)
@@ -454,7 +481,7 @@ class MainWindow(QMainWindow):
     def _build_sidebar(self) -> QWidget:
         side = QWidget()
         side.setObjectName("sidebar")
-        side.setFixedWidth(215)
+        side.setFixedWidth(236)
         lay = QVBoxLayout(side)
         lay.setContentsMargins(10, 14, 10, 10)
         from .branding import header_widget
@@ -469,8 +496,10 @@ class MainWindow(QMainWindow):
         self.nav.setObjectName("nav")
         self.nav.setFocusPolicy(Qt.NoFocus)
         self.nav.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
-        for key, label, icon in NAV_ITEMS:
-            it = QListWidgetItem(f"{icon}  {label}")
+        self.nav.setIconSize(QSize(18, 18))
+        for key, label, _icon in NAV_ITEMS:
+            it = QListWidgetItem(tr(label))
+            it.setIcon(icons.icon(key, theme.c("nav_icon"), theme.c("accent_text")))
             it.setData(Qt.UserRole, key)
             self.nav.addItem(it)
         self.nav.setFixedHeight(len(NAV_ITEMS) * 38 + 6)
@@ -483,8 +512,10 @@ class MainWindow(QMainWindow):
         self.nav2 = QListWidget()
         self.nav2.setObjectName("nav")
         self.nav2.setFocusPolicy(Qt.NoFocus)
-        for key, label, icon in NAV_TOOLS:
-            it = QListWidgetItem(f"{icon}  {label}")
+        self.nav2.setIconSize(QSize(18, 18))
+        for key, label, _icon in NAV_TOOLS:
+            it = QListWidgetItem(tr(label))
+            it.setIcon(icons.icon(key, theme.c("nav_icon"), theme.c("accent_text")))
             it.setData(Qt.UserRole, key)
             self.nav2.addItem(it)
         self.nav2.setFixedHeight(len(NAV_TOOLS) * 38 + 6)
@@ -496,6 +527,184 @@ class MainWindow(QMainWindow):
         self.lbl_side_status.setStyleSheet(f"color:{theme.c('muted')}; font-size:11px;")
         lay.addWidget(self.lbl_side_status)
         return side
+
+    def _build_topbar(self) -> QFrame:
+        """Barra superior: búsqueda, turno, campana de alarmas y quién está en turno."""
+        from .search import SearchBox
+        bar = QFrame()
+        bar.setObjectName("topbar")
+        row = QHBoxLayout(bar)
+        row.setContentsMargins(10, 6, 10, 6)
+        row.setSpacing(10)
+        self.search = SearchBox(self)
+        self.search.setMinimumWidth(320)
+        row.addWidget(self.search, 3)
+        QShortcut("Ctrl+K", self, self.search.open)
+        QShortcut("Ctrl+F", self, self.search.open)
+        row.addStretch(1)
+        self.lbl_shift = QLabel()
+        self.lbl_shift.setObjectName("topInfo")
+        self.lbl_shift.setToolTip(tr("Inicio del turno en curso (Configuración → KPI / OEE → turnos)"))
+        row.addWidget(self.lbl_shift)
+        self.btn_bell = QToolButton()
+        self.btn_bell.setObjectName("bell")
+        self.btn_bell.setIcon(icons.icon("events", theme.c("nav_icon")))
+        self.btn_bell.setIconSize(QSize(18, 18))
+        self.btn_bell.setToolButtonStyle(Qt.ToolButtonTextBesideIcon)
+        self.btn_bell.setToolTip(tr("Alarmas y avisos activos (clic: Alarmas y eventos)"))
+        self.btn_bell.clicked.connect(lambda: self.show_page("events"))
+        row.addWidget(self.btn_bell)
+        self.cmb_operator = QComboBox()
+        self.cmb_supervisor = QComboBox()
+        for cmb, role, ic, tip in ((self.cmb_operator, "operator", "user", "Operador en turno"),
+                                   (self.cmb_supervisor, "supervisor", "shield", "Supervisor en turno")):
+            cmb.setObjectName("crew")
+            cmb.setMinimumWidth(150)
+            cmb.setIconSize(QSize(16, 16))
+            cmb.setToolTip(tr(tip))
+            cmb.activated.connect(lambda _i, cmb=cmb, role=role: self._crew_chosen(cmb, role))
+            row.addWidget(cmb)
+        self.fill_crew()
+        self._update_shift_label()
+        self._shift_timer = QTimer(self)
+        self._shift_timer.timeout.connect(self._update_shift_label)
+        self._shift_timer.start(30000)
+        return bar
+
+    # --- personal en turno ---------------------------------------------------------------
+    def fill_crew(self) -> None:
+        people = Personnel.load(self.ctx.workspace.home)
+        cur = crew(self.ctx.workspace.load_state())
+        legacy = list(self.ctx.config.problems.operators)
+        for cmb, role, ic, empty in ((self.cmb_operator, "operator", "user", "— Operador —"),
+                                     (self.cmb_supervisor, "supervisor", "shield", "— Supervisor —")):
+            names = people.names([role]) + ([n for n in legacy if not people.find(n)] if role == "operator" else [])
+            if cur[role] and cur[role] not in names:
+                names.append(cur[role])  # dado de baja pero aún en turno
+            cmb.blockSignals(True)
+            cmb.clear()
+            ico = icons.icon(ic, theme.c("nav_icon"))
+            cmb.addItem(ico, tr(empty), "")
+            for n in names:
+                cmb.addItem(ico, n, n)
+            cmb.insertSeparator(cmb.count())
+            cmb.addItem(tr("✎ Editar personal…"), "__edit__")
+            cmb.setCurrentIndex(max(0, cmb.findData(cur[role])))
+            cmb.blockSignals(False)
+
+    def _crew_chosen(self, cmb: QComboBox, role: str) -> None:
+        name = cmb.currentData()
+        if name == "__edit__":
+            self.fill_crew()  # regresa a quien estaba
+            self.open_personnel()
+            return
+        state = self.ctx.workspace.load_state()
+        c = crew(state)
+        c[role] = name or ""
+        state["crew"] = c
+        if role == "operator" and name:
+            state["last_operator"] = name
+        self.ctx.workspace.save_state(state)
+        self.problems_page.capture.reload_config()
+
+    def open_personnel(self) -> None:
+        from .personnel_dialog import PersonnelDialog
+        if PersonnelDialog(self.ctx.workspace.home, self.ctx.config.problems.operators, self).exec():
+            self.fill_crew()
+            self.problems_page.capture.reload_config()
+
+    def _update_shift_label(self) -> None:
+        from ..analysis.oee import shift_start
+        now = self.engine.clock()
+        a = shift_start(now, self.ctx.config.oee.shift_starts)
+        self.lbl_shift.setText(tr("Turno desde {t}", t=time.strftime("%H:%M", time.localtime(a))) + "  ·  "
+                               + time.strftime("%d/%m/%Y", time.localtime(now)))
+
+    def _update_bell(self, snap: Snapshot) -> None:
+        n_alarm = sum(f.level >= Level.ALARM for f in snap.findings)
+        n_warn = sum(f.level == Level.WARN for f in snap.findings)
+        n = n_alarm + n_warn
+        key = "critical" if n_alarm else ("warning_text" if n_warn else "nav_icon")
+        self.btn_bell.setIcon(icons.icon("events", theme.c(key)))
+        self.btn_bell.setText(str(n) if n else "")
+        self.btn_bell.setProperty("alert", "alarm" if n_alarm else ("warn" if n_warn else ""))
+        self.btn_bell.style().unpolish(self.btn_bell)
+        self.btn_bell.style().polish(self.btn_bell)
+
+    # --- acciones de la búsqueda -------------------------------------------------------------
+    def search_plot(self, vid: str) -> None:
+        """Variable elegida en la búsqueda: se grafica en Tendencias."""
+        v = self.ctx.config.variable(vid)
+        if v is None:
+            return
+        if not v.numeric:
+            self.search_live(vid)
+            return
+        if vid not in self._plotted:
+            self.table.set_checked(vid, True)
+            self._plot_toggled(vid, True)
+        self.show_page("trends")
+
+    def search_live(self, vid: str) -> None:
+        self.show_page("variables")
+        select = getattr(self.table, "select_var", None)
+        if select is not None:
+            select(vid)
+
+    def search_spc(self, vid: str) -> None:
+        from .analysis_panels import MAX_SPC
+        sel = [x for x in self.stats_panel.selected if x != vid] + [vid]
+        self.stats_panel.set_variables(self.ctx.config, sel[-MAX_SPC:])
+        self._save_view()
+        self.show_page("spc")
+
+    def search_corr(self, vid: str) -> None:
+        c = self.corr_panel
+        checked = list(dict.fromkeys(c.selected_ids() + [vid]))
+        c.set_variables(self.ctx.config, checked, x=c.cmb_x.currentData() if c.cmb_x.currentData() != vid else None,
+                        y=vid)
+        self._save_view()
+        self.show_page("corr")
+
+    def goto_time(self, ts: float) -> None:
+        """Hora elegida en la búsqueda: Tendencias con un rango que la incluye y una marca en ella."""
+        ago = self.engine.clock() - ts
+        idx = next((i for i in range(self.trends.cmb_range.count())
+                    if self.trends.cmb_range.itemData(i) >= ago * 1.1), self.trends.cmb_range.count() - 1)
+        self.trends.cmb_range.setCurrentIndex(idx)
+        self.trends.set_marker(ts)
+        self.show_page("trends")
+        self._replot()
+
+    def capture_at(self, ts: float) -> None:
+        self.show_page("problems")
+        self.problems_page.tabs.setCurrentIndex(0)
+        self.problems_page.capture.focus_time(ts)
+
+    def open_problem(self, rec: dict) -> None:
+        self.show_page("problems")
+        self.problems_page.tabs.setCurrentIndex(0)
+        self.problems_page.capture.focus_record(rec)
+
+    def search_recipe(self, name: str) -> None:
+        if name == self.engine.state.recipe:
+            self.open_recipes()
+            return
+        if QMessageBox.question(self, tr("Cambiar receta"),
+                                tr("¿Cambiar la receta activa a «{r}»?", r=name)) != QMessageBox.Yes:
+            return
+        idx = self.cmb_recipe.findData(name)
+        if idx >= 0:
+            self.cmb_recipe.setCurrentIndex(idx)
+            self._recipe_chosen(idx)
+
+    def run_tool(self, key: str) -> None:
+        if key == "recipes":
+            self.open_recipes()
+        elif key == "setup":
+            self.open_setup()
+        else:
+            self.show_page(key)
 
     def _build_header(self) -> QHBoxLayout:
         row = QHBoxLayout()
@@ -1009,6 +1218,7 @@ class MainWindow(QMainWindow):
         self._refresh_analysis()
         self._update_findings(snap)
         self._append_events(snap)
+        self._update_bell(snap)
         counts = {lvl: sum(1 for f in snap.findings if f.level == lvl) for lvl in Level}
         if snap.error:
             self._set_banner(Level.ALARM, translate_text(snap.error))
@@ -1034,8 +1244,9 @@ class MainWindow(QMainWindow):
         for i in range(self.nav.count()):
             it = self.nav.item(i)
             if it.data(Qt.UserRole) == "problems":
-                it.setText(f"⚠  {tr('Problemas de proceso')}" + (f"  ({n})" if n else ""))
+                it.setText(tr("Problemas de proceso") + (f"  ({n})" if n else ""))
                 it.setToolTip(tr("{n} paros sin clasificar en el turno", n=n) if n else "")
+        self.home.set_pending(n)
 
     def _watch_stop(self, snap: Snapshot) -> None:
         """Al reanudar la línea tras un paro largo, avisa para clasificarlo (o queda como pendiente)."""
@@ -1177,7 +1388,7 @@ class MainWindow(QMainWindow):
         for i in range(self.nav.count()):
             it = self.nav.item(i)
             if it.data(Qt.UserRole) == "events":
-                it.setText(tr("🔔  Alarmas y eventos ({n})", n=n_alarm) if n_alarm else tr("🔔  Alarmas y eventos"))
+                it.setText(tr("Alarmas y eventos") + (f"  ({n_alarm})" if n_alarm else ""))
                 it.setForeground(QBrush(theme.qcolor("critical")) if n_alarm else QBrush())
 
     def _append_events(self, snap: Snapshot) -> None:

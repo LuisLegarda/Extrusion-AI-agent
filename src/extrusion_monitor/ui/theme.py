@@ -13,7 +13,8 @@ LIGHT = {
     "page": "#f4f6f9", "surface": "#ffffff", "surface2": "#eef1f5", "border": "#d5dbe3",
     "text": "#1b2430", "text2": "#52514e", "muted": "#7d7b76", "title": "#1f3b57",
     "accent": "#1f4e79", "accent_hover": "#2a6299", "accent_text": "#ffffff", "selection": "#cfe0f5",
-    "sidebar": "#e8f0fa", "sidebar_hover": "#d3e2f4", "sidebar_border": "#c7d3e3",
+    "sidebar": "#ffffff", "sidebar_hover": "#eef3fa", "sidebar_border": "#e2e7ee",
+    "nav_text": "#33414f", "nav_icon": "#5b6b7f", "card_border": "#e2e7ee",
     "menubar": "#2f343b", "menubar_text": "#ffffff", "menubar_hover": "#44505e",
     "track": "#e6e9ee", "input": "#ffffff",
     # gráficas
@@ -32,6 +33,7 @@ DARK = {
     "text": "#f2f3f5", "text2": "#c3c2b7", "muted": "#9a988f", "title": "#9ec5f4",
     "accent": "#3987e5", "accent_hover": "#5598e7", "accent_text": "#ffffff", "selection": "#1c5cab",
     "sidebar": "#15181c", "sidebar_hover": "#242a33", "sidebar_border": "#2a2f36",
+    "nav_text": "#d5dae1", "nav_icon": "#9aa7b8", "card_border": "#2c3138",
     "menubar": "#0b0c0e", "menubar_text": "#f2f3f5", "menubar_hover": "#2a2f36",
     "track": "#2c3139", "input": "#202328",
     "plot_bg": "#1a1a19", "plot_fg": "#c3c2b7", "grid": "#2c2c2a", "axis": "#383835",
@@ -89,14 +91,35 @@ QMenu::item:selected {{ background: {t['accent']}; color: {t['accent_text']}; }}
 QMenu::separator {{ height: 1px; background: {t['border']}; margin: 4px 8px; }}
 QWidget#sidebar {{ background: {t['sidebar']}; border-right: 1px solid {t['sidebar_border']}; }}
 QListWidget#nav {{ background: transparent; border: none; font-size: 14px; outline: 0; }}
-QListWidget#nav::item {{ padding: 8px 10px; border-radius: 6px; margin: 1px 0; color: {t['title']}; }}
+QListWidget#nav::item {{ padding: 8px 10px; border-radius: 8px; margin: 1px 0; color: {t['nav_text']}; }}
 QListWidget#nav::item:hover {{ background: {t['sidebar_hover']}; }}
 QListWidget#nav::item:selected {{ background: {t['accent']}; color: {t['accent_text']}; font-weight: bold; }}
 QToolButton#run {{ background: {t['accent']}; color: {t['accent_text']}; font-weight: bold; padding: 7px 16px;
                   border-radius: 6px; }}
 QToolButton#run:hover {{ background: {t['accent_hover']}; }}
-QFrame#card {{ background: {t['surface']}; border: 1px solid {t['border']}; border-radius: 8px; }}
+QFrame#card {{ background: {t['surface']}; border: 1px solid {t['card_border']}; border-radius: 10px; }}
 QFrame#card QLabel {{ border: none; background: transparent; }}
+QFrame#topbar {{ background: {t['surface']}; border: 1px solid {t['card_border']}; border-radius: 10px; }}
+QFrame#topbar QLabel {{ border: none; background: transparent; }}
+QLineEdit#search {{ background: {t['surface2']}; border: 1px solid transparent; border-radius: 8px; padding: 6px 8px; }}
+QLineEdit#search:focus {{ background: {t['input']}; border: 1px solid {t['accent']}; }}
+QLabel#topInfo {{ color: {t['text2']}; }}
+QToolButton#bell {{ background: transparent; border: none; padding: 4px 6px; font-weight: bold; }}
+QToolButton#bell:hover {{ background: {t['surface2']}; border-radius: 8px; }}
+QToolButton#bell[alert="alarm"] {{ color: {t['critical']}; }}
+QToolButton#bell[alert="warn"] {{ color: {t['warning_text']}; }}
+QComboBox#crew {{ border-radius: 8px; padding: 4px 8px; }}
+QComboBox#crew::drop-down {{ border: none; width: 18px; }}
+QFrame#statusTile {{ background: {t['surface']}; border: 1px solid {t['card_border']}; border-radius: 10px; }}
+QFrame#statusTile:hover {{ border-color: {t['accent']}; }}
+QFrame#statusTile QLabel {{ border: none; background: transparent; }}
+QLabel#statusValue {{ font-size: 18px; font-weight: bold; }}
+QLabel#statusLabel {{ color: {t['text2']}; font-size: 12px; }}
+QLabel#statusSub {{ color: {t['muted']}; font-size: 11px; }}
+QFrame#searchPopup {{ background: {t['surface']}; border: 1px solid {t['border']}; border-radius: 10px; }}
+QListWidget#searchList {{ border: none; background: transparent; outline: 0; }}
+QListWidget#searchList::item {{ padding: 5px 8px; border-radius: 6px; }}
+QListWidget#searchList::item:selected {{ background: {t['selection']}; color: {t['text']}; }}
 QTabWidget::pane {{ border: 1px solid {t['border']}; background: {t['surface']}; border-radius: 4px; }}
 QTabBar::tab {{ padding: 6px 14px; background: {t['surface2']}; border: 1px solid {t['border']};
                border-bottom: none; border-top-left-radius: 4px; border-top-right-radius: 4px; margin-right: 2px; }}
