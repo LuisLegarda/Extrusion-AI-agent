@@ -126,10 +126,11 @@ class PersonnelDialog(QDialog):
             self.rb[key] = rb
             lay.addWidget(rb)
         lay.addSpacing(10)
-        self.chk_lock = QCheckBox("Pedir el inicio de sesión de un supervisor (número de empleado y contraseña) para:")
-        self.chk_lock.setChecked(data.login.lock)
-        self.chk_lock.setStyleSheet("font-weight: bold;")
-        lay.addWidget(self.chk_lock)
+        lay.addWidget(QLabel("<b>" + tr("Sin la sesión de supervisor iniciada no se permite:") + "</b>"))
+        hint = QLabel("La protección se activa sola en cuanto hay al menos un supervisor activo con número de "
+                      "empleado y contraseña (pestaña Personas).")
+        hint.setWordWrap(True)
+        lay.addWidget(hint)
         self.chk_protect: dict[str, QCheckBox] = {}
         for key, label in PROTECTABLE.items():
             cb = QCheckBox(tr(label))
@@ -302,13 +303,15 @@ class PersonnelDialog(QDialog):
                               self.table.cellWidget(r, C_SHIFT).currentData() or "", it.data(PW_ROLE) or ""))
         confirm = next((k for k, rb in self.rb.items() if rb.isChecked()), "none")
         protect = [k for k, cb in self.chk_protect.items() if cb.isChecked()]
-        return Personnel(out, self.shift_list(), LoginSettings(self.chk_auto.isChecked(), confirm,
-                                                                self.chk_lock.isChecked(), protect,
-                                                                self.sp_session.value()))
+        return Personnel(out, self.shift_list(),
+                         LoginSettings(self.chk_auto.isChecked(), confirm, protect, self.sp_session.value()))
 
     def problems(self, p: Personnel) -> list[str]:
         """Lo que falta para que la confirmación elegida funcione."""
         msgs = []
+        if not p.supervisors_ready():
+            msgs.append(tr("Todavía no hay un supervisor con número de empleado y contraseña: recetas, variables y "
+                           "gráficos quedan sin proteger."))
         if p.login.auto_shift and not p.shifts:
             msgs.append(tr("Para detectar el turno por la hora, agrega los turnos y su horario."))
         badges = [x.badge for x in p.people if x.active and x.badge]
@@ -324,19 +327,8 @@ class PersonnelDialog(QDialog):
                     msgs.append(tr("Sin contraseña: {n}", n=", ".join(no_pw)))
         return msgs
 
-    def blocking(self, p: Personnel) -> list[str]:
-        """Lo que impide guardar: la protección sin un supervisor que pueda entrar dejaría todo bloqueado."""
-        if p.login.lock and not p.supervisors_ready():
-            return [tr("Para pedir el inicio de sesión de supervisor, al menos un supervisor activo necesita número "
-                       "de empleado y contraseña.")]
-        return []
-
     def accept(self) -> None:
         p = self.personnel()
-        stop = self.blocking(p)
-        if stop:
-            QMessageBox.warning(self, tr("Personal"), "\n".join(stop))
-            return
         msgs = self.problems(p)
         if msgs and QMessageBox.question(
                 self, tr("Personal"), "\n".join(msgs) + "\n\n" + tr("¿Guardar de todos modos?")) != QMessageBox.Yes:

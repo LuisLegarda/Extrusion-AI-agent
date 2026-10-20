@@ -3,7 +3,8 @@
 Sin sesión, la acción simplemente no se hace (no se abre la lista ni el diálogo). La sesión se inicia desde la
 barra superior (🔒 Supervisor) o al entrar un supervisor con contraseña; dura `session_min` minutos desde el
 último uso, se cierra desde la barra superior y al cambiar el usuario en turno.
-Si la protección está apagada (Configuración → Personal → Confirmación), todo se permite como antes.
+La protección está activa en cuanto hay un supervisor con número de empleado y contraseña; sin ninguno
+(equipo nuevo), todo se permite como antes.
 """
 from __future__ import annotations
 
@@ -99,15 +100,16 @@ class SupervisorGate(QObject):
             self.changed.emit()
 
     def protected(self, key: str) -> bool:
-        return self.people().login.protects(key)
+        return self.people().protects(key)
 
     def locked(self, key: str) -> bool:
         """Protegida y sin sesión de supervisor (para deshabilitar controles)."""
         return self.protected(key) and not self.active()
 
     def allow(self, key: str) -> bool:
-        lg = self.people().login
-        if not lg.protects(key):
+        people = self.people()
+        lg = people.login
+        if not people.protects(key):
             return True
         if self.active():
             self.until = self.clock() + 60 * lg.session_min  # cada uso alarga la sesión

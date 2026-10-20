@@ -25,7 +25,7 @@ from ..i18n import LANGS, lang as i18n_lang, tr, translate_text
 from ..personnel import Personnel, crew
 from . import icons, theme
 from .common import (  # noqa: F401 (y_range se reexporta)
-    SeriesCache, SnapshotBridge, level_color, level_text, level_text_color, y_range,
+    SeriesCache, SnapshotBridge, level_color, level_text, level_text_color, steady_range, y_range,
 )
 from .variable_tree import VariableTree
 from .kpi_dashboard import KpiDashboard
@@ -33,6 +33,7 @@ from .analysis_panels import BehaviorPanel, CorrelationPanel, StatsPanel
 from ..analysis.statistics import capability, projection
 
 MAX_PLOTS = 4
+NAV_ROW_H = 36  # alto de cada página en la barra lateral
 
 
 RANGES = [("5 min", 300), ("15 min", 900), ("30 min", 1800), ("1 h", 3600), ("4 h", 4 * 3600),
@@ -69,9 +70,11 @@ class TrendPanel(QWidget):
             self.cmb_range.addItem(label, secs)
         self.cmb_range.setCurrentIndex(1)
         self.cmb_range.setToolTip("Tiempo mostrado. Más allá de la ventana en memoria se lee del historial.")
-        self.cmb_range.activated.connect(lambda _: self.set_marker(None))  # elegir otro rango quita la hora buscada
+        self.cmb_range.activated.connect(lambda _: self.set_marker(None))
+        self.cmb_range.currentIndexChanged.connect(lambda _: self.reset_y())  # elegir otro rango quita la hora buscada
         bar.addWidget(self.cmb_range)
         self.chk_auto_y = QCheckBox("Escala Y automática (según límites)")
+        self.chk_auto_y.toggled.connect(lambda _: self.reset_y())
         self.chk_auto_y.setChecked(True)
         self.chk_auto_y.setToolTip("La escala se ajusta a los límites de la variable y a los datos visibles; "
                                    "un pico solo la amplía mientras está en pantalla. "
@@ -146,6 +149,11 @@ class TrendPanel(QWidget):
             self._apply_marker(self.plots[vid])
         self.placeholder.setVisible(not self.plots)
 
+    def reset_y(self) -> None:
+        """La próxima actualización vuelve a calcular la escala Y (rango o escala automática cambiados)."""
+        for p in self.plots.values():
+            p["widget"]._yr = None
+
     def set_marker(self, ts: Optional[float]) -> None:
         """Marca una hora en todas las gráficas (None la quita)."""
         self.marker = ts
@@ -174,7 +182,10 @@ class TrendPanel(QWidget):
             alarm = [bounds.al, bounds.ah] if bounds.al is not None or bounds.ah is not None else [bounds.wl, bounds.wh]
             yr = y_range(np.asarray(y)[np.asarray(t) >= now - self.range_s], alarm + [ref])
             if yr is not None:
-                w.setYRange(*yr, padding=0)
+                yr = steady_range(getattr(w, "_yr", None), yr)  # sin reajustar la escala en cada lectura
+                if yr != getattr(w, "_yr", None):
+                    w._yr = yr
+                    w.setYRange(*yr, padding=0)
 
     def update_plot(self, vid: str, t, y, ref: Optional[float], bounds: Bounds = Bounds(),
                     sp_series=None, horizon_s: float = 0.0, fit_s: float = 0.0) -> None:
@@ -501,13 +512,16 @@ class MainWindow(QMainWindow):
         self.nav.setObjectName("nav")
         self.nav.setFocusPolicy(Qt.NoFocus)
         self.nav.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        self.nav.setVerticalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        self.nav.setTextElideMode(Qt.ElideRight)
         self.nav.setIconSize(QSize(18, 18))
         for key, label, _icon in NAV_ITEMS:
             it = QListWidgetItem(tr(label))
             it.setIcon(icons.icon(key, theme.c("nav_icon"), theme.c("accent_text")))
             it.setData(Qt.UserRole, key)
+            it.setSizeHint(QSize(0, NAV_ROW_H))
             self.nav.addItem(it)
-        self.nav.setFixedHeight(len(NAV_ITEMS) * 38 + 6)
+        self.nav.setFixedHeight(len(NAV_ITEMS) * (NAV_ROW_H + 2) + 6)  # alto exacto: sin barra de desplazamiento
         self.nav.currentItemChanged.connect(self._nav_changed)
         lay.addWidget(self.nav)
         line = QFrame()
@@ -518,12 +532,16 @@ class MainWindow(QMainWindow):
         self.nav2.setObjectName("nav")
         self.nav2.setFocusPolicy(Qt.NoFocus)
         self.nav2.setIconSize(QSize(18, 18))
+        self.nav2.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        self.nav2.setVerticalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        self.nav2.setTextElideMode(Qt.ElideRight)
         for key, label, _icon in NAV_TOOLS:
             it = QListWidgetItem(tr(label))
             it.setIcon(icons.icon(key, theme.c("nav_icon"), theme.c("accent_text")))
             it.setData(Qt.UserRole, key)
+            it.setSizeHint(QSize(0, NAV_ROW_H))
             self.nav2.addItem(it)
-        self.nav2.setFixedHeight(len(NAV_TOOLS) * 38 + 6)
+        self.nav2.setFixedHeight(len(NAV_TOOLS) * (NAV_ROW_H + 2) + 6)
         self.nav2.itemClicked.connect(self._tool_clicked)
         lay.addWidget(self.nav2)
         lay.addStretch(1)
@@ -665,7 +683,7 @@ class MainWindow(QMainWindow):
 
     def _update_session(self) -> None:
         """Botón de sesión de supervisor (solo con la protección encendida) y controles bloqueados sin ella."""
-        lock = Personnel.load(self.ctx.workspace.home).login.lock
+        lock = bool(Personnel.load(self.ctx.workspace.home).supervisors_ready())
         on = self.gate.active()
         self.btn_session.setVisible(lock or on)
         if on:

@@ -64,6 +64,22 @@ def y_range(y, limits) -> Optional[tuple[float, float]]:
     return lo - pad, hi + pad
 
 
+def steady_range(prev: Optional[tuple[float, float]], new: tuple[float, float],
+                 shrink: float = 0.6) -> tuple[float, float]:
+    """Escala Y estable: crece de inmediato si los datos se salen, pero no se mueve con cada lectura.
+
+    Solo se reduce cuando lo necesario ocupa menos del `shrink` de la escala actual (p. ej. al salir un pico).
+    """
+    if prev is None:
+        return new
+    lo, hi = prev
+    if new[0] < lo or new[1] > hi:
+        return min(lo, new[0]), max(hi, new[1])
+    if (new[1] - new[0]) < shrink * (hi - lo):
+        return new
+    return prev
+
+
 class SeriesCache:
     """Serie de una variable para un rango de tiempo: memoria (ventana de tendencia) o historial (rangos largos)."""
 
