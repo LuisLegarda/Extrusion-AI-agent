@@ -80,6 +80,8 @@ def stylesheet() -> str:
     t = THEMES[_current]
     return f"""
 QWidget {{ font-size: 13px; color: {t['text']}; }}
+QWidget:disabled {{ color: {t['muted']}; }}
+QComboBox:disabled, QPushButton:disabled {{ background: {t['track']}; }}
 QMainWindow, QDialog, QWidget#content {{ background: {t['page']}; }}
 QMenuBar {{ background: {t['menubar']}; color: {t['menubar_text']}; padding: 2px 6px; font-size: 14px;
            font-weight: bold; }}

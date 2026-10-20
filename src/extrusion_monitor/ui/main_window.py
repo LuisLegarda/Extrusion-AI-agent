@@ -9,7 +9,7 @@ import pyqtgraph as pg
 from PySide6.QtCore import QEvent, QSize, Qt, QTimer, QUrl
 from PySide6.QtGui import QAction, QActionGroup, QBrush, QColor, QDesktopServices, QShortcut
 from PySide6.QtWidgets import (
-    QApplication, QCheckBox, QComboBox, QFileDialog, QFrame, QHeaderView, QLabel, QListWidget,
+    QApplication, QCheckBox, QComboBox, QDialog, QFileDialog, QFrame, QHeaderView, QLabel, QListWidget,
     QHBoxLayout, QListWidgetItem, QMainWindow, QMenu, QMessageBox, QSplitter, QStackedWidget, QTableWidget,
     QTableWidgetItem, QTabWidget, QToolButton, QVBoxLayout, QWidget,
 )
@@ -264,7 +264,10 @@ class MainWindow(QMainWindow):
         self._restoring = True  # mientras se construye la ventana no se guarda nada
         self._rebuilding = False
         self.dock = None  # barra compacta que queda sobre el HMI al minimizar (se crea al usarla)
+        from .supervisor import SupervisorGate
+        self.gate = SupervisorGate(ctx.workspace.home, self)  # acciones que piden un supervisor (opcional)
         self._build_ui()
+        self._update_session()
         self._restore_view_controls()
         self.rebuild_table()
         self.refresh_recipes()
@@ -357,6 +360,8 @@ class MainWindow(QMainWindow):
         QTimer.singleShot(0, lambda: self.home.set_pending(self.problems_page.pending))
         from .control_page import ControlPage
         self.control_page = ControlPage(self.ctx, on_config_changed=self._save_profile)
+        self.control_page.allow = self.gate.allow
+        self.problems_page.allow = self.gate.allow
 
         self.pages: dict[str, QWidget] = {}
         for key, w in (("home", self.home), ("variables", self.table), ("trends", trends_page), ("kpi", self.kpi),
@@ -554,6 +559,12 @@ class MainWindow(QMainWindow):
         self.btn_bell.setToolTip(tr("Alarmas y avisos activos (clic: Alarmas y eventos)"))
         self.btn_bell.clicked.connect(lambda: self.show_page("events"))
         row.addWidget(self.btn_bell)
+        self.btn_session = QToolButton()
+        self.btn_session.setObjectName("session")
+        self.btn_session.clicked.connect(self._session_clicked)
+        self.gate.changed.connect(self._update_session)
+        self.gate.denied.connect(self._denied)
+        row.addWidget(self.btn_session)
         self.cmb_user = QComboBox()  # quién está en turno (operador o supervisor): un solo selector
         self.cmb_user.setObjectName("crew")
         self.cmb_user.setMinimumWidth(190)
@@ -563,9 +574,14 @@ class MainWindow(QMainWindow):
         row.addWidget(self.cmb_user)
         self.fill_crew()
         self._update_shift_label()
+        self._login_dlg = None
+        self._login_snooze = 0.0  # «Más tarde» en el aviso de cambio de turno
         self._shift_timer = QTimer(self)
         self._shift_timer.timeout.connect(self._update_shift_label)
+        self._shift_timer.timeout.connect(self.check_shift)
+        self._shift_timer.timeout.connect(self._update_session)
         self._shift_timer.start(30000)
+        QTimer.singleShot(3000, self.check_shift)
         return bar
 
     # --- personal en turno ---------------------------------------------------------------
@@ -595,26 +611,116 @@ class MainWindow(QMainWindow):
             self.fill_crew()  # regresa a quien estaba
             self.open_personnel()
             return
+        people = Personnel.load(self.ctx.workspace.home)
+        if name and people.login.confirm != "none" and name != crew(self.ctx.workspace.load_state())["user"]:
+            self.fill_crew()  # hasta confirmar sigue quien estaba
+            self.ask_login(people, name=name)
+            return
+        self.set_user(name or "")
+
+    def set_user(self, name: str, shift_key: Optional[str] = None) -> None:
+        """Guarda quién está en turno (y, si viene del aviso de turno, qué vuelta de turno confirmó)."""
         state = self.ctx.workspace.load_state()
-        person = Personnel.load(self.ctx.workspace.home).find(name or "")
-        state["crew"] = {"user": name or "", "role": person.role if person else ("operator" if name else "")}
+        person = Personnel.load(self.ctx.workspace.home).find(name)
+        c = crew(state)
+        state["crew"] = {"user": name, "role": person.role if person else ("operator" if name else ""),
+                         "shift_key": shift_key if shift_key is not None else c["shift_key"]}
         if name:
             state["last_operator"] = name
         self.ctx.workspace.save_state(state)
+        if self.gate.user is not None and self.gate.user != name:
+            self.gate.end()  # cambió quién está en turno: la sesión de supervisor se cierra
+        self.fill_crew()
         self.problems_page.capture.reload_config()
 
+    def ask_login(self, people: Personnel, name: str = "", shift=None, on_postpone=None) -> None:
+        """Ventana de confirmación (sin bloquear el monitoreo); al confirmar cambia el usuario en turno."""
+        from ..personnel import shift_key
+        from .login_dialog import LoginDialog
+        if self._login_dlg is not None:
+            self._login_dlg.raise_()
+            return
+        dlg = LoginDialog(people, shift, name, self, can_postpone=shift is not None)
+        key = shift_key(shift, self.engine.clock()) if shift is not None else None
+
+        def done(result: int) -> None:
+            self._login_dlg = None
+            if result == QDialog.Accepted:
+                self.set_user(dlg.name, key)
+                person = people.find(dlg.name)
+                if people.login.confirm == "badge_password" and person is not None and person.role == "supervisor":
+                    self.gate.start(person.name, people.login.session_min)  # ya confirmó con contraseña
+            elif on_postpone is not None:
+                on_postpone()
+            dlg.deleteLater()
+        dlg.finished.connect(done)
+        self._login_dlg = dlg
+        dlg.open()
+
+    def _session_clicked(self) -> None:
+        if self.gate.active():
+            self.gate.end()
+        else:
+            self.gate.login()
+
+    def _update_session(self) -> None:
+        """Botón de sesión de supervisor (solo con la protección encendida) y controles bloqueados sin ella."""
+        lock = Personnel.load(self.ctx.workspace.home).login.lock
+        on = self.gate.active()
+        self.btn_session.setVisible(lock or on)
+        if on:
+            self.btn_session.setText(tr("🔓 {n} · {m} min · cerrar sesión", n=self.gate.user,
+                                        m=self.gate.remaining_min()))
+            self.btn_session.setToolTip(tr("Sesión de supervisor activa (clic: cerrar sesión)"))
+        else:
+            self.btn_session.setText(tr("🔒 Supervisor"))
+            self.btn_session.setToolTip(tr("Iniciar la sesión de supervisor para hacer cambios protegidos"))
+        recipes = not self.gate.locked("recipes")
+        for w in (self.cmb_recipe, self.chk_auto, self.act_auto):
+            w.setEnabled(recipes)
+        self.home.btn_custom.setEnabled(not self.gate.locked("charts"))
+
+    def _denied(self, reason: str) -> None:
+        """Acción protegida sin sesión de supervisor: no se hace; solo se avisa."""
+        self.statusBar().showMessage(tr("🔒 Requiere la sesión de supervisor: {r}", r=tr(reason)), 8000)
+
+    def check_shift(self) -> None:
+        """Turno detectado por la hora (opcional): al empezar uno nuevo se pregunta quién entra."""
+        from ..personnel import shift_key
+        people = Personnel.load(self.ctx.workspace.home)
+        now = self.engine.clock()
+        shift = people.current_shift(now)
+        if not people.login.auto_shift or shift is None or self._login_dlg is not None or now < self._login_snooze:
+            return
+        if crew(self.ctx.workspace.load_state())["shift_key"] == shift_key(shift, now):
+            return
+
+        def later() -> None:
+            self._login_snooze = self.engine.clock() + 600  # se vuelve a preguntar en 10 min
+        self.ask_login(people, crew(self.ctx.workspace.load_state())["user"], shift, later)
+
     def open_personnel(self) -> None:
+        if not self.gate.allow("personnel"):
+            return
         from .personnel_dialog import PersonnelDialog
-        if PersonnelDialog(self.ctx.workspace.home, self.ctx.config.problems.operators, self).exec():
+        if PersonnelDialog(self.ctx.workspace.home, self.ctx.config.problems.operators, self,
+                           shift_starts=self.ctx.config.oee.shift_starts).exec():
             self.fill_crew()
             self.problems_page.capture.reload_config()
+            self._update_shift_label()
+            self._update_session()
+            self.check_shift()
 
     def _update_shift_label(self) -> None:
         from ..analysis.oee import shift_start
         now = self.engine.clock()
-        a = shift_start(now, self.ctx.config.oee.shift_starts)
-        self.lbl_shift.setText(tr("Turno desde {t}", t=time.strftime("%H:%M", time.localtime(a))) + "  ·  "
-                               + time.strftime("%d/%m/%Y", time.localtime(now)))
+        shift = Personnel.load(self.ctx.workspace.home).current_shift(now)
+        if shift is not None:  # turnos de Configuración → Personal
+            text = shift.label()
+        else:
+            a = shift_start(now, self.ctx.config.oee.shift_starts)
+            text = tr("Turno desde {t}", t=time.strftime("%H:%M", time.localtime(a)))
+        self.lbl_shift.setText(text + "  ·  " + time.strftime("%d/%m/%Y", time.localtime(now)))
 
     def _update_bell(self, snap: Snapshot) -> None:
         n_alarm = sum(f.level >= Level.ALARM for f in snap.findings)
@@ -906,6 +1012,9 @@ class MainWindow(QMainWindow):
 
     def _recipe_chosen(self, index: int) -> None:
         name = self.cmb_recipe.itemData(index)
+        if name != self.engine.state.recipe and not self.gate.allow("recipes"):
+            self.refresh_recipes()  # sigue la receta que estaba
+            return
         # Elegir manualmente una receta desactiva la selección automática.
         if self.chk_auto.isChecked() and self.ctx.config.general.recipe_name_var:
             self.chk_auto.setChecked(False)
@@ -913,6 +1022,14 @@ class MainWindow(QMainWindow):
         self._save_state()
 
     def _auto_toggled(self, on: bool) -> None:
+        if on != self.engine.state.auto_recipe and not self.gate.allow("recipes"):
+            self.chk_auto.blockSignals(True)
+            self.chk_auto.setChecked(self.engine.state.auto_recipe)
+            self.chk_auto.blockSignals(False)
+            self.act_auto.blockSignals(True)
+            self.act_auto.setChecked(self.engine.state.auto_recipe)
+            self.act_auto.blockSignals(False)
+            return
         self.engine.set_recipe(self.engine.state.recipe, auto=on)
         self._save_state()
 
@@ -958,6 +1075,8 @@ class MainWindow(QMainWindow):
     # --- acciones --------------------------------------------------------------
     def toggle_run(self) -> None:
         if self.engine.running:
+            if not self.gate.allow("stop"):
+                return
             self.engine.stop()
             self.act_run.setText(tr("▶ Iniciar monitoreo"))
             self._set_banner(None, tr("DETENIDO"))
@@ -970,6 +1089,8 @@ class MainWindow(QMainWindow):
             self.act_run.setText(tr("■ Detener monitoreo"))
 
     def open_setup(self, tab: Optional[str] = None, cameras: bool = False) -> None:
+        if not self.gate.allow("setup"):
+            return
         from .setup_dialog import SetupDialog
         was_running = self.engine.running
         # Durante la configuración el monitoreo (y su recorrido con clics) se detiene.
@@ -1004,6 +1125,8 @@ class MainWindow(QMainWindow):
                                                    "la carpeta de datos y vuelve a guardar."))
 
     def open_station(self) -> None:
+        if not self.gate.allow("station"):
+            return
         from .station_dialog import StationDialog
         ex = self.ctx.exporter
         if ex is None:
@@ -1061,6 +1184,8 @@ class MainWindow(QMainWindow):
         self.showMinimized()
 
     def open_dock_config(self) -> None:
+        if not self.gate.allow("charts"):
+            return
         from .dock_dialog import DockConfigDialog
         dlg = DockConfigDialog(self.engine.config, self)
         if not dlg.exec():
@@ -1078,6 +1203,8 @@ class MainWindow(QMainWindow):
         self._sync_dock()
 
     def open_home_config(self) -> None:
+        if not self.gate.allow("charts"):
+            return
         from .home_config_dialog import HomeConfigDialog
         dlg = HomeConfigDialog(self.engine.config, self)
         if not dlg.exec():
@@ -1090,6 +1217,8 @@ class MainWindow(QMainWindow):
         self.show_page("home")
 
     def open_recipes(self) -> None:
+        if not self.gate.allow("recipes"):
+            return
         from .recipe_dialog import RecipeDialog
         dlg = RecipeDialog(self.ctx, self)
         if dlg.exec():
@@ -1302,6 +1431,8 @@ class MainWindow(QMainWindow):
         self.statusBar().showMessage(tr("Control detenido en todos los lazos"), 5000)
 
     def open_branding(self) -> None:
+        if not self.gate.allow("station"):
+            return
         from .branding import BrandingDialog, header_widget
         if not BrandingDialog(self.ctx.workspace.home, self).exec():
             return
@@ -1314,6 +1445,8 @@ class MainWindow(QMainWindow):
         self.brand = new
 
     def open_problems_config(self) -> None:
+        if not self.gate.allow("catalogs"):
+            return
         from .problems_config import ProblemsConfigDialog
         dlg = ProblemsConfigDialog(self.engine.config.problems, self)
         if not dlg.exec():
@@ -1324,6 +1457,8 @@ class MainWindow(QMainWindow):
         self.problems_page.reload_config()
 
     def open_behavior(self) -> None:
+        if not self.gate.allow("catalogs"):
+            return
         from .behavior_dialog import BehaviorDialog
         BehaviorDialog(self.ctx, self, preselect=[v for v in self._plotted]).exec()
         self._save_profile()
@@ -1405,6 +1540,9 @@ class MainWindow(QMainWindow):
             QApplication.alert(self)
 
     def closeEvent(self, event) -> None:
+        if not self._rebuilding and not self.gate.allow("stop"):
+            event.ignore()
+            return
         if self._view_timer.isActive():
             self._view_timer.stop()
             self._write_view()
@@ -1461,6 +1599,9 @@ class MainWindow(QMainWindow):
         new.rebuild_table()
         new.act_top.setChecked(self.act_top.isChecked())
         new.act_tour_pause.setChecked(self.act_tour_pause.isChecked())
+        if self.gate.active():  # la sesión de supervisor sigue en la ventana nueva
+            new.gate.user, new.gate.until = self.gate.user, self.gate.until
+            new._update_session()
         if self.engine.running:
             new.act_run.setText(tr("■ Detener monitoreo"))
         if self.isMaximized():

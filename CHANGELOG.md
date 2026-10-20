@@ -10,6 +10,26 @@ Numeración `MAYOR.MENOR.PARCHE`:
 
 ## [Sin publicar]
 
+### Turnos y confirmación del usuario (rama `feature/turnos`)
+- Configuración → Personal tiene tres pestañas: *Personas* (con turno asignado y contraseña), *Turnos* (nombre y
+  horario; los que cruzan la medianoche, p. ej. 22:00–06:00, también; se pueden crear desde los inicios del OEE)
+  y *Confirmación*.
+- Opcional: detectar el turno por la hora y, al empezar cada turno, pedir quién entra (lista con las personas de
+  ese turno; «Más tarde» vuelve a preguntar en 10 min).
+- Opcional: confirmar al usuario con su número de empleado, o con número de empleado y contraseña; también al
+  cambiarlo en la barra superior. Escribir el número elige a la persona. Las contraseñas se guardan cifradas
+  (PBKDF2-SHA256 con sal); no se pueden leer, solo reemplazar.
+- La barra superior muestra el turno detectado con su horario.
+- Usuarios: «+ Usuario» crea un operador por defecto; el puesto (operador / supervisor) se cambia en la lista.
+- Protección opcional con inicio de sesión de supervisor (número de empleado y contraseña) para: la lista de
+  personal (siempre), cambiar o editar recetas, Configurar receta (variables, recorridos, cámaras, control) y el
+  tablero de Inicio y el dock. Opcionales también: activar el control automático o cambiar su modo, catálogos de
+  paros y comportamientos, eliminar capturas, identidad / exportación / servidor, y detener o cerrar el programa.
+  Sin la sesión de supervisor iniciada, esas acciones simplemente no se permiten (no se abren las listas ni los
+  diálogos y el selector de receta queda deshabilitado). La sesión se inicia con «🔒 Supervisor» en la barra
+  superior, dura los minutos elegidos sin usarse y se cierra desde ahí o al cambiar el usuario en turno.
+  Desactivar el control siempre se permite. No se puede guardar la protección sin un supervisor que pueda iniciar sesión.
+
 ### Rediseño de la interfaz (rama `feature/rediseno`)
 - Tema claro renovado (tarjetas redondeadas, barra lateral blanca con la página activa resaltada) y el oscuro con
   el mismo estilo. Íconos de línea propios en lugar de emojis en la barra lateral. Gráficas y gauges sin cambios.

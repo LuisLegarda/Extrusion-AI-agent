@@ -95,6 +95,8 @@ class LoopCard(QFrame):
         ctl = self.page.engine.control
         on = not ctl.state(self.loop_id).active
         lp = self.page.engine.config.control(self.loop_id)
+        if on and lp is not None and lp.mode == "auto" and not self.page.allow("control"):
+            return  # desactivar siempre se permite
         if on and lp is not None and lp.mode == "auto":
             from PySide6.QtWidgets import QMessageBox
             if QMessageBox.question(
@@ -111,6 +113,11 @@ class LoopCard(QFrame):
         lp = eng.config.control(self.loop_id)
         mode = self.cmb_mode.currentData()
         if lp is None or mode == lp.mode:
+            return
+        if not self.page.allow("control"):
+            self.cmb_mode.blockSignals(True)
+            self.cmb_mode.setCurrentIndex(max(0, self.cmb_mode.findData(lp.mode)))
+            self.cmb_mode.blockSignals(False)
             return
         lp.mode = mode
         eng.control.set_active(self.loop_id, False)  # cambiar de modo desactiva: se vuelve a activar a propósito
@@ -183,6 +190,7 @@ class ControlPage(QWidget):
         self.ctx = ctx
         self.engine = ctx.engine
         self.on_config_changed = on_config_changed
+        self.allow = lambda _key: True  # la ventana principal pone aquí la protección de supervisor
         lay = QVBoxLayout(self)
         top = QHBoxLayout()
         info = QLabel(tr("El control ajusta inputs del HMI con límites y paros de seguridad. Al abrir el programa "
