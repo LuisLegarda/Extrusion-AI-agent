@@ -6,12 +6,12 @@ from pathlib import Path
 from PySide6.QtCore import Qt, QTime
 from PySide6.QtWidgets import (
     QButtonGroup, QCheckBox, QComboBox, QDialog, QDialogButtonBox, QFormLayout, QHBoxLayout, QHeaderView, QLabel,
-    QLineEdit, QMessageBox, QPushButton, QRadioButton, QTableWidget, QTableWidgetItem, QTabWidget, QTimeEdit,
-    QVBoxLayout, QWidget,
+    QLineEdit, QMessageBox, QPushButton, QRadioButton, QSpinBox, QTableWidget, QTableWidgetItem, QTabWidget,
+    QTimeEdit, QVBoxLayout, QWidget,
 )
 
 from ..i18n import tr
-from ..personnel import CONFIRM_MODES, ROLES, LoginSettings, Person, Personnel, Shift, hash_password
+from ..personnel import CONFIRM_MODES, PROTECTABLE, ROLES, LoginSettings, Person, Personnel, Shift, hash_password
 
 COLS = ("Nombre", "Puesto", "Núm. de empleado", "Turno", "Contraseña", "Activo")
 C_NAME, C_ROLE, C_BADGE, C_SHIFT, C_PW, C_ACTIVE = range(len(COLS))
@@ -77,8 +77,7 @@ class PersonnelDialog(QDialog):
         self.table.verticalHeader().setVisible(False)
         lay.addWidget(self.table, 1)
         row = QHBoxLayout()
-        for text, slot in (("+ Operador", lambda: self._new("operator")),
-                           ("+ Supervisor", lambda: self._new("supervisor")), ("Quitar", self._remove)):
+        for text, slot in (("+ Usuario", lambda: self._new("operator")), ("Quitar", self._remove)):
             b = QPushButton(text)
             b.clicked.connect(slot)
             row.addWidget(b)
@@ -126,13 +125,37 @@ class PersonnelDialog(QDialog):
             self.grp.addButton(rb)
             self.rb[key] = rb
             lay.addWidget(rb)
+        lay.addSpacing(10)
+        self.chk_lock = QCheckBox("Pedir el inicio de sesión de un supervisor (número de empleado y contraseña) para:")
+        self.chk_lock.setChecked(data.login.lock)
+        self.chk_lock.setStyleSheet("font-weight: bold;")
+        lay.addWidget(self.chk_lock)
+        self.chk_protect: dict[str, QCheckBox] = {}
+        for key, label in PROTECTABLE.items():
+            cb = QCheckBox(tr(label))
+            cb.setChecked(key == "personnel" or key in data.login.protect)
+            cb.setEnabled(key != "personnel")  # si no, cualquiera podría quitar la protección
+            cb.setStyleSheet("margin-left: 22px;")
+            self.chk_protect[key] = cb
+            lay.addWidget(cb)
+        row = QHBoxLayout()
+        row.addSpacing(22)
+        row.addWidget(QLabel(tr("La sesión de supervisor se cierra tras")))
+        self.sp_session = QSpinBox()
+        self.sp_session.setRange(1, 240)
+        self.sp_session.setSuffix(" min")
+        self.sp_session.setValue(data.login.session_min)
+        row.addWidget(self.sp_session)
+        row.addWidget(QLabel(tr("sin usarse (o al cerrarla en la barra superior).")))
+        row.addStretch(1)
+        lay.addLayout(row)
         note = QLabel("Todo es opcional. Con confirmación, cada persona necesita su número de empleado (y su "
                       "contraseña, si se pide). Las contraseñas se guardan cifradas; si alguien la olvida, asígnale "
                       "una nueva en la pestaña Personas.")
         note.setWordWrap(True)
         lay.addWidget(note)
         lay.addStretch(1)
-        self.tabs.addTab(w, "🔐 Confirmación")
+        self.tabs.addTab(w, "🔐 Confirmación y supervisor")
 
         for s in data.shifts:
             self.add_shift(s)
@@ -192,7 +215,7 @@ class PersonnelDialog(QDialog):
         self._pw_button(it)
 
     def _new(self, role: str) -> None:
-        r = self.add_person(Person(tr("Nuevo supervisor") if role == "supervisor" else tr("Nuevo operador"), role))
+        r = self.add_person(Person(tr("Nuevo usuario"), role))  # operador por defecto; el puesto se cambia en la lista
         self.tabs.setCurrentIndex(0)
         self.table.setCurrentCell(r, 0)
         self.table.editItem(self.table.item(r, 0))
@@ -278,7 +301,10 @@ class PersonnelDialog(QDialog):
                               self.table.item(r, C_ACTIVE).checkState() == Qt.Checked,
                               self.table.cellWidget(r, C_SHIFT).currentData() or "", it.data(PW_ROLE) or ""))
         confirm = next((k for k, rb in self.rb.items() if rb.isChecked()), "none")
-        return Personnel(out, self.shift_list(), LoginSettings(self.chk_auto.isChecked(), confirm))
+        protect = [k for k, cb in self.chk_protect.items() if cb.isChecked()]
+        return Personnel(out, self.shift_list(), LoginSettings(self.chk_auto.isChecked(), confirm,
+                                                                self.chk_lock.isChecked(), protect,
+                                                                self.sp_session.value()))
 
     def problems(self, p: Personnel) -> list[str]:
         """Lo que falta para que la confirmación elegida funcione."""
@@ -298,8 +324,19 @@ class PersonnelDialog(QDialog):
                     msgs.append(tr("Sin contraseña: {n}", n=", ".join(no_pw)))
         return msgs
 
+    def blocking(self, p: Personnel) -> list[str]:
+        """Lo que impide guardar: la protección sin un supervisor que pueda entrar dejaría todo bloqueado."""
+        if p.login.lock and not p.supervisors_ready():
+            return [tr("Para pedir el inicio de sesión de supervisor, al menos un supervisor activo necesita número "
+                       "de empleado y contraseña.")]
+        return []
+
     def accept(self) -> None:
         p = self.personnel()
+        stop = self.blocking(p)
+        if stop:
+            QMessageBox.warning(self, tr("Personal"), "\n".join(stop))
+            return
         msgs = self.problems(p)
         if msgs and QMessageBox.question(
                 self, tr("Personal"), "\n".join(msgs) + "\n\n" + tr("¿Guardar de todos modos?")) != QMessageBox.Yes:

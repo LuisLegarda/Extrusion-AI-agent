@@ -20,6 +20,19 @@ ROLES = {"operator": "Operador", "supervisor": "Supervisor"}
 CONFIRM_MODES = {"none": "Sin confirmación", "badge": "Número de empleado",
                  "badge_password": "Número de empleado y contraseña"}
 PBKDF2_ROUNDS = 120_000
+# Acciones que pueden requerir el inicio de sesión de un supervisor (clave -> descripción)
+PROTECTABLE = {
+    "personnel": "Lista de personal, turnos y esta protección",
+    "recipes": "Cambiar la receta activa, editar recetas y límites",
+    "setup": "Variables, pantallas, recorridos, cámaras y configuración del control (Configurar receta)",
+    "charts": "Tablero de Inicio y dock (indicadores y gráficos)",
+    "control": "Activar el control automático o cambiar su modo",
+    "catalogs": "Causas de paro, defectos y entrenamiento de comportamientos",
+    "delete": "Eliminar capturas de paros y defectos",
+    "station": "Identidad de la estación, exportación y servidor",
+    "stop": "Detener el monitoreo y cerrar el programa",
+}
+DEFAULT_PROTECT = ["personnel", "recipes", "setup", "charts"]
 
 
 def hash_password(password: str, salt: Optional[bytes] = None) -> str:
@@ -78,6 +91,12 @@ class Shift:
 class LoginSettings:
     auto_shift: bool = False  # al empezar cada turno, pedir quién entra
     confirm: str = "none"  # none | badge | badge_password (también al elegir usuario en la barra superior)
+    lock: bool = False  # ciertas acciones requieren el inicio de sesión de un supervisor
+    protect: list[str] = field(default_factory=lambda: list(DEFAULT_PROTECT))
+    session_min: int = 10  # minutos que dura la sesión de supervisor sin usarse
+
+    def protects(self, key: str) -> bool:
+        return self.lock and (key == "personnel" or key in self.protect)
 
 
 @dataclass
@@ -117,8 +136,15 @@ class Personnel:
             except AttributeError:
                 continue
         lg = data.get("login") or {}
+        protect = lg.get("protect")
+        protect = [k for k in protect if k in PROTECTABLE] if isinstance(protect, list) else list(DEFAULT_PROTECT)
+        try:
+            session_min = max(1, min(240, int(lg.get("session_min", 10))))
+        except (TypeError, ValueError):
+            session_min = 10
         login = LoginSettings(bool(lg.get("auto_shift", False)),
-                              lg.get("confirm") if lg.get("confirm") in CONFIRM_MODES else "none")
+                              lg.get("confirm") if lg.get("confirm") in CONFIRM_MODES else "none",
+                              bool(lg.get("lock", False)), protect, session_min)
         return cls(people, shifts, login)
 
     def save(self, home: Path) -> None:
@@ -136,6 +162,14 @@ class Personnel:
 
     def find(self, name: str) -> Optional[Person]:
         return next((p for p in self.people if p.name == name), None)
+
+    def supervisors_ready(self) -> list[Person]:
+        """Supervisores activos que pueden iniciar sesión (número de empleado y contraseña)."""
+        return [p for p in self.people if p.active and p.role == "supervisor" and p.badge and p.password]
+
+    def supervisor_login(self, badge: str, password: str) -> Optional[Person]:
+        p = next((x for x in self.supervisors_ready() if x.badge == badge.strip()), None)
+        return p if p is not None and check_password(password, p.password) else None
 
     def current_shift(self, now: float) -> Optional[Shift]:
         t = dt.datetime.fromtimestamp(now)

@@ -268,3 +268,83 @@ def test_personnel_dialog_shifts_and_passwords(ctx, monkeypatch):
     rosa = p.find("Rosa")
     assert rosa.shift == "Turno 2" and rosa.badge == "55" and check_password("secreta", rosa.password)
     assert p.login.auto_shift and p.login.confirm == "badge_password" and len(p.shifts) == 3
+
+
+def test_supervisor_lock_protects_actions_and_session_expires(ctx, monkeypatch):
+    from PySide6.QtWidgets import QApplication
+
+    from extrusion_monitor.personnel import LoginSettings, Person, Personnel, hash_password
+    from extrusion_monitor.ui.main_window import MainWindow
+    from extrusion_monitor.ui.supervisor import SupervisorDialog
+    home = ctx.workspace.home
+    win = MainWindow(ctx)
+    asked = []
+    win.gate.ask = lambda people, reason: asked.append(reason)  # nadie inicia sesión
+    assert win.gate.allow("recipes") and not asked  # sin protección: todo como antes
+    Personnel([Person("Luis", badge="100"), Person("Ana", "supervisor", "200", password=hash_password("clave1"))],
+              login=LoginSettings(lock=True, protect=["recipes", "setup", "charts"], session_min=10)).save(home)
+    assert not win.gate.allow("recipes") and asked
+    assert win.gate.allow("delete")  # no está en la lista protegida
+    # cambiar la receta sin supervisor: se queda la que estaba
+    before = ctx.engine.state.recipe
+    other = next((i for i in range(win.cmb_recipe.count()) if win.cmb_recipe.itemData(i) != before), None)
+    win.cmb_recipe.setCurrentIndex(other)
+    win._recipe_chosen(other)
+    assert ctx.engine.state.recipe == before and win.cmb_recipe.currentData() == before
+    win.open_setup()  # no abre nada: se negó la sesión
+    # la lista de personal siempre está protegida cuando la protección está encendida
+    asked.clear()
+    win.open_personnel()
+    assert asked
+    # con supervisor: se permite y la sesión dura session_min
+    t = [1000.0]
+    win.gate.clock = lambda: t[0]
+    win.gate.ask = lambda people, reason: "Ana"
+    assert win.gate.allow("recipes") and win.gate.active() and win.gate.user == "Ana"
+    QApplication.processEvents()
+    assert win.btn_session.isVisibleTo(win) and "Ana" in win.btn_session.text()
+    win.gate.ask = lambda people, reason: None
+    t[0] += 9 * 60
+    assert win.gate.allow("charts")  # el uso alarga la sesión
+    t[0] += 11 * 60
+    assert not win.gate.active() and not win.gate.allow("charts")
+    # el inicio de sesión pide número de empleado y contraseña de un supervisor
+    dlg = SupervisorDialog(Personnel.load(home), "Editar recetas")
+    dlg.ed_badge.setText("100")
+    dlg.ed_pw.setText("clave1")
+    dlg.accept()
+    assert dlg.person is None and "incorrectos" in dlg.lbl.text()  # Luis no es supervisor
+    dlg.ed_badge.setText("200")
+    dlg.ed_pw.setText("clave1")
+    dlg.accept()
+    assert dlg.person is not None and dlg.person.name == "Ana"
+    # detener el monitoreo, si se protege
+    p = Personnel.load(home)
+    p.login.protect.append("stop")
+    p.save(home)
+    ctx.engine.start()
+    try:
+        win.toggle_run()
+        assert ctx.engine.running
+    finally:
+        ctx.engine.stop()
+    win._detach()
+
+
+def test_lock_needs_a_supervisor_who_can_log_in(ctx, monkeypatch):
+    from extrusion_monitor.personnel import Personnel
+    from extrusion_monitor.ui.personnel_dialog import C_ROLE, PersonnelDialog
+    home = ctx.workspace.home
+    dlg = PersonnelDialog(home, [])
+    dlg._new("operator")
+    assert dlg.table.cellWidget(0, C_ROLE).currentData() == "operator"  # operador por defecto
+    dlg.chk_lock.setChecked(True)
+    assert dlg.blocking(dlg.personnel())
+    dlg.table.cellWidget(0, C_ROLE).setCurrentIndex(dlg.table.cellWidget(0, C_ROLE).findData("supervisor"))
+    dlg.table.item(0, 2).setText("9")
+    dlg.set_password(0, "segura")
+    assert not dlg.blocking(dlg.personnel())
+    assert dlg.personnel().login.protects("personnel") and dlg.personnel().login.protects("recipes")
+    assert not dlg.personnel().login.protects("stop")
+    dlg.accept()
+    assert Personnel.load(home).login.lock

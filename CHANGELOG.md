@@ -20,6 +20,13 @@ Numeración `MAYOR.MENOR.PARCHE`:
   cambiarlo en la barra superior. Escribir el número elige a la persona. Las contraseñas se guardan cifradas
   (PBKDF2-SHA256 con sal); no se pueden leer, solo reemplazar.
 - La barra superior muestra el turno detectado con su horario.
+- Usuarios: «+ Usuario» crea un operador por defecto; el puesto (operador / supervisor) se cambia en la lista.
+- Protección opcional con inicio de sesión de supervisor (número de empleado y contraseña) para: la lista de
+  personal (siempre), cambiar o editar recetas, Configurar receta (variables, recorridos, cámaras, control) y el
+  tablero de Inicio y el dock. Opcionales también: activar el control automático o cambiar su modo, catálogos de
+  paros y comportamientos, eliminar capturas, identidad / exportación / servidor, y detener o cerrar el programa.
+  La sesión dura los minutos elegidos sin usarse y se cierra desde la barra superior. Desactivar el control
+  siempre se permite. No se puede guardar la protección sin un supervisor que pueda iniciar sesión.
 
 ### Rediseño de la interfaz (rama `feature/rediseno`)
 - Tema claro renovado (tarjetas redondeadas, barra lateral blanca con la página activa resaltada) y el oscuro con

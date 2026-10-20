@@ -1056,6 +1056,35 @@ EN: dict[str, str] = {
     "Confirmar": "Confirm",
     "No hay personal para este turno: agrégalo en Configuración → Personal.":
         "There is no staff for this shift: add them in Settings → Staff.",
+    # --- sesión de supervisor ---
+    "Lista de personal, turnos y esta protección": "Staff list, shifts and this protection",
+    "Cambiar la receta activa, editar recetas y límites": "Change the active recipe, edit recipes and limits",
+    "Variables, pantallas, recorridos, cámaras y configuración del control (Configurar receta)":
+        "Variables, screens, tours, cameras and control settings (Recipe setup)",
+    "Tablero de Inicio y dock (indicadores y gráficos)": "Home dashboard and dock (indicators and charts)",
+    "Activar el control automático o cambiar su modo": "Turn on automatic control or change its mode",
+    "Causas de paro, defectos y entrenamiento de comportamientos": "Stop causes, defects and behavior training",
+    "Eliminar capturas de paros y defectos": "Delete stop and defect entries",
+    "Identidad de la estación, exportación y servidor": "Station identity, export and server",
+    "Detener el monitoreo y cerrar el programa": "Stop monitoring and close the program",
+    "Inicio de sesión de supervisor": "Supervisor sign-in",
+    "Se necesita un supervisor para: <b>{r}</b>": "A supervisor is needed for: <b>{r}</b>",
+    "Iniciar sesión": "Sign in",
+    "Número de empleado o contraseña incorrectos (o no es supervisor).":
+        "Wrong employee number or password (or not a supervisor).",
+    "Sesión de supervisor activa (clic: cerrar sesión)": "Supervisor session active (click: sign out)",
+    "🔓 {n} · {m} min · cerrar sesión": "🔓 {n} · {m} min · sign out",
+    "+ Usuario": "+ User",
+    "Nuevo usuario": "New user",
+    "Pedir el inicio de sesión de un supervisor (número de empleado y contraseña) para:":
+        "Require a supervisor sign-in (employee number and password) to:",
+    "La sesión de supervisor se cierra tras": "The supervisor session closes after",
+    "sin usarse (o al cerrarla en la barra superior).": "without use (or when signing out in the top bar).",
+    "🔐 Confirmación y supervisor": "🔐 Confirmation and supervisor",
+    "Para pedir el inicio de sesión de supervisor, al menos un supervisor activo necesita número de "
+    "empleado y contraseña.":
+        "To require a supervisor sign-in, at least one active supervisor needs an employee number and "
+        "a password.",
 }
 
 # Textos con valores: la clave es la plantilla en español («{}» = valor) y el resultado su traducción.

@@ -444,6 +444,7 @@ class ProblemsPage(QWidget):
         self.tabs.currentChanged.connect(lambda _: self.refresh())
         lay.addWidget(self.tabs)
         self.pending = 0
+        self.allow = lambda _key: True  # la ventana principal pone aquí la protección de supervisor
         self.timer = QTimer(self)
         self.timer.timeout.connect(self._tick)
         self.timer.start(30000)
@@ -494,6 +495,8 @@ class ProblemsPage(QWidget):
         self.count_pending()
 
     def delete(self, pid: int) -> None:
+        if not self.allow("delete"):
+            return
         if QMessageBox.question(self, tr("Eliminar"), tr("¿Eliminar la captura seleccionada?")) != QMessageBox.Yes:
             return
         rec = self.engine.historian.delete_problem(pid)
