@@ -55,7 +55,8 @@ def test_personnel_catalog_and_crew(tmp_path):
     p = Personnel.load(tmp_path)
     assert p.names(["operator"]) == ["Luis"] and p.names(["supervisor"]) == ["Ana"]
     assert capture_names(tmp_path, ["Luis", "Viejo"]) == ["Ana", "Luis", "Viejo"]
-    assert crew({}) == {"operator": "", "supervisor": ""}
+    assert crew({}) == {"user": "", "role": ""}
+    assert crew({"crew": {"operator": "Luis"}})["user"] == "Luis"  # formato anterior
     assert Personnel.load(tmp_path / "nada").people == []
 
 
@@ -125,12 +126,13 @@ def test_crew_in_top_bar_and_personnel_dialog(ctx):
     dlg.table.item(2, 2).setText("1234")
     dlg.accept()
     win = MainWindow(ctx)
-    ops = [win.cmb_operator.itemData(i) for i in range(win.cmb_operator.count())]
-    sups = [win.cmb_supervisor.itemData(i) for i in range(win.cmb_supervisor.count())]
-    assert "Rosa Operadora" in ops and "Ana Supervisora" in sups and "Ana Supervisora" not in ops
-    win.cmb_operator.setCurrentIndex(win.cmb_operator.findData("Rosa Operadora"))
-    win._crew_chosen(win.cmb_operator, "operator")
-    assert crew(ctx.workspace.load_state())["operator"] == "Rosa Operadora"
+    users = [win.cmb_user.itemData(i) for i in range(win.cmb_user.count())]
+    assert "Rosa Operadora" in users and "Ana Supervisora" in users  # un solo selector para ambos
+    texts = [win.cmb_user.itemText(i) for i in range(win.cmb_user.count())]
+    assert any("Ana Supervisora" in t and "Supervisor" in t.replace("Ana Supervisora", "") for t in texts)
+    win.cmb_user.setCurrentIndex(win.cmb_user.findData("Rosa Operadora"))
+    win._crew_chosen()
+    assert crew(ctx.workspace.load_state()) == {"user": "Rosa Operadora", "role": "operator"}
     cap = win.problems_page.capture
     assert cap.cmb_op.currentData() == "Rosa Operadora"  # la captura propone al operador en turno
     win._detach()

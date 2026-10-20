@@ -160,7 +160,7 @@ class CapturePanel(QWidget):
         for op in ops:
             self.cmb_op.addItem(op, op)
         state = self.ctx.workspace.load_state()
-        idx = self.cmb_op.findData(crew(state)["operator"] or state.get("last_operator"))
+        idx = self.cmb_op.findData(crew(state)["user"] or state.get("last_operator"))
         if idx >= 0:
             self.cmb_op.setCurrentIndex(idx)
         self.sp_scrap.setSuffix(f" {self.engine.config.oee.length_unit}")

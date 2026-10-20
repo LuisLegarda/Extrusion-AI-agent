@@ -1,7 +1,7 @@
 """Personal de la estación: operadores y supervisores (no dependen de la receta).
 
-Se guarda en `<datos>/personal/personal.json` y viaja con los respaldos. El operador y el supervisor
-en turno se guardan en el estado del equipo (`state.json` → `crew`).
+Se guarda en `<datos>/personal/personal.json` y viaja con los respaldos. El usuario en turno (uno solo:
+operador o supervisor) se guarda en el estado del equipo (`state.json` → `crew`).
 """
 from __future__ import annotations
 
@@ -65,6 +65,7 @@ def capture_names(home: Path, recipe_operators: Iterable[str]) -> list[str]:
 
 
 def crew(state: dict) -> dict:
-    """Operador y supervisor en turno guardados en el estado del equipo."""
+    """Usuario en turno (operador o supervisor) guardado en el estado del equipo."""
     c = state.get("crew") or {}
-    return {"operator": str(c.get("operator") or ""), "supervisor": str(c.get("supervisor") or "")}
+    user = str(c.get("user") or c.get("operator") or "")  # «operator»: formato anterior
+    return {"user": user, "role": str(c.get("role") or ("operator" if user else ""))}

@@ -13,8 +13,8 @@ Numeración `MAYOR.MENOR.PARCHE`:
 ### Rediseño de la interfaz (rama `feature/rediseno`)
 - Tema claro renovado (tarjetas redondeadas, barra lateral blanca con la página activa resaltada) y el oscuro con
   el mismo estilo. Íconos de línea propios en lugar de emojis en la barra lateral. Gráficas y gauges sin cambios.
-- Barra superior: búsqueda, inicio del turno, campana con las alarmas y avisos activos, y operador y supervisor
-  en turno. Los menús Archivo, Receta… se quedan arriba como antes.
+- Barra superior: búsqueda, inicio del turno, campana con las alarmas y avisos activos, y un solo selector del usuario
+  en turno (operador o supervisor). Los menús Archivo, Receta… se quedan arriba como antes.
 - Búsqueda (Ctrl+K): variables (valor y límites; graficar, SPC, correlación), páginas, cualquier acción de los
   menús, recetas (pide confirmación), horas escritas («14:30», «ayer 14:30», «hace 2 h», «turno»: marca la hora en
   Tendencias o captura un paro desde ahí), paros capturados y alarmas de los últimos 30 días. Sin acentos ni

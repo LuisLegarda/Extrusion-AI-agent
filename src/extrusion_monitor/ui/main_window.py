@@ -554,16 +554,13 @@ class MainWindow(QMainWindow):
         self.btn_bell.setToolTip(tr("Alarmas y avisos activos (clic: Alarmas y eventos)"))
         self.btn_bell.clicked.connect(lambda: self.show_page("events"))
         row.addWidget(self.btn_bell)
-        self.cmb_operator = QComboBox()
-        self.cmb_supervisor = QComboBox()
-        for cmb, role, ic, tip in ((self.cmb_operator, "operator", "user", "Operador en turno"),
-                                   (self.cmb_supervisor, "supervisor", "shield", "Supervisor en turno")):
-            cmb.setObjectName("crew")
-            cmb.setMinimumWidth(150)
-            cmb.setIconSize(QSize(16, 16))
-            cmb.setToolTip(tr(tip))
-            cmb.activated.connect(lambda _i, cmb=cmb, role=role: self._crew_chosen(cmb, role))
-            row.addWidget(cmb)
+        self.cmb_user = QComboBox()  # quién está en turno (operador o supervisor): un solo selector
+        self.cmb_user.setObjectName("crew")
+        self.cmb_user.setMinimumWidth(190)
+        self.cmb_user.setIconSize(QSize(16, 16))
+        self.cmb_user.setToolTip(tr("Usuario en turno (operador o supervisor)"))
+        self.cmb_user.activated.connect(lambda _i: self._crew_chosen())
+        row.addWidget(self.cmb_user)
         self.fill_crew()
         self._update_shift_label()
         self._shift_timer = QTimer(self)
@@ -574,35 +571,34 @@ class MainWindow(QMainWindow):
     # --- personal en turno ---------------------------------------------------------------
     def fill_crew(self) -> None:
         people = Personnel.load(self.ctx.workspace.home)
-        cur = crew(self.ctx.workspace.load_state())
-        legacy = list(self.ctx.config.problems.operators)
-        for cmb, role, ic, empty in ((self.cmb_operator, "operator", "user", "— Operador —"),
-                                     (self.cmb_supervisor, "supervisor", "shield", "— Supervisor —")):
-            names = people.names([role]) + ([n for n in legacy if not people.find(n)] if role == "operator" else [])
-            if cur[role] and cur[role] not in names:
-                names.append(cur[role])  # dado de baja pero aún en turno
-            cmb.blockSignals(True)
-            cmb.clear()
-            ico = icons.icon(ic, theme.c("nav_icon"))
-            cmb.addItem(ico, tr(empty), "")
-            for n in names:
-                cmb.addItem(ico, n, n)
-            cmb.insertSeparator(cmb.count())
-            cmb.addItem(tr("✎ Editar personal…"), "__edit__")
-            cmb.setCurrentIndex(max(0, cmb.findData(cur[role])))
-            cmb.blockSignals(False)
+        cur = crew(self.ctx.workspace.load_state())["user"]
+        names = people.names() + [n for n in self.ctx.config.problems.operators if n and not people.find(n)]
+        if cur and cur not in names:
+            names.append(cur)  # dado de baja pero aún en turno
+        cmb = self.cmb_user
+        cmb.blockSignals(True)
+        cmb.clear()
+        cmb.addItem(icons.icon("user", theme.c("nav_icon")), tr("— Usuario —"), "")
+        for n in names:
+            person = people.find(n)
+            sup = person is not None and person.role == "supervisor"
+            cmb.addItem(icons.icon("shield" if sup else "user", theme.c("nav_icon")),
+                        f"{n} · {tr('Supervisor')}" if sup else n, n)
+        cmb.insertSeparator(cmb.count())
+        cmb.addItem(tr("✎ Editar personal…"), "__edit__")
+        cmb.setCurrentIndex(max(0, cmb.findData(cur)))
+        cmb.blockSignals(False)
 
-    def _crew_chosen(self, cmb: QComboBox, role: str) -> None:
-        name = cmb.currentData()
+    def _crew_chosen(self) -> None:
+        name = self.cmb_user.currentData()
         if name == "__edit__":
             self.fill_crew()  # regresa a quien estaba
             self.open_personnel()
             return
         state = self.ctx.workspace.load_state()
-        c = crew(state)
-        c[role] = name or ""
-        state["crew"] = c
-        if role == "operator" and name:
+        person = Personnel.load(self.ctx.workspace.home).find(name or "")
+        state["crew"] = {"user": name or "", "role": person.role if person else ("operator" if name else "")}
+        if name:
             state["last_operator"] = name
         self.ctx.workspace.save_state(state)
         self.problems_page.capture.reload_config()

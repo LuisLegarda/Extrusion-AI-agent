@@ -955,10 +955,8 @@ EN: dict[str, str] = {
     "Inicio del turno en curso (Configuración → KPI / OEE → turnos)":
         "Start of the current shift (Settings → KPI / OEE → shifts)",
     "Alarmas y avisos activos (clic: Alarmas y eventos)": "Active alarms and warnings (click: Alarms & events)",
-    "Operador en turno": "Operator on shift",
-    "Supervisor en turno": "Supervisor on shift",
-    "— Operador —": "— Operator —",
-    "— Supervisor —": "— Supervisor —",
+    "Usuario en turno (operador o supervisor)": "User on shift (operator or supervisor)",
+    "— Usuario —": "— User —",
     "✎ Editar personal…": "✎ Edit staff…",
     "👷 Personal (operadores y supervisores)…": "👷 Staff (operators and supervisors)…",
     "Personal (operadores y supervisores)": "Staff (operators and supervisors)",
