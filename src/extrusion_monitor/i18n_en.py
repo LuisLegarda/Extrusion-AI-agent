@@ -992,6 +992,70 @@ EN: dict[str, str] = {
         "Stop minutes by cause this shift (double-click: Process problems)",
     "Tarjetas de estado arriba (marcha, paros, alarmas, calidad, OEE)":
         "Status cards on top (running, stops, alarms, quality, OEE)",
+    # --- turnos y confirmación del usuario ---
+    "Número de empleado": "Employee number",
+    "Número de empleado y contraseña": "Employee number and password",
+    "Elige a la persona que entra.": "Choose the person starting the shift.",
+    "Esa persona no tiene número de empleado: asígnalo en Configuración → Personal.":
+        "That person has no employee number: set it in Settings → Staff.",
+    "El número de empleado no corresponde.": "The employee number does not match.",
+    "Esa persona no tiene contraseña: asígnala en Configuración → Personal.":
+        "That person has no password: set it in Settings → Staff.",
+    "La contraseña no es correcta.": "The password is not correct.",
+    "Contraseña de {n}": "Password for {n}",
+    "Contraseña nueva": "New password",
+    "Repetir": "Repeat",
+    "Mínimo {n} caracteres. Se guarda cifrada (no se puede leer, solo reemplazar).":
+        "At least {n} characters. It is stored encrypted (it cannot be read, only replaced).",
+    "La contraseña debe tener al menos {n} caracteres.": "The password must have at least {n} characters.",
+    "Las dos contraseñas no coinciden.": "The two passwords do not match.",
+    "Turno": "Shift",
+    "Contraseña": "Password",
+    "👷 Personas": "👷 People",
+    "🕒 Turnos": "🕒 Shifts",
+    "🔐 Confirmación": "🔐 Confirmation",
+    "Fin": "End",
+    "+ Turno": "+ Shift",
+    "Crear desde los inicios del OEE": "Create from the OEE shift starts",
+    "Turnos con su horario. Asigna a cada persona su turno en la pestaña Personas (sin turno = puede "
+    "entrar en cualquiera). Un turno que termina antes de empezar cruza la medianoche (p. ej. "
+    "22:00–06:00).":
+        "Shifts and their hours. Assign each person a shift in the People tab (no shift = can work "
+        "any). A shift that ends before it starts crosses midnight (e.g. 22:00–06:00).",
+    "Detectar el turno por la hora y, al empezar cada turno, pedir quién entra":
+        "Detect the shift by the time and, when each shift starts, ask who is starting",
+    "Confirmación del usuario que entra (también al cambiarlo en la barra superior)":
+        "Confirmation of the person starting (also when changing it in the top bar)",
+    "Todo es opcional. Con confirmación, cada persona necesita su número de empleado (y su "
+    "contraseña, si se pide). Las contraseñas se guardan cifradas; si alguien la olvida, asígnale una "
+    "nueva en la pestaña Personas.":
+        "Everything is optional. With confirmation, each person needs an employee number (and a "
+        "password, if required). Passwords are stored encrypted; if someone forgets theirs, assign a "
+        "new one in the People tab.",
+    "🔒 Cambiar…": "🔒 Change…",
+    "Asignar…": "Set…",
+    "Turno {n}": "Shift {n}",
+    "Turnos": "Shifts",
+    "La receta no tiene inicios de turno en KPI / OEE.": "The recipe has no shift starts in KPI / OEE.",
+    "¿Reemplazar los turnos por los del OEE?": "Replace the shifts with the OEE ones?",
+    "Cualquiera": "Any",
+    "Para detectar el turno por la hora, agrega los turnos y su horario.":
+        "To detect the shift by the time, add the shifts and their hours.",
+    "Hay números de empleado repetidos.": "There are repeated employee numbers.",
+    "Sin número de empleado: {n}": "No employee number: {n}",
+    "Sin contraseña: {n}": "No password: {n}",
+    "¿Guardar de todos modos?": "Save anyway?",
+    "Personal": "Staff",
+    "Cambio de turno": "Shift change",
+    "Confirmar usuario": "Confirm user",
+    "Empieza el <b>{s}</b>. ¿Quién entra?": "<b>{s}</b> is starting. Who is on shift?",
+    "Confirma quién está en turno.": "Confirm who is on shift.",
+    "Usuario": "User",
+    "número de empleado": "employee number",
+    "Más tarde": "Later",
+    "Confirmar": "Confirm",
+    "No hay personal para este turno: agrégalo en Configuración → Personal.":
+        "There is no staff for this shift: add them in Settings → Staff.",
 }
 
 # Textos con valores: la clave es la plantilla en español («{}» = valor) y el resultado su traducción.

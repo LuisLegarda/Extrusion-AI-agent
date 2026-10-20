@@ -1,29 +1,90 @@
-"""Personal de la estación: operadores y supervisores (no dependen de la receta).
+"""Personal de la estación: operadores y supervisores, turnos y confirmación del usuario (no dependen de la receta).
 
 Se guarda en `<datos>/personal/personal.json` y viaja con los respaldos. El usuario en turno (uno solo:
 operador o supervisor) se guarda en el estado del equipo (`state.json` → `crew`).
+
+Las contraseñas no se guardan: solo su huella PBKDF2-SHA256 con sal propia por persona.
 """
 from __future__ import annotations
 
+import datetime as dt
+import hashlib
+import hmac
 import json
+import os
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
 from typing import Iterable, Optional
 
 ROLES = {"operator": "Operador", "supervisor": "Supervisor"}
+CONFIRM_MODES = {"none": "Sin confirmación", "badge": "Número de empleado",
+                 "badge_password": "Número de empleado y contraseña"}
+PBKDF2_ROUNDS = 120_000
+
+
+def hash_password(password: str, salt: Optional[bytes] = None) -> str:
+    """«sal$huella» en hexadecimal."""
+    salt = salt or os.urandom(16)
+    digest = hashlib.pbkdf2_hmac("sha256", password.encode("utf-8"), salt, PBKDF2_ROUNDS)
+    return f"{salt.hex()}${digest.hex()}"
+
+
+def check_password(password: str, stored: str) -> bool:
+    try:
+        salt_hex, digest_hex = stored.split("$", 1)
+        expected = bytes.fromhex(digest_hex)
+        got = hashlib.pbkdf2_hmac("sha256", password.encode("utf-8"), bytes.fromhex(salt_hex), PBKDF2_ROUNDS)
+    except (ValueError, AttributeError):
+        return False
+    return hmac.compare_digest(got, expected)
+
+
+def _minutes(hhmm: str) -> Optional[int]:
+    try:
+        h, m = (int(x) for x in str(hhmm).strip().split(":"))
+    except (ValueError, AttributeError):
+        return None
+    return h * 60 + m if 0 <= h <= 23 and 0 <= m <= 59 else None
 
 
 @dataclass
 class Person:
     name: str
     role: str = "operator"  # operator | supervisor
-    badge: str = ""  # número de empleado o gafete (opcional)
+    badge: str = ""  # número de empleado o gafete
     active: bool = True
+    shift: str = ""  # nombre del turno asignado ("" = cualquiera)
+    password: str = ""  # huella de la contraseña ("" = sin contraseña)
+
+
+@dataclass
+class Shift:
+    name: str
+    start: str = "06:00"  # hh:mm
+    end: str = "14:00"  # hh:mm; si es menor que el inicio, termina al día siguiente
+
+    def contains(self, t: dt.datetime) -> bool:
+        a, b = _minutes(self.start), _minutes(self.end)
+        if a is None or b is None or a == b:
+            return False
+        m = t.hour * 60 + t.minute
+        return a <= m < b if a < b else (m >= a or m < b)
+
+    def label(self) -> str:
+        return f"{self.name} ({self.start}–{self.end})"
+
+
+@dataclass
+class LoginSettings:
+    auto_shift: bool = False  # al empezar cada turno, pedir quién entra
+    confirm: str = "none"  # none | badge | badge_password (también al elegir usuario en la barra superior)
 
 
 @dataclass
 class Personnel:
     people: list[Person] = field(default_factory=list)
+    shifts: list[Shift] = field(default_factory=list)
+    login: LoginSettings = field(default_factory=LoginSettings)
 
     @staticmethod
     def file(home: Path) -> Path:
@@ -33,22 +94,40 @@ class Personnel:
     def load(cls, home: Path) -> "Personnel":
         try:
             data = json.loads(cls.file(home).read_text(encoding="utf-8"))
-            people = []
-            for d in data.get("people", []):
+        except (OSError, ValueError):
+            return cls()
+        if not isinstance(data, dict):
+            return cls()
+        people = []
+        for d in data.get("people", []) or []:
+            try:
                 name = str(d.get("name", "")).strip()
                 if name:
                     role = d.get("role") if d.get("role") in ROLES else "operator"
-                    people.append(Person(name, role, str(d.get("badge", "")), bool(d.get("active", True))))
-            return cls(people)
-        except (OSError, ValueError, TypeError, AttributeError):
-            return cls()
+                    people.append(Person(name, role, str(d.get("badge", "")).strip(), bool(d.get("active", True)),
+                                         str(d.get("shift", "")), str(d.get("password", ""))))
+            except AttributeError:
+                continue
+        shifts = []
+        for d in data.get("shifts", []) or []:
+            try:
+                if str(d.get("name", "")).strip():
+                    shifts.append(Shift(str(d["name"]).strip(), str(d.get("start", "06:00")),
+                                        str(d.get("end", "14:00"))))
+            except AttributeError:
+                continue
+        lg = data.get("login") or {}
+        login = LoginSettings(bool(lg.get("auto_shift", False)),
+                              lg.get("confirm") if lg.get("confirm") in CONFIRM_MODES else "none")
+        return cls(people, shifts, login)
 
     def save(self, home: Path) -> None:
         f = self.file(home)
         f.parent.mkdir(parents=True, exist_ok=True)
         tmp = f.with_suffix(".json.tmp")
-        tmp.write_text(json.dumps({"people": [asdict(p) for p in self.people]}, ensure_ascii=False, indent=1),
-                       encoding="utf-8")
+        data = {"people": [asdict(p) for p in self.people], "shifts": [asdict(s) for s in self.shifts],
+                "login": asdict(self.login)}
+        tmp.write_text(json.dumps(data, ensure_ascii=False, indent=1), encoding="utf-8")
         tmp.replace(f)
 
     def names(self, roles: Iterable[str] = ("operator", "supervisor")) -> list[str]:
@@ -58,6 +137,33 @@ class Personnel:
     def find(self, name: str) -> Optional[Person]:
         return next((p for p in self.people if p.name == name), None)
 
+    def current_shift(self, now: float) -> Optional[Shift]:
+        t = dt.datetime.fromtimestamp(now)
+        return next((s for s in self.shifts if s.contains(t)), None)
+
+    def shift_people(self, shift: Optional[Shift]) -> list[str]:
+        """Personas activas del turno (las que no tienen turno asignado entran en todos)."""
+        return [p.name for p in self.people if p.active and (shift is None or p.shift in ("", shift.name))]
+
+    def verify(self, name: str, badge: str, password: str = "") -> Optional[str]:
+        """None si la confirmación es válida; si no, el motivo (para mostrarlo)."""
+        mode = self.login.confirm
+        if mode == "none":
+            return None
+        p = self.find(name)
+        if p is None or not p.active:
+            return "Elige a la persona que entra."
+        if not p.badge:
+            return "Esa persona no tiene número de empleado: asígnalo en Configuración → Personal."
+        if badge.strip() != p.badge:
+            return "El número de empleado no corresponde."
+        if mode == "badge_password":
+            if not p.password:
+                return "Esa persona no tiene contraseña: asígnala en Configuración → Personal."
+            if not check_password(password, p.password):
+                return "La contraseña no es correcta."
+        return None
+
 
 def capture_names(home: Path, recipe_operators: Iterable[str]) -> list[str]:
     """Quién puede capturar paros y defectos: el personal activo y, por compatibilidad, la lista de la receta."""
@@ -65,7 +171,16 @@ def capture_names(home: Path, recipe_operators: Iterable[str]) -> list[str]:
 
 
 def crew(state: dict) -> dict:
-    """Usuario en turno (operador o supervisor) guardado en el estado del equipo."""
+    """Usuario en turno (operador o supervisor) y vuelta de turno confirmada, guardados en el estado del equipo."""
     c = state.get("crew") or {}
     user = str(c.get("user") or c.get("operator") or "")  # «operator»: formato anterior
-    return {"user": user, "role": str(c.get("role") or ("operator" if user else ""))}
+    return {"user": user, "role": str(c.get("role") or ("operator" if user else "")),
+            "shift_key": str(c.get("shift_key") or "")}
+
+
+def shift_key(shift: Shift, now: float) -> str:
+    """Identifica una vuelta concreta del turno (el nocturno que cruza la medianoche cuenta desde su inicio)."""
+    t = dt.datetime.fromtimestamp(now)
+    a = _minutes(shift.start) or 0
+    day = t.date() if t.hour * 60 + t.minute >= a else t.date() - dt.timedelta(days=1)
+    return f"{shift.name}@{day.isoformat()}"

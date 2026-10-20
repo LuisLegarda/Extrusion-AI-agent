@@ -9,7 +9,7 @@ import pyqtgraph as pg
 from PySide6.QtCore import QEvent, QSize, Qt, QTimer, QUrl
 from PySide6.QtGui import QAction, QActionGroup, QBrush, QColor, QDesktopServices, QShortcut
 from PySide6.QtWidgets import (
-    QApplication, QCheckBox, QComboBox, QFileDialog, QFrame, QHeaderView, QLabel, QListWidget,
+    QApplication, QCheckBox, QComboBox, QDialog, QFileDialog, QFrame, QHeaderView, QLabel, QListWidget,
     QHBoxLayout, QListWidgetItem, QMainWindow, QMenu, QMessageBox, QSplitter, QStackedWidget, QTableWidget,
     QTableWidgetItem, QTabWidget, QToolButton, QVBoxLayout, QWidget,
 )
@@ -563,9 +563,13 @@ class MainWindow(QMainWindow):
         row.addWidget(self.cmb_user)
         self.fill_crew()
         self._update_shift_label()
+        self._login_dlg = None
+        self._login_snooze = 0.0  # «Más tarde» en el aviso de cambio de turno
         self._shift_timer = QTimer(self)
         self._shift_timer.timeout.connect(self._update_shift_label)
+        self._shift_timer.timeout.connect(self.check_shift)
         self._shift_timer.start(30000)
+        QTimer.singleShot(3000, self.check_shift)
         return bar
 
     # --- personal en turno ---------------------------------------------------------------
@@ -595,26 +599,81 @@ class MainWindow(QMainWindow):
             self.fill_crew()  # regresa a quien estaba
             self.open_personnel()
             return
+        people = Personnel.load(self.ctx.workspace.home)
+        if name and people.login.confirm != "none" and name != crew(self.ctx.workspace.load_state())["user"]:
+            self.fill_crew()  # hasta confirmar sigue quien estaba
+            self.ask_login(people, name=name)
+            return
+        self.set_user(name or "")
+
+    def set_user(self, name: str, shift_key: Optional[str] = None) -> None:
+        """Guarda quién está en turno (y, si viene del aviso de turno, qué vuelta de turno confirmó)."""
         state = self.ctx.workspace.load_state()
-        person = Personnel.load(self.ctx.workspace.home).find(name or "")
-        state["crew"] = {"user": name or "", "role": person.role if person else ("operator" if name else "")}
+        person = Personnel.load(self.ctx.workspace.home).find(name)
+        c = crew(state)
+        state["crew"] = {"user": name, "role": person.role if person else ("operator" if name else ""),
+                         "shift_key": shift_key if shift_key is not None else c["shift_key"]}
         if name:
             state["last_operator"] = name
         self.ctx.workspace.save_state(state)
+        self.fill_crew()
         self.problems_page.capture.reload_config()
+
+    def ask_login(self, people: Personnel, name: str = "", shift=None, on_postpone=None) -> None:
+        """Ventana de confirmación (sin bloquear el monitoreo); al confirmar cambia el usuario en turno."""
+        from ..personnel import shift_key
+        from .login_dialog import LoginDialog
+        if self._login_dlg is not None:
+            self._login_dlg.raise_()
+            return
+        dlg = LoginDialog(people, shift, name, self, can_postpone=shift is not None)
+        key = shift_key(shift, self.engine.clock()) if shift is not None else None
+
+        def done(result: int) -> None:
+            self._login_dlg = None
+            if result == QDialog.Accepted:
+                self.set_user(dlg.name, key)
+            elif on_postpone is not None:
+                on_postpone()
+            dlg.deleteLater()
+        dlg.finished.connect(done)
+        self._login_dlg = dlg
+        dlg.open()
+
+    def check_shift(self) -> None:
+        """Turno detectado por la hora (opcional): al empezar uno nuevo se pregunta quién entra."""
+        from ..personnel import shift_key
+        people = Personnel.load(self.ctx.workspace.home)
+        now = self.engine.clock()
+        shift = people.current_shift(now)
+        if not people.login.auto_shift or shift is None or self._login_dlg is not None or now < self._login_snooze:
+            return
+        if crew(self.ctx.workspace.load_state())["shift_key"] == shift_key(shift, now):
+            return
+
+        def later() -> None:
+            self._login_snooze = self.engine.clock() + 600  # se vuelve a preguntar en 10 min
+        self.ask_login(people, crew(self.ctx.workspace.load_state())["user"], shift, later)
 
     def open_personnel(self) -> None:
         from .personnel_dialog import PersonnelDialog
-        if PersonnelDialog(self.ctx.workspace.home, self.ctx.config.problems.operators, self).exec():
+        if PersonnelDialog(self.ctx.workspace.home, self.ctx.config.problems.operators, self,
+                           shift_starts=self.ctx.config.oee.shift_starts).exec():
             self.fill_crew()
             self.problems_page.capture.reload_config()
+            self._update_shift_label()
+            self.check_shift()
 
     def _update_shift_label(self) -> None:
         from ..analysis.oee import shift_start
         now = self.engine.clock()
-        a = shift_start(now, self.ctx.config.oee.shift_starts)
-        self.lbl_shift.setText(tr("Turno desde {t}", t=time.strftime("%H:%M", time.localtime(a))) + "  ·  "
-                               + time.strftime("%d/%m/%Y", time.localtime(now)))
+        shift = Personnel.load(self.ctx.workspace.home).current_shift(now)
+        if shift is not None:  # turnos de Configuración → Personal
+            text = shift.label()
+        else:
+            a = shift_start(now, self.ctx.config.oee.shift_starts)
+            text = tr("Turno desde {t}", t=time.strftime("%H:%M", time.localtime(a)))
+        self.lbl_shift.setText(text + "  ·  " + time.strftime("%d/%m/%Y", time.localtime(now)))
 
     def _update_bell(self, snap: Snapshot) -> None:
         n_alarm = sum(f.level >= Level.ALARM for f in snap.findings)

@@ -10,6 +10,17 @@ Numeración `MAYOR.MENOR.PARCHE`:
 
 ## [Sin publicar]
 
+### Turnos y confirmación del usuario (rama `feature/turnos`)
+- Configuración → Personal tiene tres pestañas: *Personas* (con turno asignado y contraseña), *Turnos* (nombre y
+  horario; los que cruzan la medianoche, p. ej. 22:00–06:00, también; se pueden crear desde los inicios del OEE)
+  y *Confirmación*.
+- Opcional: detectar el turno por la hora y, al empezar cada turno, pedir quién entra (lista con las personas de
+  ese turno; «Más tarde» vuelve a preguntar en 10 min).
+- Opcional: confirmar al usuario con su número de empleado, o con número de empleado y contraseña; también al
+  cambiarlo en la barra superior. Escribir el número elige a la persona. Las contraseñas se guardan cifradas
+  (PBKDF2-SHA256 con sal); no se pueden leer, solo reemplazar.
+- La barra superior muestra el turno detectado con su horario.
+
 ### Rediseño de la interfaz (rama `feature/rediseno`)
 - Tema claro renovado (tarjetas redondeadas, barra lateral blanca con la página activa resaltada) y el oscuro con
   el mismo estilo. Íconos de línea propios en lugar de emojis en la barra lateral. Gráficas y gauges sin cambios.
