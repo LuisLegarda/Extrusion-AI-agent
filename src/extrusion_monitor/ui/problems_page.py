@@ -19,6 +19,7 @@ from PySide6.QtWidgets import (
 from ..analysis.oee import shift_start
 from ..analysis.problems import free_spans, machine_intervals, stop_events
 from ..i18n import tr
+from ..personnel import capture_names, crew
 from . import theme
 from .problems_widgets import ProblemsAnalysis, TimelineSelect, fmt_min
 
@@ -153,16 +154,19 @@ class CapturePanel(QWidget):
     def reload_config(self) -> None:
         self._fill_categories()
         self.cmb_op.clear()
-        ops = self.pcfg.operators
+        ops = self.operators()
         if not ops:
-            self.cmb_op.addItem(tr("(sin operadores: agrégalos en Receta → Causas de paro y defectos)"), "")
+            self.cmb_op.addItem(tr("(sin personal: agrégalo en Configuración → Personal)"), "")
         for op in ops:
             self.cmb_op.addItem(op, op)
-        last = self.ctx.workspace.load_state().get("last_operator")
-        idx = self.cmb_op.findData(last)
+        state = self.ctx.workspace.load_state()
+        idx = self.cmb_op.findData(crew(state)["user"] or state.get("last_operator"))
         if idx >= 0:
             self.cmb_op.setCurrentIndex(idx)
         self.sp_scrap.setSuffix(f" {self.engine.config.oee.length_unit}")
+
+    def operators(self) -> list[str]:
+        return capture_names(self.ctx.workspace.home, self.pcfg.operators)
 
     def kind(self) -> str:
         return "downtime" if self.rb_down.isChecked() else "quality"
@@ -290,6 +294,30 @@ class CapturePanel(QWidget):
         self.timeline.set_selection(a, b)
         self._show_range(a, b)
 
+    def focus_time(self, a: float, b: Optional[float] = None) -> None:
+        """Lleva la captura a ese momento (búsqueda): elige el periodo que lo incluye y selecciona desde ahí."""
+        now = self.engine.clock()
+        for i in range(self.cmb_period.count()):
+            secs = self.cmb_period.itemData(i)
+            start = shift_start(now, self.engine.config.oee.shift_starts) if not secs else now - secs
+            if start <= a or i == self.cmb_period.count() - 1:
+                self.cmb_period.blockSignals(True)
+                self.cmb_period.setCurrentIndex(i)
+                self.cmb_period.blockSignals(False)
+                break
+        self.refresh(keep_selection=False)
+        a = min(max(a, self.a), self.b)
+        b = min(max(b if b is not None else a + 300, a + STEP_S), self.b)
+        self.select_range(a, b, select_event=False)
+
+    def focus_record(self, rec: dict) -> None:
+        self.focus_time(rec["start"], rec["end"])
+        self.left_tabs.setCurrentIndex(1)
+        for i in range(self.lst_caps.count()):
+            if self.lst_caps.item(i).data(Qt.UserRole) == rec.get("id"):
+                self.lst_caps.setCurrentRow(i)
+                break
+
     def _capture_selected(self, row: int) -> None:
         it = self.lst_caps.item(row)
         if it is None:
@@ -345,7 +373,7 @@ class CapturePanel(QWidget):
             problems.append(tr("Selecciona el rango de tiempo en la línea de tiempo."))
         if cat is None or reason is None:
             problems.append(tr("Elige la categoría y la causa (o el defecto)."))
-        if self.pcfg.operators and not self.cmb_op.currentData():
+        if self.operators() and not self.cmb_op.currentData():
             problems.append(tr("Elige el operador."))
         if problems:
             self.lbl_status.setText(f"<span style='color:{theme.c('critical')}'>{'<br>'.join(problems)}</span>")

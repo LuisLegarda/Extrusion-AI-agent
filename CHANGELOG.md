@@ -10,6 +10,20 @@ Numeración `MAYOR.MENOR.PARCHE`:
 
 ## [Sin publicar]
 
+### Rediseño de la interfaz (rama `feature/rediseno`)
+- Tema claro renovado (tarjetas redondeadas, barra lateral blanca con la página activa resaltada) y el oscuro con
+  el mismo estilo. Íconos de línea propios en lugar de emojis en la barra lateral. Gráficas y gauges sin cambios.
+- Barra superior: búsqueda, inicio del turno, campana con las alarmas y avisos activos, y un solo selector del usuario
+  en turno (operador o supervisor). Los menús Archivo, Receta… se quedan arriba como antes.
+- Búsqueda (Ctrl+K): variables (valor y límites; graficar, SPC, correlación), páginas, cualquier acción de los
+  menús, recetas (pide confirmación), horas escritas («14:30», «ayer 14:30», «hace 2 h», «turno»: marca la hora en
+  Tendencias o captura un paro desde ahí), paros capturados y alarmas de los últimos 30 días. Sin acentos ni
+  mayúsculas, tolera errores de tecleo y recuerda las búsquedas recientes.
+- Personal de la estación (Configuración → Personal): operadores y supervisores con número de empleado y
+  activo/inactivo; no dependen de la receta. La captura de paros propone al operador en turno.
+- Inicio: tarjetas de estado compactas (estado de la línea, paros, por identificar, alarmas, calidad, OEE; se
+  ocultan en «Personalizar tablero») y un mosaico nuevo con la dona de causas de paro del turno.
+
 ### Servidor propio, etapa 1 (rama `feature/servidor`)
 - Envío opcional de cada línea a un servidor propio (nube o planta) por HTTPS, además de la carpeta compartida
   o en su lugar: cola en disco (no se pierde nada sin red), lotes sin duplicar al reenviar, gzip, solo conexiones

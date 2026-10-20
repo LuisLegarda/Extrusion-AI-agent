@@ -360,10 +360,10 @@ class ReportDef(BaseModel):
 
 # Mosaicos del tablero de Inicio: indicadores del sistema o una variable con el gráfico elegido.
 HomeTileKind = Literal["oee", "availability", "performance", "quality", "i5", "stability", "cpk", "conform", "read",
-                       "machine", "alarms", "cpk_bars", "shift", "var"]
+                       "machine", "alarms", "cpk_bars", "shift", "downtime", "var"]
 KPI_KINDS: tuple[str, ...] = ("oee", "availability", "performance", "quality", "i5", "stability", "cpk", "conform",
                               "read")  # indicadores con valor numérico: gauge, valor o gráfica de tiempo
-SINGLE_KINDS: tuple[str, ...] = ("machine", "alarms", "cpk_bars", "shift")  # una sola vez en el tablero
+SINGLE_KINDS: tuple[str, ...] = ("machine", "alarms", "cpk_bars", "shift", "downtime")  # una sola vez en el tablero
 KpiChart = Literal["gauge", "value", "trend"]
 HomeChart = Literal["value", "gauge", "bar", "trend", "histogram"]
 NUMERIC_CHARTS: tuple[str, ...] = ("value", "gauge", "bar", "trend", "histogram")
@@ -390,9 +390,10 @@ def default_home_tiles() -> list[HomeTile]:
     kpis = ["oee", "i5", "stability", "cpk", "conform", "read"]
     tiles = [HomeTile(id=k, kind=k) for k in kpis]
     tiles += [HomeTile(id="machine", kind="machine", width=2, height=2),
+              HomeTile(id="downtime", kind="downtime", width=2, height=2),
               HomeTile(id="alarms", kind="alarms", width=2, height=2),
-              HomeTile(id="cpk_bars", kind="cpk_bars", width=2, height=2),
-              HomeTile(id="shift", kind="shift", width=6)]
+              HomeTile(id="shift", kind="shift", width=6),
+              HomeTile(id="cpk_bars", kind="cpk_bars", width=6, height=1)]
     return tiles
 
 
@@ -401,6 +402,7 @@ class HomeSettings(BaseModel):
 
     columns: int = Field(6, ge=1, le=12)
     tiles: list[HomeTile] = Field(default_factory=default_home_tiles)
+    status_bar: bool = True  # tarjetas de estado (marcha, paros, alarmas, calidad, OEE) arriba del tablero
 
 
 def default_dock_tiles() -> list[HomeTile]:
