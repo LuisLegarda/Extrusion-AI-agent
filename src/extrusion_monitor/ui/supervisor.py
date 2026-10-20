@@ -1,6 +1,8 @@
-"""Acciones protegidas: piden el inicio de sesión de un supervisor (número de empleado y contraseña).
+"""Acciones protegidas: solo se permiten con la sesión de un supervisor iniciada (número de empleado y contraseña).
 
-La sesión dura `session_min` minutos desde el último uso; se puede cerrar antes desde la barra superior.
+Sin sesión, la acción simplemente no se hace (no se abre la lista ni el diálogo). La sesión se inicia desde la
+barra superior (🔒 Supervisor) o al entrar un supervisor con contraseña; dura `session_min` minutos desde el
+último uso, se cierra desde la barra superior y al cambiar el usuario en turno.
 Si la protección está apagada (Configuración → Personal → Confirmación), todo se permite como antes.
 """
 from __future__ import annotations
@@ -25,7 +27,8 @@ class SupervisorDialog(QDialog):
         self.setWindowTitle(tr("Inicio de sesión de supervisor"))
         self.setMinimumWidth(380)
         f = QFormLayout(self)
-        lb = QLabel(tr("Se necesita un supervisor para: <b>{r}</b>", r=tr(reason)))
+        lb = QLabel(tr("Se necesita un supervisor para: <b>{r}</b>", r=tr(reason)) if reason else
+                    tr("Inicia la sesión de supervisor para hacer cambios protegidos."))
         lb.setWordWrap(True)
         f.addRow(lb)
         self.ed_badge = QLineEdit()
@@ -64,6 +67,7 @@ class SupervisorGate(QObject):
     """`allow(clave)` decide si una acción protegida puede hacerse ahora (y pide la sesión si hace falta)."""
 
     changed = Signal()  # sesión iniciada o cerrada
+    denied = Signal(str)  # acción negada (descripción) para avisar sin bloquear
 
     def __init__(self, home: Path, parent=None, clock: Callable[[], float] = time.monotonic):
         super().__init__(parent)
@@ -97,19 +101,27 @@ class SupervisorGate(QObject):
     def protected(self, key: str) -> bool:
         return self.people().login.protects(key)
 
+    def locked(self, key: str) -> bool:
+        """Protegida y sin sesión de supervisor (para deshabilitar controles)."""
+        return self.protected(key) and not self.active()
+
     def allow(self, key: str) -> bool:
-        people = self.people()
-        lg = people.login
+        lg = self.people().login
         if not lg.protects(key):
             return True
         if self.active():
             self.until = self.clock() + 60 * lg.session_min  # cada uso alarga la sesión
             return True
-        name = self.ask(people, PROTECTABLE.get(key, key))
-        if not name:
-            return False
-        self.start(name, lg.session_min)
-        return True
+        self.denied.emit(PROTECTABLE.get(key, key))
+        return False
+
+    def login(self) -> bool:
+        """Botón 🔒 Supervisor de la barra superior."""
+        people = self.people()
+        name = self.ask(people, "")
+        if name:
+            self.start(name, people.login.session_min)
+        return bool(name)
 
     def _ask(self, people: Personnel, reason: str) -> Optional[str]:
         dlg = SupervisorDialog(people, reason, self.parent_widget)

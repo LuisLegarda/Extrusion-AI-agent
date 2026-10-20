@@ -1057,6 +1057,10 @@ EN: dict[str, str] = {
     "No hay personal para este turno: agrégalo en Configuración → Personal.":
         "There is no staff for this shift: add them in Settings → Staff.",
     # --- sesión de supervisor ---
+    "🔒 Supervisor": "🔒 Supervisor",
+    "Iniciar la sesión de supervisor para hacer cambios protegidos": "Sign in as supervisor to make protected changes",
+    "Inicia la sesión de supervisor para hacer cambios protegidos.": "Sign in as supervisor to make protected changes.",
+    "🔒 Requiere la sesión de supervisor: {r}": "🔒 Requires a supervisor session: {r}",
     "Lista de personal, turnos y esta protección": "Staff list, shifts and this protection",
     "Cambiar la receta activa, editar recetas y límites": "Change the active recipe, edit recipes and limits",
     "Variables, pantallas, recorridos, cámaras y configuración del control (Configurar receta)":

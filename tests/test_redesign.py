@@ -270,51 +270,62 @@ def test_personnel_dialog_shifts_and_passwords(ctx, monkeypatch):
     assert p.login.auto_shift and p.login.confirm == "badge_password" and len(p.shifts) == 3
 
 
-def test_supervisor_lock_protects_actions_and_session_expires(ctx, monkeypatch):
+def test_supervisor_lock_blocks_without_session(ctx, monkeypatch):
     from PySide6.QtWidgets import QApplication
 
     from extrusion_monitor.personnel import LoginSettings, Person, Personnel, hash_password
+    from extrusion_monitor.ui import setup_dialog
     from extrusion_monitor.ui.main_window import MainWindow
     from extrusion_monitor.ui.supervisor import SupervisorDialog
     home = ctx.workspace.home
     win = MainWindow(ctx)
-    asked = []
-    win.gate.ask = lambda people, reason: asked.append(reason)  # nadie inicia sesión
-    assert win.gate.allow("recipes") and not asked  # sin protección: todo como antes
+    win.gate.ask = lambda people, reason: pytest.fail("no debe pedir sesión: solo negar")
+    assert win.gate.allow("recipes")  # sin protección: todo como antes
+    assert not win.btn_session.isVisibleTo(win)
     Personnel([Person("Luis", badge="100"), Person("Ana", "supervisor", "200", password=hash_password("clave1"))],
               login=LoginSettings(lock=True, protect=["recipes", "setup", "charts"], session_min=10)).save(home)
-    assert not win.gate.allow("recipes") and asked
+    win._update_session()
+    denied = []
+    win.gate.denied.connect(denied.append)
+    assert not win.gate.allow("recipes") and denied
     assert win.gate.allow("delete")  # no está en la lista protegida
-    # cambiar la receta sin supervisor: se queda la que estaba
+    # sin sesión: el selector de receta y «Personalizar tablero» quedan deshabilitados
+    assert not win.cmb_recipe.isEnabled() and not win.chk_auto.isEnabled() and not win.home.btn_custom.isEnabled()
+    assert win.btn_session.isVisibleTo(win) and "Supervisor" in win.btn_session.text()
     before = ctx.engine.state.recipe
-    other = next((i for i in range(win.cmb_recipe.count()) if win.cmb_recipe.itemData(i) != before), None)
-    win.cmb_recipe.setCurrentIndex(other)
-    win._recipe_chosen(other)
-    assert ctx.engine.state.recipe == before and win.cmb_recipe.currentData() == before
-    win.open_setup()  # no abre nada: se negó la sesión
-    # la lista de personal siempre está protegida cuando la protección está encendida
-    asked.clear()
-    win.open_personnel()
-    assert asked
-    # con supervisor: se permite y la sesión dura session_min
+    other = next(i for i in range(win.cmb_recipe.count()) if win.cmb_recipe.itemData(i) != before)
+    win._recipe_chosen(other)  # p. ej. desde el menú o la búsqueda
+    assert ctx.engine.state.recipe == before
+    opened = []
+    monkeypatch.setattr(setup_dialog, "SetupDialog", lambda *a, **k: opened.append(1))
+    win.open_setup()
+    win.open_personnel()  # la lista de personal siempre está protegida
+    assert not opened and "supervisor" in win.statusBar().currentMessage()
+    # con la sesión iniciada desde la barra superior se permite; dura session_min sin usarse
     t = [1000.0]
     win.gate.clock = lambda: t[0]
     win.gate.ask = lambda people, reason: "Ana"
-    assert win.gate.allow("recipes") and win.gate.active() and win.gate.user == "Ana"
+    win._session_clicked()
     QApplication.processEvents()
-    assert win.btn_session.isVisibleTo(win) and "Ana" in win.btn_session.text()
-    win.gate.ask = lambda people, reason: None
+    assert win.gate.active() and "Ana" in win.btn_session.text() and win.cmb_recipe.isEnabled()
+    assert win.gate.allow("recipes")
     t[0] += 9 * 60
     assert win.gate.allow("charts")  # el uso alarga la sesión
     t[0] += 11 * 60
     assert not win.gate.active() and not win.gate.allow("charts")
+    # cambiar el usuario en turno cierra la sesión de supervisor
+    win.gate.start("Ana", 10)
+    win.set_user("Luis")
+    assert not win.gate.active()
     # el inicio de sesión pide número de empleado y contraseña de un supervisor
-    dlg = SupervisorDialog(Personnel.load(home), "Editar recetas")
+    dlg = SupervisorDialog(Personnel.load(home), "")
     dlg.ed_badge.setText("100")
     dlg.ed_pw.setText("clave1")
     dlg.accept()
     assert dlg.person is None and "incorrectos" in dlg.lbl.text()  # Luis no es supervisor
     dlg.ed_badge.setText("200")
+    dlg.accept()
+    assert dlg.person is None  # la contraseña se borra tras un intento fallido
     dlg.ed_pw.setText("clave1")
     dlg.accept()
     assert dlg.person is not None and dlg.person.name == "Ana"

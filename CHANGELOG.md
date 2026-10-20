@@ -25,8 +25,10 @@ Numeración `MAYOR.MENOR.PARCHE`:
   personal (siempre), cambiar o editar recetas, Configurar receta (variables, recorridos, cámaras, control) y el
   tablero de Inicio y el dock. Opcionales también: activar el control automático o cambiar su modo, catálogos de
   paros y comportamientos, eliminar capturas, identidad / exportación / servidor, y detener o cerrar el programa.
-  La sesión dura los minutos elegidos sin usarse y se cierra desde la barra superior. Desactivar el control
-  siempre se permite. No se puede guardar la protección sin un supervisor que pueda iniciar sesión.
+  Sin la sesión de supervisor iniciada, esas acciones simplemente no se permiten (no se abren las listas ni los
+  diálogos y el selector de receta queda deshabilitado). La sesión se inicia con «🔒 Supervisor» en la barra
+  superior, dura los minutos elegidos sin usarse y se cierra desde ahí o al cambiar el usuario en turno.
+  Desactivar el control siempre se permite. No se puede guardar la protección sin un supervisor que pueda iniciar sesión.
 
 ### Rediseño de la interfaz (rama `feature/rediseno`)
 - Tema claro renovado (tarjetas redondeadas, barra lateral blanca con la página activa resaltada) y el oscuro con

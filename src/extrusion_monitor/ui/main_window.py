@@ -267,6 +267,7 @@ class MainWindow(QMainWindow):
         from .supervisor import SupervisorGate
         self.gate = SupervisorGate(ctx.workspace.home, self)  # acciones que piden un supervisor (opcional)
         self._build_ui()
+        self._update_session()
         self._restore_view_controls()
         self.rebuild_table()
         self.refresh_recipes()
@@ -560,11 +561,10 @@ class MainWindow(QMainWindow):
         row.addWidget(self.btn_bell)
         self.btn_session = QToolButton()
         self.btn_session.setObjectName("session")
-        self.btn_session.setToolTip(tr("Sesión de supervisor activa (clic: cerrar sesión)"))
-        self.btn_session.clicked.connect(self.gate.end)
+        self.btn_session.clicked.connect(self._session_clicked)
         self.gate.changed.connect(self._update_session)
+        self.gate.denied.connect(self._denied)
         row.addWidget(self.btn_session)
-        self._update_session()
         self.cmb_user = QComboBox()  # quién está en turno (operador o supervisor): un solo selector
         self.cmb_user.setObjectName("crew")
         self.cmb_user.setMinimumWidth(190)
@@ -628,6 +628,8 @@ class MainWindow(QMainWindow):
         if name:
             state["last_operator"] = name
         self.ctx.workspace.save_state(state)
+        if self.gate.user is not None and self.gate.user != name:
+            self.gate.end()  # cambió quién está en turno: la sesión de supervisor se cierra
         self.fill_crew()
         self.problems_page.capture.reload_config()
 
@@ -655,11 +657,32 @@ class MainWindow(QMainWindow):
         self._login_dlg = dlg
         dlg.open()
 
+    def _session_clicked(self) -> None:
+        if self.gate.active():
+            self.gate.end()
+        else:
+            self.gate.login()
+
     def _update_session(self) -> None:
+        """Botón de sesión de supervisor (solo con la protección encendida) y controles bloqueados sin ella."""
+        lock = Personnel.load(self.ctx.workspace.home).login.lock
         on = self.gate.active()
-        self.btn_session.setVisible(on)
+        self.btn_session.setVisible(lock or on)
         if on:
-            self.btn_session.setText(tr("🔓 {n} · {m} min · cerrar sesión", n=self.gate.user, m=self.gate.remaining_min()))
+            self.btn_session.setText(tr("🔓 {n} · {m} min · cerrar sesión", n=self.gate.user,
+                                        m=self.gate.remaining_min()))
+            self.btn_session.setToolTip(tr("Sesión de supervisor activa (clic: cerrar sesión)"))
+        else:
+            self.btn_session.setText(tr("🔒 Supervisor"))
+            self.btn_session.setToolTip(tr("Iniciar la sesión de supervisor para hacer cambios protegidos"))
+        recipes = not self.gate.locked("recipes")
+        for w in (self.cmb_recipe, self.chk_auto, self.act_auto):
+            w.setEnabled(recipes)
+        self.home.btn_custom.setEnabled(not self.gate.locked("charts"))
+
+    def _denied(self, reason: str) -> None:
+        """Acción protegida sin sesión de supervisor: no se hace; solo se avisa."""
+        self.statusBar().showMessage(tr("🔒 Requiere la sesión de supervisor: {r}", r=tr(reason)), 8000)
 
     def check_shift(self) -> None:
         """Turno detectado por la hora (opcional): al empezar uno nuevo se pregunta quién entra."""
@@ -685,6 +708,7 @@ class MainWindow(QMainWindow):
             self.fill_crew()
             self.problems_page.capture.reload_config()
             self._update_shift_label()
+            self._update_session()
             self.check_shift()
 
     def _update_shift_label(self) -> None:
