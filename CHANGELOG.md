@@ -24,7 +24,21 @@ Numeración `MAYOR.MENOR.PARCHE`:
   parpadeo, agujas (manómetros) y barras de nivel. Pantalla y cámaras se combinan en la misma línea.
 - Cámara simulada en el modo demo.
 
-### Control PID con aprendizaje (rama `feature/control`)
+### Mejoras de interfaz (rama `feature/mejoras-interfaz`)
+- Problemas de proceso: inicio y fin del rango también se escriben (dd/MM hh:mm:ss); a la izquierda, dos listas:
+  *Paros por identificar* y *Capturas* (paros y calidad, con eliminar).
+- SPC de varias variables a la vez (hasta 4), con lista como en Tendencias.
+- Tendencias: límites de control (LCS / LCI = media ± 3σ de corto plazo) y Cpk / Ppk de lo visible en cada gráfica.
+- Menú *Ver* sin las páginas que ya están en la barra lateral (los atajos Ctrl+1…9 siguen).
+- Configuración de variables en dos secciones: *Variables del HMI* e *Indicadores físicos (cámaras)*.
+- Las preferencias de vista se guardan solas: gráficas de tendencias, rango y opciones, variables de SPC y de
+  correlación, y la página abierta.
+- Estabilidad: sin picos falsos al abrir el programa o cuando una variable deja de leerse (calentamiento de 1 min
+  con datos completos y solo lecturas recientes); el % de estabilidad espera a tener suficientes puntos.
+- Identidad de la estación: logo de la empresa, texto propio y número de línea arriba a la izquierda
+  (*Configuración → Identidad de la estación*).
+
+### Control PID con aprendizaje (integrado en `develop`)
 - Lazos de control que ajustan un input del HMI (p. ej. velocidad del capstan) según una medición (diámetro)
   hacia el nominal de la receta. Solo para la pantalla del HMI: escribe el valor (clic en el campo, valor y
   Enter, con confirmación opcional) o usa botones + / −, con ruta opcional a otra pestaña.

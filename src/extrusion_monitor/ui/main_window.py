@@ -29,7 +29,7 @@ from .common import (  # noqa: F401 (y_range se reexporta)
 from .variable_tree import VariableTree
 from .kpi_dashboard import KpiDashboard
 from .analysis_panels import BehaviorPanel, CorrelationPanel, StatsPanel
-from ..analysis.statistics import projection
+from ..analysis.statistics import capability, projection
 
 MAX_PLOTS = 4
 
@@ -75,6 +75,11 @@ class TrendPanel(QWidget):
                                    "un pico solo la amplía mientras está en pantalla. "
                                    "Desmárcala para hacer zoom manual con el mouse.")
         bar.addWidget(self.chk_auto_y)
+        self.chk_ctrl = QCheckBox("Límites de control y Cpk / Ppk")
+        self.chk_ctrl.setChecked(True)
+        self.chk_ctrl.setToolTip("LCS / LCI = media ± 3σ de corto plazo de los datos visibles (carta de individuos). "
+                                 "Cpk y Ppk contra los límites de alarma de la receta.")
+        bar.addWidget(self.chk_ctrl)
         bar.addStretch(1)
         self.layout_.addLayout(bar)
         self.placeholder = QLabel("Marca la casilla de una variable para graficar su tendencia.")
@@ -109,19 +114,27 @@ class TrendPanel(QWidget):
             w.addItem(band)
             eta = pg.TextItem(color=theme.c("projection"), anchor=(1, 1))
             w.addItem(eta)
+            capt = pg.TextItem(anchor=(0, 0))  # Cpk / Ppk, arriba a la izquierda
+            capt.setZValue(20)
+            w.addItem(capt, ignoreBounds=True)
             lines = {
                 "ref": pg.InfiniteLine(angle=0, pen=pg.mkPen(theme.c("reference"), style=Qt.DashLine)),
                 "wl": pg.InfiniteLine(angle=0, pen=pg.mkPen(theme.c("warning"))),
                 "wh": pg.InfiniteLine(angle=0, pen=pg.mkPen(theme.c("warning"))),
                 "al": pg.InfiniteLine(angle=0, pen=pg.mkPen(theme.c("critical"), width=2)),
                 "ah": pg.InfiniteLine(angle=0, pen=pg.mkPen(theme.c("critical"), width=2)),
+                # límites de control (comportamiento del proceso, no de la receta)
+                "ucl": pg.InfiniteLine(angle=0, pen=pg.mkPen(theme.c("setpoint"), width=1, style=Qt.DashDotLine),
+                                       label=tr("LCS"), labelOpts={"position": 0.97, "color": theme.c("setpoint")}),
+                "lcl": pg.InfiniteLine(angle=0, pen=pg.mkPen(theme.c("setpoint"), width=1, style=Qt.DashDotLine),
+                                       label=tr("LCI"), labelOpts={"position": 0.97, "color": theme.c("setpoint")}),
             }
             for ln in lines.values():
                 ln.setVisible(False)
                 w.addItem(ln)
             self.layout_.addWidget(w)
             self.plots[vid] = {"widget": w, "curve": curve, "sp": sp_curve, "lines": lines,
-                               "proj": proj, "proj_lo": proj_lo, "proj_hi": proj_hi, "eta": eta}
+                               "proj": proj, "proj_lo": proj_lo, "proj_hi": proj_hi, "eta": eta, "cap": capt}
         self.placeholder.setVisible(not self.plots)
 
     @property
@@ -173,6 +186,36 @@ class TrendPanel(QWidget):
             lines[key].setVisible(val is not None)
             if val is not None:
                 lines[key].setValue(val)
+        self._control(p, t, y, bounds)
+
+    def _control(self, p, t, y, bounds: Bounds) -> None:
+        """Límites de control y Cpk / Ppk de los datos visibles."""
+        lines, cap_item = p["lines"], p["cap"]
+        cap = None
+        if self.chk_ctrl.isChecked() and len(t) >= 5:
+            t_arr, y_arr = np.asarray(t, float), np.asarray(y, float)
+            vis = y_arr[t_arr >= t_arr[-1] - self.range_s]
+            cap = capability(vis, bounds.al, bounds.ah) if len(vis) >= 5 else None
+        if cap is None or cap.std_within <= 0:
+            for k in ("ucl", "lcl"):
+                lines[k].setVisible(False)
+            cap_item.setText("")
+            return
+        lines["ucl"].setPos(cap.mean + 3 * cap.std_within)
+        lines["lcl"].setPos(cap.mean - 3 * cap.std_within)
+        for k in ("ucl", "lcl"):
+            lines[k].setVisible(True)
+
+        def grade(v):
+            if v is None:
+                return "—"
+            color = theme.c("good_text") if v >= 1.33 else (theme.c("warning_text") if v >= 1.0 else theme.c("critical"))
+            return f"<b style='color:{color}'>{v:.2f}</b>"
+        cap_item.setHtml(f"<span style='background:{theme.c('plot_bg')}; color:{theme.c('plot_fg')}'>&nbsp;Cpk "
+                         f"{grade(cap.cpk)} · Ppk {grade(cap.ppk)} · n {cap.n}&nbsp;</span>")
+        vb = p["widget"].getViewBox()
+        (x0, _x1), (_y0, y1) = vb.viewRange()
+        cap_item.setPos(x0, y1)
 
 
 class MainWindow(QMainWindow):
@@ -189,13 +232,23 @@ class MainWindow(QMainWindow):
         self.bridge = SnapshotBridge()
         self.bridge.snapshot.connect(self.on_snapshot, Qt.QueuedConnection)
         self.engine.listeners.append(self.bridge.snapshot.emit)
-        self._plotted: list[str] = []
+        # Preferencias de vista (gráficas, SPC, correlación, rango, página): se guardan solas al cambiarlas
+        self._view = dict(ctx.workspace.load_state().get("view") or {})
+        self._plotted: list[str] = list(self._view.get("plotted") or [])
+        self._view_timer = QTimer(self)
+        self._view_timer.setSingleShot(True)
+        self._view_timer.timeout.connect(self._write_view)
+        self._restoring = True  # mientras se construye la ventana no se guarda nada
         self._rebuilding = False
         self.dock = None  # barra compacta que queda sobre el HMI al minimizar (se crea al usarla)
         self._build_ui()
+        self._restore_view_controls()
         self.rebuild_table()
         self.refresh_recipes()
         self._update_title()
+        if self._view.get("page") in self.pages:
+            self.show_page(self._view["page"])
+        self._restoring = False
 
     # --- construcción -------------------------------------------------------
     def _build_ui(self) -> None:
@@ -231,6 +284,10 @@ class MainWindow(QMainWindow):
         self.trends = TrendPanel()
         self.trends.cmb_range.currentIndexChanged.connect(self._replot)
         self.trends.chk_auto_y.toggled.connect(self._replot)
+        self.trends.chk_ctrl.toggled.connect(self._replot)
+        for sig in (self.trends.cmb_range.currentIndexChanged, self.trends.chk_auto_y.toggled,
+                    self.trends.chk_ctrl.toggled):
+            sig.connect(self._save_view)
         self.plot_list = QListWidget()
         self.plot_list.setMaximumWidth(280)
         self.plot_list.setTextElideMode(Qt.ElideRight)
@@ -247,7 +304,9 @@ class MainWindow(QMainWindow):
         trends_page.setSizes([240, 1100])
 
         self.stats_panel = StatsPanel(self.engine)
+        self.stats_panel.selectionChanged.connect(self._save_view)
         self.corr_panel = CorrelationPanel(self.engine)
+        self.corr_panel.changed.connect(self._save_view)
         self.behavior_panel = BehaviorPanel(self.engine)
         self.analysis_pages = (self.stats_panel, self.corr_panel, self.behavior_panel)
         self._analysis_at = 0.0
@@ -356,6 +415,7 @@ class MainWindow(QMainWindow):
         # --- Configuración: ajustes de este equipo (no cambian con la receta) ---
         m = mb.addMenu("C&onfiguración")
         m.addAction("🌐 Dashboard global (exportación)…", self.open_station)
+        m.addAction("🏷 Identidad de la estación (logo, texto, línea)…", self.open_branding)
         m.addSeparator()
         lm = m.addMenu("🌐 Idioma / Language")
         grp = QActionGroup(lm)
@@ -373,12 +433,13 @@ class MainWindow(QMainWindow):
             grp2.addAction(act)
 
         # --- Ver: páginas y modos de pantalla ---
+        # Ver: solo modos de pantalla; las páginas están en la barra lateral (sus atajos Ctrl+1…9 siguen activos)
         m = mb.addMenu("&Ver")
-        for i, (key, label, _icon) in enumerate(NAV_ITEMS + [("reports", "Reportes", "")], 1):
-            act = m.addAction(label, lambda key=key: self.show_page(key))
-            if i <= 9:
-                act.setShortcut(f"Ctrl+{i}")
-        m.addSeparator()
+        for i, (key, _label, _icon) in enumerate(NAV_ITEMS[:9], 1):
+            act = QAction(self)
+            act.setShortcut(f"Ctrl+{i}")
+            act.triggered.connect(lambda _=False, key=key: self.show_page(key))
+            self.addAction(act)
         m.addAction(self.act_top)
         act = m.addAction("Pantalla completa", self._toggle_fullscreen)
         act.setShortcut("F11")
@@ -396,10 +457,13 @@ class MainWindow(QMainWindow):
         side.setFixedWidth(215)
         lay = QVBoxLayout(side)
         lay.setContentsMargins(10, 14, 10, 10)
-        logo = QLabel(f"<div style='font-size:20px; color:{theme.c('accent')}'><b>⫶⫶ Extrusion</b></div>"
-                      f"<div style='color:{theme.c('muted')}'>{tr('Monitor de línea')}</div>")
-        logo.setAlignment(Qt.AlignCenter)
-        lay.addWidget(logo)
+        from .branding import header_widget
+        self.brand = header_widget(self.ctx.workspace.home)  # logo, texto propio y número de línea
+        self.brand.setCursor(Qt.PointingHandCursor)
+        self.brand.setToolTip(tr("Logo, texto y número de línea: Configuración → Identidad de la estación"))
+        self.brand.mouseDoubleClickEvent = lambda _e: self.open_branding()
+        self._brand_lay = lay
+        lay.addWidget(self.brand)
         lay.addSpacing(12)
         self.nav = QListWidget()
         self.nav.setObjectName("nav")
@@ -491,6 +555,7 @@ class MainWindow(QMainWindow):
             self.show_page(key)
 
     def _page_changed(self, _index: int) -> None:
+        self._save_view()
         self._refresh_analysis(force=True)
         snap = self.engine.last
         if snap is not None and self.stack.currentWidget() is self.home:
@@ -577,8 +642,10 @@ class MainWindow(QMainWindow):
                 self.plot_list.addItem(it)
         self.plot_list.blockSignals(False)
         self._sync_plots()
-        self.stats_panel.set_variables(cfg)
-        self.corr_panel.set_variables(cfg, self._plotted)
+        self.stats_panel.set_variables(cfg, self.stats_panel.selected or self._view.get("spc"))
+        corr = self.corr_panel.selected_ids() if self.corr_panel.lst.count() else self._view.get("corr")
+        self.corr_panel.set_variables(cfg, corr if corr else self._plotted,
+                                      self._view.get("corr_x"), self._view.get("corr_y"))
         self.behavior_panel.set_models()
         self.home.rebuild()
         if self.dock is not None:
@@ -604,6 +671,7 @@ class MainWindow(QMainWindow):
             self._plotted.remove(vid)
         self._set_plot_item(vid, on)
         self._sync_plots()
+        self._save_view()
         if self.engine.last:
             self._update_plots(self.engine.last)
 
@@ -642,6 +710,40 @@ class MainWindow(QMainWindow):
     def _auto_toggled(self, on: bool) -> None:
         self.engine.set_recipe(self.engine.state.recipe, auto=on)
         self._save_state()
+
+    # --- preferencias de vista (se guardan solas) ------------------------------------------------------------
+    def _restore_view_controls(self) -> None:
+        v = self._view
+        tr_ = self.trends
+        for w in (tr_.cmb_range, tr_.chk_auto_y, tr_.chk_ctrl):
+            w.blockSignals(True)
+        if v.get("range"):
+            tr_.cmb_range.setCurrentIndex(max(0, tr_.cmb_range.findData(v["range"])))
+        if "auto_y" in v:
+            tr_.chk_auto_y.setChecked(bool(v["auto_y"]))
+        if "ctrl" in v:
+            tr_.chk_ctrl.setChecked(bool(v["ctrl"]))
+        for w in (tr_.cmb_range, tr_.chk_auto_y, tr_.chk_ctrl):
+            w.blockSignals(False)
+
+    def _save_view(self, *_args) -> None:
+        if self._rebuilding or getattr(self, "_restoring", True) or not hasattr(self, "corr_panel"):
+            return
+        self._view.update({
+            "plotted": list(self._plotted), "range": self.trends.cmb_range.currentData(),
+            "auto_y": self.trends.chk_auto_y.isChecked(), "ctrl": self.trends.chk_ctrl.isChecked(),
+            "spc": list(self.stats_panel.selected), "corr": self.corr_panel.selected_ids(),
+            "corr_x": self.corr_panel.cmb_x.currentData(), "corr_y": self.corr_panel.cmb_y.currentData(),
+            "page": self.current_page() or self._view.get("page")})
+        self._view_timer.start(800)  # se agrupan los cambios seguidos en una sola escritura
+
+    def _write_view(self) -> None:
+        try:
+            state = self.ctx.workspace.load_state()
+            state["view"] = self._view
+            self.ctx.workspace.save_state(state)
+        except OSError:
+            pass
 
     def _save_state(self) -> None:
         state = self.ctx.workspace.load_state()
@@ -885,8 +987,7 @@ class MainWindow(QMainWindow):
             # Se cargó el perfil de otra receta: la configuración completa cambió.
             self._config_version = self.engine.config_version
             self.ctx.config = self.engine.config
-            self._plotted = []
-            self.rebuild_table()
+            self.rebuild_table()  # las gráficas elegidas se conservan si la receta nueva tiene esas variables
             self._update_title()
         if snap.recipe != self.cmb_recipe.currentData():
             self.refresh_recipes()
@@ -993,6 +1094,18 @@ class MainWindow(QMainWindow):
         self.control_page.refresh()
         self.statusBar().showMessage(tr("Control detenido en todos los lazos"), 5000)
 
+    def open_branding(self) -> None:
+        from .branding import BrandingDialog, header_widget
+        if not BrandingDialog(self.ctx.workspace.home, self).exec():
+            return
+        new = header_widget(self.ctx.workspace.home)
+        new.setCursor(Qt.PointingHandCursor)
+        new.setToolTip(self.brand.toolTip())
+        new.mouseDoubleClickEvent = lambda _e: self.open_branding()
+        self._brand_lay.replaceWidget(self.brand, new)
+        self.brand.deleteLater()
+        self.brand = new
+
     def open_problems_config(self) -> None:
         from .problems_config import ProblemsConfigDialog
         dlg = ProblemsConfigDialog(self.engine.config.problems, self)
@@ -1085,6 +1198,9 @@ class MainWindow(QMainWindow):
             QApplication.alert(self)
 
     def closeEvent(self, event) -> None:
+        if self._view_timer.isActive():
+            self._view_timer.stop()
+            self._write_view()
         self._detach()
         if not self._rebuilding:
             self.engine.stop()
@@ -1130,6 +1246,8 @@ class MainWindow(QMainWindow):
 
     def rebuild_window(self) -> "MainWindow":
         """Vuelve a construir la ventana (idioma o tema nuevos); el monitoreo sigue corriendo."""
+        self._view_timer.stop()
+        self._write_view()  # la ventana nueva lee las preferencias del disco
         new = MainWindow(self.ctx)
         new.setGeometry(self.geometry())
         new._plotted = list(self._plotted)

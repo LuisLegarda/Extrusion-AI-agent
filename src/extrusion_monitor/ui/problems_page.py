@@ -9,9 +9,10 @@ from __future__ import annotations
 import time
 from typing import Optional
 
-from PySide6.QtCore import Qt, QTimer, Signal
+from PySide6.QtCore import QDateTime, Qt, QTimer, Signal
 from PySide6.QtWidgets import (
-    QButtonGroup, QComboBox, QDialog, QDoubleSpinBox, QFormLayout, QGroupBox, QHBoxLayout, QLabel, QLineEdit,
+    QButtonGroup, QComboBox, QDateTimeEdit, QDialog, QDoubleSpinBox, QFormLayout, QGroupBox, QHBoxLayout, QLabel,
+    QLineEdit,
     QListWidget, QListWidgetItem, QMessageBox, QPushButton, QRadioButton, QSlider, QTabWidget, QVBoxLayout, QWidget,
 )
 
@@ -33,6 +34,7 @@ def hm(ts: float) -> str:
 
 class CapturePanel(QWidget):
     saved = Signal()
+    deleteRequested = Signal(int)
 
     def __init__(self, ctx):
         super().__init__()
@@ -68,12 +70,26 @@ class CapturePanel(QWidget):
 
         body = QHBoxLayout()
         left = QVBoxLayout()
-        self.lbl_pending = QLabel()
+        self.lbl_pending = QLabel()  # resumen (las pestañas ya muestran los conteos)
         self.lbl_pending.setTextFormat(Qt.RichText)
-        left.addWidget(self.lbl_pending)
+        self.lbl_pending.setVisible(False)
+        # Reportes: paros que faltan por identificar y capturas ya hechas (paros y calidad)
+        self.left_tabs = QTabWidget()
         self.lst = QListWidget()
         self.lst.currentRowChanged.connect(self._event_selected)
-        left.addWidget(self.lst, 1)
+        self.left_tabs.addTab(self.lst, tr("⏳ Paros por identificar"))
+        caps = QWidget()
+        cl = QVBoxLayout(caps)
+        cl.setContentsMargins(0, 0, 0, 0)
+        self.lst_caps = QListWidget()
+        self.lst_caps.currentRowChanged.connect(self._capture_selected)
+        cl.addWidget(self.lst_caps, 1)
+        b = QPushButton(tr("Eliminar captura"))
+        b.setToolTip(tr("Borra la captura seleccionada (por ejemplo, si se capturó mal)"))
+        b.clicked.connect(self._delete_capture)
+        cl.addWidget(b)
+        self.left_tabs.addTab(caps, tr("📋 Capturas"))
+        left.addWidget(self.left_tabs, 1)
         body.addLayout(left, 2)
 
         box = QGroupBox("Captura")
@@ -89,15 +105,20 @@ class CapturePanel(QWidget):
             rb.toggled.connect(lambda _: self._fill_categories())
         kinds.addStretch(1)
         form.addRow("Tipo:", kinds)
-        self.sl_a, self.lbl_a = QSlider(Qt.Horizontal), QLabel("—")
-        self.sl_b, self.lbl_b = QSlider(Qt.Horizontal), QLabel("—")
-        for sl, lbl, name in ((self.sl_a, self.lbl_a, "Inicio:"), (self.sl_b, self.lbl_b, "Fin:")):
+        self.sl_a, self.ed_a = QSlider(Qt.Horizontal), QDateTimeEdit()
+        self.sl_b, self.ed_b = QSlider(Qt.Horizontal), QDateTimeEdit()
+        for sl, ed, name in ((self.sl_a, self.ed_a, "Inicio:"), (self.sl_b, self.ed_b, "Fin:")):
             row = QHBoxLayout()
             row.addWidget(sl, 1)
-            lbl.setMinimumWidth(70)
-            row.addWidget(lbl)
+            ed.setDisplayFormat("dd/MM HH:mm:ss")
+            ed.setToolTip(tr("Escribe la hora (hh:mm:ss) o usa las flechas"))
+            ed.setMinimumWidth(130)
+            ed.editingFinished.connect(self._time_typed)
+            row.addWidget(ed)
             sl.valueChanged.connect(self._slider_moved)
             form.addRow(name, row)
+        # compatibilidad: etiquetas con la hora (pruebas y otras vistas)
+        self.lbl_a, self.lbl_b = self.ed_a, self.ed_b
         self.lbl_dur = QLabel("—")
         form.addRow("Tiempo:", self.lbl_dur)
         self.cmb_cat = QComboBox()
@@ -184,6 +205,7 @@ class CapturePanel(QWidget):
             sl.setRange(0, span)
             sl.blockSignals(False)
         self._fill_events()
+        self._fill_captures()
         if sel is not None:
             self.select_range(max(sel[0], self.a), min(sel[1], self.b), select_event=False)
 
@@ -194,8 +216,8 @@ class CapturePanel(QWidget):
         self.lbl_pending.setText(
             tr("<b>Paros del periodo</b> · <span style='color:{c}'>{n} sin clasificar</span>",
                c=theme.c("warning_text"), n=len(pending)) if pending else tr("<b>Paros del periodo</b> · todos clasificados"))
-        for e in sorted(self.events, key=lambda e: (e.classified, -e.start)):
-            mark = "✔" if e.classified else "●"
+        for e in sorted((e for e in self.events if not e.classified), key=lambda e: -e.start):
+            mark = "●"
             text = (f"{mark} {time.strftime('%d/%m %H:%M', time.localtime(e.start))}–{hm(e.end)[:5]} · "
                     f"{fmt_min(e.duration / 60)}")
             if not e.classified:
@@ -253,12 +275,63 @@ class CapturePanel(QWidget):
         self.timeline.set_selection(a, b)
         self._show_range(a, b)
 
+    def _time_typed(self) -> None:
+        """Inicio o fin escritos a mano (hh:mm:ss): se ajustan al periodo y el fin nunca antes del inicio."""
+        a = float(self.ed_a.dateTime().toSecsSinceEpoch())
+        b = float(self.ed_b.dateTime().toSecsSinceEpoch())
+        a = min(max(a, self.a), self.b)
+        b = min(max(b, self.a), self.b)
+        if b <= a:
+            if self.sender() is self.ed_a:
+                b = min(self.b, a + STEP_S)
+            else:
+                a = max(self.a, b - STEP_S)
+        self._set_sliders(a, b)
+        self.timeline.set_selection(a, b)
+        self._show_range(a, b)
+
+    def _capture_selected(self, row: int) -> None:
+        it = self.lst_caps.item(row)
+        if it is None:
+            return
+        rec = next((r for r in self.records if r.get("id") == it.data(Qt.UserRole)), None)
+        if rec is not None:
+            self.timeline.set_selection(max(rec["start"], self.a), min(rec["end"], self.b))
+
+    def _delete_capture(self) -> None:
+        it = self.lst_caps.currentItem()
+        if it is not None:
+            self.deleteRequested.emit(int(it.data(Qt.UserRole)))
+
+    def _fill_captures(self) -> None:
+        self.lst_caps.blockSignals(True)
+        self.lst_caps.clear()
+        for r in sorted(self.records, key=lambda r: -(r.get("start") or 0)):
+            kind = tr("Paro") if r.get("kind") == "downtime" else tr("Calidad")
+            text = (f"{time.strftime('%d/%m %H:%M', time.localtime(r['start']))}–{hm(r['end'])[:5]} · {kind} · "
+                    f"{r.get('category') or ''} › {r.get('reason') or ''} · {fmt_min((r.get('duration_s') or 0) / 60)}")
+            if r.get("scrap"):
+                text += f" · scrap {r['scrap']:g} {r.get('unit') or ''}"
+            if r.get("operator"):
+                text += f" · {r['operator']}"
+            it = QListWidgetItem(("⏸ " if r.get("kind") == "downtime" else "✗ ") + text)
+            it.setData(Qt.UserRole, r.get("id"))
+            if r.get("planned"):
+                it.setForeground(theme.qcolor("muted"))
+            self.lst_caps.addItem(it)
+        self.lst_caps.blockSignals(False)
+        n_pend = sum(1 for e in self.events if not e.classified)
+        self.left_tabs.setTabText(0, tr("⏳ Paros por identificar") + f" ({n_pend})")
+        self.left_tabs.setTabText(1, tr("📋 Capturas") + f" ({len(self.records)})")
+
     def selection(self) -> Optional[tuple[float, float]]:
         return self.timeline.sel
 
     def _show_range(self, a: float, b: float) -> None:
-        self.lbl_a.setText(hm(a))
-        self.lbl_b.setText(hm(b))
+        for ed, t in ((self.ed_a, a), (self.ed_b, b)):
+            ed.blockSignals(True)
+            ed.setDateTime(QDateTime.fromSecsSinceEpoch(int(round(t))))
+            ed.blockSignals(False)
         self.lbl_dur.setText(f"<b>{fmt_min((b - a) / 60)}</b> ({b - a:.0f} s)")
 
     # --- guardar -------------------------------------------------------------------------
@@ -322,6 +395,7 @@ class ProblemsPage(QWidget):
         self.tabs = QTabWidget()
         self.capture = CapturePanel(ctx)
         self.capture.saved.connect(self._after_save)
+        self.capture.deleteRequested.connect(self.delete)
         self.tabs.addTab(self.capture, "📝 Capturar")
         analysis = QWidget()
         al = QVBoxLayout(analysis)
@@ -357,6 +431,7 @@ class ProblemsPage(QWidget):
             self.capture.refresh()
         else:
             self.refresh_analysis()
+        self.capture.refresh()
         self.count_pending()
 
     def refresh_analysis(self) -> None:

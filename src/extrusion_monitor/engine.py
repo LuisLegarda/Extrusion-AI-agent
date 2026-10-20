@@ -425,7 +425,7 @@ class MonitorEngine:
             self._auto_select_recipe(readings)
             with self._data_lock:
                 extra = self.behaviors.evaluate(
-                    now, self.rules.fresh_values(now, readings), self.state.recipe,
+                    now, self.rules.fresh_values(now, readings, strict=True), self.state.recipe,
                     lambda vid: self.config.var_label(self.config.variable(vid)) if self.config.variable(vid) else vid)
                 statuses, events = self.rules.evaluate(now, readings, self.recipe, self.trends, extra)
             events = events + self._run_control(now, readings, statuses)

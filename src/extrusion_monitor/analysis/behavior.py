@@ -179,11 +179,19 @@ class BehaviorStore:
 class BehaviorMonitor:
     """Evalúa los modelos activos en cada ciclo y guarda la historia de D² para graficar."""
 
+    WARMUP_S = 60.0  # datos completos y seguidos antes de evaluar (al abrir o tras perder una variable)
+    WARMUP_N = 5
+
     def __init__(self, store: BehaviorStore, history_len: int = 1800):
         self.store = store
         self.history: dict[str, deque[tuple[float, float, float]]] = {}
         self.last: dict[str, BehaviorResult] = {}
         self.history_len = history_len
+        self._streak: dict[str, tuple[float, int]] = {}  # modelo -> (desde cuándo hay datos completos, ciclos)
+
+    def warming(self, model_id: str, now: float) -> bool:
+        st = self._streak.get(model_id)
+        return st is None or now - st[0] < self.WARMUP_S or st[1] < self.WARMUP_N
 
     def active(self, recipe: Optional[str]) -> list[BehaviorModel]:
         return [m for m in self.store.models
@@ -199,7 +207,12 @@ class BehaviorMonitor:
             key = f"@{m.id}"
             res = evaluate(m, values, now)
             if res is None:
+                self._streak.pop(m.id, None)  # falta una variable: al volver hay que calentar otra vez
                 continue  # faltan datos frescos: se mantiene el estado del hallazgo
+            since, n = self._streak.get(m.id, (now, 0))
+            self._streak[m.id] = (since, n + 1)
+            if self.warming(m.id, now):
+                continue  # aún sin datos suficientes y seguidos: no se evalúa (evita picos al arrancar)
             evaluated.add(key)
             self.last[m.id] = res
             h = self.history.setdefault(m.id, deque(maxlen=self.history_len))

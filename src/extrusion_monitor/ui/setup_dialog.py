@@ -245,6 +245,14 @@ class SetupDialog(QDialog):
     def _build_tree_tab(self) -> QWidget:
         w = QWidget()
         lay = QVBoxLayout(w)
+        from PySide6.QtWidgets import QTabBar
+        self.section = "hmi"  # sección: variables de la pantalla del HMI o indicadores físicos (cámaras)
+        self.section_bar = QTabBar()
+        self.section_bar.addTab(tr("🖥 Variables del HMI"))
+        self.section_bar.addTab(tr("📹 Indicadores físicos (cámaras)"))
+        self.section_bar.setExpanding(True)
+        self.section_bar.currentChanged.connect(self._section_changed)
+        lay.addWidget(self.section_bar)
         self.tree = QTreeWidget()
         self.tree.setHeaderLabels(["Nombre", "Tipo", "ID"])
         self.tree.setSelectionMode(QAbstractItemView.ExtendedSelection)
@@ -252,7 +260,9 @@ class SetupDialog(QDialog):
         self.tree.setColumnWidth(0, 300)
         lay.addWidget(self.tree, 3)
 
-        r1 = QHBoxLayout()
+        self.row_pages = QWidget()
+        r1 = QHBoxLayout(self.row_pages)
+        r1.setContentsMargins(0, 0, 0, 0)
         for text, slot, tip in (
                 ("+ Pestaña / componente", self._new_root_page, "Nuevo nodo raíz (p. ej. EXT1, GAS, MEAS)"),
                 ("+ Sub-pestaña", self._new_child_page, "Nodo dentro de la pestaña seleccionada (p. ej. Overview)")):
@@ -260,8 +270,10 @@ class SetupDialog(QDialog):
             b.setToolTip(tip)
             b.clicked.connect(slot)
             r1.addWidget(b)
-        lay.addLayout(r1)
-        r2 = QHBoxLayout()
+        lay.addWidget(self.row_pages)
+        self.row_hmi = QWidget()
+        r2 = QHBoxLayout(self.row_hmi)
+        r2.setContentsMargins(0, 0, 0, 0)
         for text, slot, tip in (
                 ("+ Par consigna / medición", self._start_pair,
                  "Marca primero la consigna y después el valor medido; quedan vinculados"),
@@ -276,9 +288,15 @@ class SetupDialog(QDialog):
             b.setToolTip(tip)
             b.clicked.connect(slot)
             r2.addWidget(b)
-        lay.addLayout(r2)
+        lay.addWidget(self.row_hmi)
+        self.row_phys = QWidget()
+        phys = QVBoxLayout(self.row_phys)
+        phys.setContentsMargins(0, 0, 0, 0)
         r2b = QHBoxLayout()
-        r2b.addWidget(QLabel("Indicadores físicos:"))
+        b = QPushButton("📹 Cámaras…")
+        b.setToolTip("Agregar o ajustar cámaras (USB o IP)")
+        b.clicked.connect(self._open_cameras)
+        r2b.addWidget(b)
         for text, slot, tip in (
                 ("+ Luz / LED", lambda: self._new_indicator("lamp"),
                  "Luz piloto, LED o una luz de torre andon: se reconoce por su color (y si parpadea)"),
@@ -291,7 +309,21 @@ class SetupDialog(QDialog):
             b.setToolTip(tip)
             b.clicked.connect(slot)
             r2b.addWidget(b)
-        lay.addLayout(r2b)
+        phys.addLayout(r2b)
+        r2c = QHBoxLayout()
+        for text, slot, tip in (
+                ("+ Número (OCR)", lambda: self._new_var("actual"), "Display o pantalla con números legibles por OCR"),
+                ("+ Texto (OCR)", lambda: self._new_var("text"), "Texto legible por OCR (p. ej. una etiqueta o mensaje)"),
+                ("+ Selector por imagen", lambda: self._new_var("selector"),
+                 "Interruptor o perilla: se reconoce su posición por imagen")):
+            b = QPushButton(text)
+            b.setToolTip(tip)
+            b.clicked.connect(slot)
+            r2c.addWidget(b)
+        r2c.addStretch()
+        phys.addLayout(r2c)
+        lay.addWidget(self.row_phys)
+        self.row_phys.setVisible(False)
         r3 = QHBoxLayout()
         for text, slot in (("Crear serie…", self._series), ("Duplicar", self._duplicate), ("Eliminar", self._delete),
                            ("🧠 Entrenar comportamiento…", self._train_behavior),
@@ -629,7 +661,36 @@ class SetupDialog(QDialog):
         src = self.cmb_source.currentData() or SCREEN
         self.set_source(src)
 
+    def _section_changed(self, index: int) -> None:
+        section = "phys" if index == 1 else "hmi"
+        if section == self.section:
+            return
+        self.section = section
+        self.row_pages.setVisible(section == "hmi")
+        self.row_hmi.setVisible(section == "hmi")
+        self.row_phys.setVisible(section == "phys")
+        self._current_var = self._current_page = None
+        self.stack.setCurrentIndex(0)
+        if section == "hmi":
+            self.set_source(SCREEN)
+        elif self.config.cameras:
+            if self.source == SCREEN:
+                self.set_source(self.config.cameras[0].id)
+        else:
+            self._hint(tr("Agrega una cámara con «📹 Cámaras…» para leer indicadores físicos."), strong=True)
+        self._refresh_tree()
+
     def set_source(self, src: str, capture: bool = True) -> None:
+        want = "hmi" if src == SCREEN else "phys"
+        if getattr(self, "section", want) != want:  # la fuente decide la sección
+            self.section_bar.blockSignals(True)
+            self.section_bar.setCurrentIndex(0 if want == "hmi" else 1)
+            self.section_bar.blockSignals(False)
+            self.section = want
+            self.row_pages.setVisible(want == "hmi")
+            self.row_hmi.setVisible(want == "hmi")
+            self.row_phys.setVisible(want == "phys")
+            self._refresh_tree()
         if src == self.source and self.frame is not None:
             return
         self.source = src
@@ -776,10 +837,12 @@ class SetupDialog(QDialog):
         bold = QFont()
         bold.setBold(True)
         nodes: dict[Optional[str], QTreeWidgetItem] = {}
+        phys = self.section == "phys"
         none = QTreeWidgetItem(["Siempre visible (sin pestaña)", "", ""])
         none.setData(0, ROLE, ("page", NO_PAGE))
         none.setFont(0, bold)
-        self.tree.addTopLevelItem(none)
+        if not phys:
+            self.tree.addTopLevelItem(none)
         nodes[None] = none
 
         def add_page(p: Page, parent_item: Optional[QTreeWidgetItem]):
@@ -792,9 +855,13 @@ class SetupDialog(QDialog):
             for c in self.config.children(p.id):
                 add_page(c, it)
 
-        for p in self.config.children(None):
+        for p in (self.config.children(None) if not phys else []):
             add_page(p, None)
-        for c in self.config.cameras:
+        if phys and not self.config.cameras:
+            it = QTreeWidgetItem([tr("Sin cámaras: agrega una con «📹 Cámaras…»"), "", ""])
+            it.setData(0, ROLE, ("info", ""))
+            self.tree.addTopLevelItem(it)
+        for c in (self.config.cameras if phys else []):
             it = QTreeWidgetItem([f"📹 {c.name}", tr("cámara"), c.id])
             it.setData(0, ROLE, ("cam", c.id))
             it.setFont(0, bold)
@@ -805,7 +872,11 @@ class SetupDialog(QDialog):
         for v in self.config.variables:
             if v.kind == "setpoint" and v.id in linked_sp:
                 continue  # se muestra bajo su medición
+            if v.on_camera != phys:
+                continue  # está en la otra sección
             parent = nodes.get(("cam", v.source), none) if v.on_camera else nodes.get(v.page, none)
+            if parent is None:
+                continue
             it = self._var_item(v)
             parent.addChild(it)
             if v.kind == "actual" and v.setpoint_var:
@@ -813,10 +884,14 @@ class SetupDialog(QDialog):
                 if sp:
                     it.addChild(self._var_item(sp))
                     it.setExpanded(True)
+        seen = getattr(self, "_seen_nodes", set())
         for it in self._all_items():
             key = it.data(0, ROLE)
             if key[0] in ("page", "cam"):
-                it.setExpanded(first or key in expanded)
+                # abiertos la primera vez que aparecen; después se respeta lo que el usuario cerró
+                it.setExpanded(first or key in expanded or key not in seen)
+                seen.add(key)
+        self._seen_nodes = seen
         self.tree.blockSignals(False)
         self._refresh_combos()
         if select:
@@ -843,6 +918,12 @@ class SetupDialog(QDialog):
         return out
 
     def _select_key(self, key: tuple[str, str]) -> None:
+        if key[0] == "var":  # la variable puede estar en la otra sección (HMI / indicadores físicos)
+            v = self.config.variable(key[1])
+            if v is not None and v.screen and v.on_camera != (self.section == "phys"):
+                self.set_source(v.source)
+        elif key[0] == "cam" and self.section != "phys":
+            self.set_source(key[1])
         for it in self._all_items():
             if it.data(0, ROLE) == key:
                 self.tree.setCurrentItem(it)
