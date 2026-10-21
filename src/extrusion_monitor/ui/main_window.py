@@ -90,14 +90,16 @@ class TrendPanel(QWidget):
         self.placeholder = QLabel("Marca la casilla de una variable para graficar su tendencia.")
         self.placeholder.setAlignment(Qt.AlignCenter)
         self.layout_.addWidget(self.placeholder)
+        from .resizable import ResizableStack
+        self.stack = ResizableStack(min_h=150)  # alto de cada gráfica ajustable con el ratón
+        self.layout_.addWidget(self.stack, 1)
 
     def set_variables(self, items: list[tuple[str, str]]) -> None:
         wanted = [vid for vid, _ in items]
         for vid in list(self.plots):
             if vid not in wanted:
                 w = self.plots.pop(vid)["widget"]
-                self.layout_.removeWidget(w)
-                w.deleteLater()
+                self.stack.remove(w)
         for vid, title in items:
             if vid in self.plots:
                 continue
@@ -143,7 +145,7 @@ class TrendPanel(QWidget):
             mark.setVisible(False)
             w.addItem(mark, ignoreBounds=True)
             lines["mark"] = mark
-            self.layout_.addWidget(w)
+            self.stack.add(w)
             self.plots[vid] = {"widget": w, "curve": curve, "sp": sp_curve, "lines": lines,
                                "proj": proj, "proj_lo": proj_lo, "proj_hi": proj_hi, "eta": eta, "cap": capt}
             self._apply_marker(self.plots[vid])
@@ -278,6 +280,7 @@ class MainWindow(QMainWindow):
         from .supervisor import SupervisorGate
         self.gate = SupervisorGate(ctx.workspace.home, self)  # acciones que piden un supervisor (opcional)
         self._build_ui()
+        self._guard_controls()
         self._update_session()
         self._restore_view_controls()
         self.rebuild_table()
@@ -402,6 +405,11 @@ class MainWindow(QMainWindow):
         self.act_tour_pause = QAction("⏸ Pausar recorridos", self, checkable=True)
         self.act_tour_pause.setToolTip("Detiene los clics automáticos en el HMI (se siguen leyendo los datos visibles)")
         self.act_tour_pause.toggled.connect(self._tour_pause)
+        from .wheel_lock import lock as wheel_lock
+        self.act_wheel = QAction("🔒 Bloquear zoom de las gráficas con la rueda del ratón", self, checkable=True)
+        self.act_wheel.setChecked(bool(self.ctx.workspace.load_state().get("ui", {}).get("lock_wheel", False)))
+        wheel_lock().enabled = self.act_wheel.isChecked()
+        self.act_wheel.toggled.connect(self._wheel_toggled)
         self.act_top = QAction("📌 Siempre visible", self, checkable=True)
         self.act_top.toggled.connect(self._always_on_top)
         self._tour_menu = QMenu("⟳ Ejecutar recorrido ahora", self)
@@ -484,6 +492,7 @@ class MainWindow(QMainWindow):
             act.triggered.connect(lambda _=False, key=key: self.show_page(key))
             self.addAction(act)
         m.addAction(self.act_top)
+        m.addAction(self.act_wheel)
         act = m.addAction("Pantalla completa", self._toggle_fullscreen)
         act.setShortcut("F11")
         act = m.addAction("▭ Minimizar a dock", self.minimize_to_dock)
@@ -675,6 +684,18 @@ class MainWindow(QMainWindow):
         self._login_dlg = dlg
         dlg.open()
 
+    def _guard_controls(self) -> None:
+        """Controles protegidos: sin sesión de supervisor, un clic muestra el aviso (con opción de iniciar sesión)."""
+        g = self.gate.guard
+        g(self.cmb_recipe, "recipes")
+        g(self.chk_auto, "recipes")
+        g(self.home.btn_custom, "charts")
+        g(self.stats_panel.lst, "analysis")
+        g(self.corr_panel.lst, "analysis")
+        g(self.corr_panel.cmb_x, "analysis")
+        g(self.corr_panel.cmb_y, "analysis")
+        g(self.behavior_panel.cmb, "analysis")
+
     def _session_clicked(self) -> None:
         if self.gate.active():
             self.gate.end()
@@ -693,10 +714,6 @@ class MainWindow(QMainWindow):
         else:
             self.btn_session.setText(tr("🔒 Supervisor"))
             self.btn_session.setToolTip(tr("Iniciar la sesión de supervisor para hacer cambios protegidos"))
-        recipes = not self.gate.locked("recipes")
-        for w in (self.cmb_recipe, self.chk_auto, self.act_auto):
-            w.setEnabled(recipes)
-        self.home.btn_custom.setEnabled(not self.gate.locked("charts"))
 
     def _denied(self, reason: str) -> None:
         """Acción protegida sin sesión de supervisor: no se hace; solo se avisa."""
@@ -1596,6 +1613,14 @@ class MainWindow(QMainWindow):
         self.problems_page.timer.stop()
 
     # --- idioma y tema ------------------------------------------------------------
+    def _wheel_toggled(self, on: bool) -> None:
+        """Rueda del ratón sobre las gráficas: zoom (normal) o desplazar la página (bloqueado). Se recuerda."""
+        from .wheel_lock import lock as wheel_lock
+        wheel_lock().enabled = on
+        state = self.ctx.workspace.load_state()
+        state["ui"] = {**state.get("ui", {}), "lock_wheel": on}
+        self.ctx.workspace.save_state(state)
+
     def _set_ui_pref(self, key: str, value: str) -> None:
         state = self.ctx.workspace.load_state()
         ui = dict(state.get("ui", {}))

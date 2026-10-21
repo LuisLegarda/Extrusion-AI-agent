@@ -1089,6 +1089,15 @@ EN: dict[str, str] = {
     "empleado y contraseña.":
         "To require a supervisor sign-in, at least one active supervisor needs an employee number and "
         "a password.",
+    # --- gráficas y aviso de supervisor ---
+    "Variables de SPC y correlación y modelo de estabilidad mostrado":
+        "SPC and correlation variables and the stability model shown",
+    "Se requiere supervisor": "Supervisor required",
+    "Para modificar esto se requiere la sesión de un supervisor.": "A supervisor session is required to change this.",
+    "🔓 Iniciar sesión de supervisor": "🔓 Supervisor sign-in",
+    "Arrastra para cambiar el alto de la gráfica (doble clic: alto automático)":
+        "Drag to change the chart height (double-click: automatic height)",
+    "🔒 Bloquear zoom de las gráficas con la rueda del ratón": "🔒 Lock chart zoom with the mouse wheel",
 }
 
 # Textos con valores: la clave es la plantilla en español («{}» = valor) y el resultado su traducción.

@@ -78,6 +78,7 @@ class SupervisorGate(QObject):
         self.user: Optional[str] = None
         self.until = 0.0
         self.ask: Callable[[Personnel, str], Optional[str]] = self._ask  # se reemplaza en las pruebas
+        self.offer: Callable[[str], bool] = self._offer  # aviso «se requiere supervisor» con opción de iniciar sesión
 
     def people(self) -> Personnel:
         return Personnel.load(self.home)
@@ -114,8 +115,31 @@ class SupervisorGate(QObject):
         if self.active():
             self.until = self.clock() + 60 * lg.session_min  # cada uso alarga la sesión
             return True
-        self.denied.emit(PROTECTABLE.get(key, key))
+        reason = PROTECTABLE.get(key, key)
+        self.denied.emit(reason)
+        if self.offer(reason) and self.login():  # «Iniciar sesión de supervisor» en el mismo aviso
+            return True
         return False
+
+    def _offer(self, reason: str) -> bool:
+        from PySide6.QtWidgets import QMessageBox
+        box = QMessageBox(self.parent_widget)
+        box.setIcon(QMessageBox.Warning)
+        box.setWindowTitle(tr("Se requiere supervisor"))
+        box.setText(tr("Para modificar esto se requiere la sesión de un supervisor."))
+        box.setInformativeText(tr(reason))
+        login = box.addButton(tr("🔓 Iniciar sesión de supervisor"), QMessageBox.AcceptRole)
+        box.addButton(tr("Cancelar"), QMessageBox.RejectRole)
+        box.setDefaultButton(login)
+        box.exec()
+        return box.clickedButton() is login
+
+    def guard(self, widget, key: str, keys: bool = True) -> None:
+        """Clic (o tecla) en un control protegido sin sesión: se muestra el aviso en lugar de abrir o cambiar."""
+        target = widget.viewport() if hasattr(widget, "viewport") else widget
+        target.installEventFilter(_Guard(self, key, keys, target))
+        if target is not widget and keys:
+            widget.installEventFilter(_Guard(self, key, keys, widget))
 
     def login(self) -> bool:
         """Botón 🔒 Supervisor de la barra superior."""
@@ -128,3 +152,24 @@ class SupervisorGate(QObject):
     def _ask(self, people: Personnel, reason: str) -> Optional[str]:
         dlg = SupervisorDialog(people, reason, self.parent_widget)
         return dlg.person.name if dlg.exec() and dlg.person is not None else None
+
+
+class _Guard(QObject):
+    def __init__(self, gate: SupervisorGate, key: str, keys: bool, parent):
+        super().__init__(parent)
+        self.gate, self.key, self.keys = gate, key, keys
+
+    def eventFilter(self, obj, event) -> bool:
+        from PySide6.QtCore import QEvent, Qt
+        et = event.type()
+        if et in (QEvent.MouseButtonPress, QEvent.MouseButtonDblClick):
+            pass
+        elif et == QEvent.KeyPress and self.keys and event.key() not in (Qt.Key_Tab, Qt.Key_Backtab, Qt.Key_Up,
+                                                                       Qt.Key_Down, Qt.Key_PageUp, Qt.Key_PageDown):
+            pass
+        else:
+            return False
+        if not self.gate.locked(self.key):
+            return False
+        self.gate.allow(self.key)  # aviso; si inicia sesión, el siguiente clic ya funciona
+        return True

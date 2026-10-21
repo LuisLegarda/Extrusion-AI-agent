@@ -273,6 +273,7 @@ def test_personnel_dialog_shifts_and_passwords(ctx, monkeypatch):
 
 
 def test_supervisor_lock_blocks_without_session(ctx, monkeypatch):
+    from PySide6.QtCore import Qt
     from PySide6.QtWidgets import QApplication
 
     from extrusion_monitor.personnel import LoginSettings, Person, Personnel, hash_password
@@ -281,18 +282,26 @@ def test_supervisor_lock_blocks_without_session(ctx, monkeypatch):
     from extrusion_monitor.ui.supervisor import SupervisorDialog
     home = ctx.workspace.home
     win = MainWindow(ctx)
-    win.gate.ask = lambda people, reason: pytest.fail("no debe pedir sesión: solo negar")
+    win.gate.ask = lambda people, reason: pytest.fail("no debe pedir sesión sin que se elija en el aviso")
+    offers = []
+    win.gate.offer = lambda reason: offers.append(reason) and False  # aviso: «Cancelar»
     assert win.gate.allow("recipes")  # sin protección: todo como antes
     assert not win.btn_session.isVisibleTo(win)
     Personnel([Person("Luis", badge="100"), Person("Ana", "supervisor", "200", password=hash_password("clave1"))],
-              login=LoginSettings(protect=["recipes", "setup", "charts"], session_min=10)).save(home)
+              login=LoginSettings(protect=["recipes", "setup", "charts", "analysis"], session_min=10)).save(home)
     win._update_session()
     denied = []
     win.gate.denied.connect(denied.append)
-    assert not win.gate.allow("recipes") and denied
+    assert not win.gate.allow("recipes") and denied and offers  # se muestra el aviso
     assert win.gate.allow("delete")  # no está en la lista protegida
-    # sin sesión: el selector de receta y «Personalizar tablero» quedan deshabilitados
-    assert not win.cmb_recipe.isEnabled() and not win.chk_auto.isEnabled() and not win.home.btn_custom.isEnabled()
+    # sin sesión: un clic en el selector de receta o en las listas de SPC muestra el aviso en lugar de abrirlos
+    from PySide6.QtCore import QPoint
+    from PySide6.QtTest import QTest
+    offers.clear()
+    QTest.mouseClick(win.cmb_recipe, Qt.LeftButton)
+    QTest.mouseClick(win.stats_panel.lst.viewport(), Qt.LeftButton, pos=QPoint(10, 10))
+    QTest.mouseClick(win.home.btn_custom, Qt.LeftButton)
+    assert len(offers) == 3
     assert win.btn_session.isVisibleTo(win) and "Supervisor" in win.btn_session.text()
     before = ctx.engine.state.recipe
     other = next(i for i in range(win.cmb_recipe.count()) if win.cmb_recipe.itemData(i) != before)
@@ -309,7 +318,7 @@ def test_supervisor_lock_blocks_without_session(ctx, monkeypatch):
     win.gate.ask = lambda people, reason: "Ana"
     win._session_clicked()
     QApplication.processEvents()
-    assert win.gate.active() and "Ana" in win.btn_session.text() and win.cmb_recipe.isEnabled()
+    assert win.gate.active() and "Ana" in win.btn_session.text()
     assert win.gate.allow("recipes")
     t[0] += 9 * 60
     assert win.gate.allow("charts")  # el uso alarga la sesión
@@ -377,4 +386,15 @@ def test_steady_y_range_sidebar_and_search_focus(ctx):
     for nav in (win.nav, win.nav2):
         assert nav.verticalScrollBarPolicy() == Qt.ScrollBarAlwaysOff
         assert nav.horizontalScrollBarPolicy() == Qt.ScrollBarAlwaysOff
+    win._detach()
+
+
+def test_login_from_the_warning_allows_the_change(ctx):
+    from extrusion_monitor.personnel import Person, Personnel, hash_password
+    from extrusion_monitor.ui.main_window import MainWindow
+    Personnel([Person("Ana", "supervisor", "200", password=hash_password("clave1"))]).save(ctx.workspace.home)
+    win = MainWindow(ctx)
+    win.gate.offer = lambda reason: True  # «Iniciar sesión de supervisor» en el aviso
+    win.gate.ask = lambda people, reason: "Ana"
+    assert win.gate.allow("analysis") and win.gate.user == "Ana"
     win._detach()

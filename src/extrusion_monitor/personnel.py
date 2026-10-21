@@ -26,13 +26,15 @@ PROTECTABLE = {
     "recipes": "Cambiar la receta activa, editar recetas y límites",
     "setup": "Variables, pantallas, recorridos, cámaras y configuración del control (Configurar receta)",
     "charts": "Tablero de Inicio y dock (indicadores y gráficos)",
+    "analysis": "Variables de SPC y correlación y modelo de estabilidad mostrado",
     "control": "Activar el control automático o cambiar su modo",
     "catalogs": "Causas de paro, defectos y entrenamiento de comportamientos",
     "delete": "Eliminar capturas de paros y defectos",
     "station": "Identidad de la estación, exportación y servidor",
     "stop": "Detener el monitoreo y cerrar el programa",
 }
-DEFAULT_PROTECT = ["personnel", "recipes", "setup", "charts"]
+DEFAULT_PROTECT = ["personnel", "recipes", "setup", "charts", "analysis"]
+PROTECT_VERSION = 2  # al agregar acciones protegibles nuevas que van protegidas por defecto
 
 
 def hash_password(password: str, salt: Optional[bytes] = None) -> str:
@@ -138,6 +140,8 @@ class Personnel:
         lg = data.get("login") or {}
         protect = lg.get("protect")
         protect = [k for k in protect if k in PROTECTABLE] if isinstance(protect, list) else list(DEFAULT_PROTECT)
+        if int(lg.get("protect_version", 1) or 1) < 2 and "analysis" not in protect:
+            protect.append("analysis")  # nueva en la versión 2: protegida por defecto
         try:
             session_min = max(1, min(240, int(lg.get("session_min", 10))))
         except (TypeError, ValueError):
@@ -152,7 +156,7 @@ class Personnel:
         f.parent.mkdir(parents=True, exist_ok=True)
         tmp = f.with_suffix(".json.tmp")
         data = {"people": [asdict(p) for p in self.people], "shifts": [asdict(s) for s in self.shifts],
-                "login": asdict(self.login)}
+                "login": {**asdict(self.login), "protect_version": PROTECT_VERSION}}
         tmp.write_text(json.dumps(data, ensure_ascii=False, indent=1), encoding="utf-8")
         tmp.replace(f)
 

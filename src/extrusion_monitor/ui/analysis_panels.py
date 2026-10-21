@@ -9,7 +9,7 @@ import pyqtgraph as pg
 from PySide6.QtCore import Qt
 from PySide6.QtCore import Signal
 from PySide6.QtWidgets import (
-    QComboBox, QFrame, QHBoxLayout, QLabel, QListWidget, QListWidgetItem, QScrollArea, QSplitter, QTableWidget,
+    QComboBox, QFrame, QHBoxLayout, QLabel, QListWidget, QListWidgetItem, QSplitter, QTableWidget,
     QVBoxLayout, QWidget,
 )
 
@@ -68,20 +68,22 @@ class StatsPanel(QWidget):
         ll.addWidget(QLabel(f"<b>{tr('Variables para SPC')}</b> {tr('(máx. {n})', n=MAX_SPC)}"))
         self.lst = QListWidget()
         self.lst.setMaximumWidth(280)
+        self.lst.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        self.lst.setTextElideMode(Qt.ElideRight)
         self.lst.itemChanged.connect(self._toggled)
         ll.addWidget(self.lst, 1)
         split.addWidget(left)
-        self.area = QScrollArea()
-        self.area.setWidgetResizable(True)
-        self.inner = QWidget()
-        self.inner_lay = QVBoxLayout(self.inner)
+        from .resizable import ResizableStack
+        right = QWidget()
+        rl = QVBoxLayout(right)
+        rl.setContentsMargins(0, 0, 0, 0)
         self.placeholder = QLabel(tr("Marca una variable para ver su distribución, capacidad (Cp, Cpk, Pp, Ppk) "
                                      "y carta de control."))
         self.placeholder.setAlignment(Qt.AlignCenter)
-        self.inner_lay.addWidget(self.placeholder)
-        self.inner_lay.addStretch()
-        self.area.setWidget(self.inner)
-        split.addWidget(self.area)
+        rl.addWidget(self.placeholder)
+        self.area = ResizableStack(min_h=260)  # alto de cada tarjeta ajustable con el ratón
+        rl.addWidget(self.area, 1)
+        split.addWidget(right)
         split.setSizes([240, 1100])
         lay.addWidget(split)
         self.cards: dict[str, SpcCard] = {}
@@ -130,18 +132,16 @@ class StatsPanel(QWidget):
 
     def _sync_cards(self) -> None:
         for vid in [v for v in self.cards if v not in self.selected]:
-            card = self.cards.pop(vid)
-            card.setParent(None)
-            card.deleteLater()
+            self.area.remove(self.cards.pop(vid))
         for vid in self.selected:
             if vid not in self.cards:
                 v = self.config.variable(vid)
                 card = SpcCard(self.engine, vid, self.config.var_label(v) + (f" [{v.unit}]" if v.unit else ""))
                 self.cards[vid] = card
-        for vid in self.selected:  # en el orden de la lista
-            self.inner_lay.removeWidget(self.cards[vid])
-            self.inner_lay.insertWidget(self.inner_lay.count() - 1, self.cards[vid])
+        for i, vid in enumerate(self.selected):  # en el orden de la lista
+            self.area.insert(i, self.cards[vid])
         self.placeholder.setVisible(not self.cards)
+        self.area.setVisible(bool(self.cards))
 
     def refresh(self, snap: Optional[Snapshot]) -> None:
         for card in self.cards.values():
@@ -156,7 +156,7 @@ class SpcCard(QFrame):
         self.engine = engine
         self.vid = vid
         self.setFrameShape(QFrame.StyledPanel)
-        self.setMinimumHeight(420)
+        self.setMinimumHeight(240)
         lay = QVBoxLayout(self)
         t = QLabel(f"<b style='font-size:14px'>{title}</b>")
         lay.addWidget(t)
