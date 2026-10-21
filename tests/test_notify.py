@@ -90,7 +90,7 @@ def test_stop_resume_scrap_supervisor_monitor_and_quiet(tmp_path):
     def speed(v, ts):
         st = NS(reading=NS(value=v), fresh=True, var=var, trend=None)
         return snap(ts, statuses={"vel": st})
-    t0 = 10_000.0
+    t0 = time.time() - 3600  # hora real: Windows no convierte fechas cercanas a 1970 a hora local
     n.on_snapshot(speed(0.0, t0))
     n.on_snapshot(speed(0.0, t0 + 4 * 60))
     n.flush()
