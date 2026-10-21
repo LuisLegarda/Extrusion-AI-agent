@@ -10,6 +10,14 @@ Numeración `MAYOR.MENOR.PARCHE`:
 
 ## [Sin publicar]
 
+### Detalles de interfaz (rama `fix/detalles-interfaz`)
+- Al abrir el programa el buscador ya no queda seleccionado (se activa con un clic o Ctrl+K).
+- La protección con supervisor se activa sola en cuanto hay un supervisor con número de empleado y contraseña
+  (ya no hay casilla para encenderla): sin usuario o con un operador en turno no se permiten los cambios.
+- Barra lateral sin barra de desplazamiento.
+- Tendencias: la escala Y ya no se reajusta con cada lectura; crece si los datos se salen y solo se reduce
+  cuando sobra mucho espacio (p. ej. al salir un pico del rango mostrado).
+
 ### Turnos y confirmación del usuario (rama `feature/turnos`)
 - Configuración → Personal tiene tres pestañas: *Personas* (con turno asignado y contraseña), *Turnos* (nombre y
   horario; los que cruzan la medianoche, p. ej. 22:00–06:00, también; se pueden crear desde los inicios del OEE)

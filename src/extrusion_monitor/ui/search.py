@@ -354,6 +354,7 @@ class SearchBox(QLineEdit):
         super().__init__(parent)
         self.win = win
         self.setObjectName("search")
+        self.setFocusPolicy(Qt.ClickFocus)  # al abrir el programa no queda seleccionada (Ctrl+K o un clic)
         self.setPlaceholderText(tr("Buscar variable, acción, paro u hora…  (Ctrl+K)"))
         self.setClearButtonEnabled(True)
         self.addAction(icons.icon("search", theme.c("muted")), QLineEdit.LeadingPosition)

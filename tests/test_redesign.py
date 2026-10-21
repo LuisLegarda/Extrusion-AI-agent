@@ -112,7 +112,9 @@ def test_search_box_variables_actions_and_time(ctx, monkeypatch):
     win._detach()
 
 
-def test_crew_in_top_bar_and_personnel_dialog(ctx):
+def test_crew_in_top_bar_and_personnel_dialog(ctx, monkeypatch):
+    from PySide6.QtWidgets import QMessageBox
+    monkeypatch.setattr(QMessageBox, "question", lambda *a, **k: QMessageBox.Yes)  # «guardar de todos modos»
     from extrusion_monitor.personnel import crew
     from extrusion_monitor.ui.main_window import MainWindow
     from extrusion_monitor.ui.personnel_dialog import PersonnelDialog
@@ -262,7 +264,7 @@ def test_personnel_dialog_shifts_and_passwords(ctx, monkeypatch):
     dlg.set_password(0, "secreta")
     dlg.chk_auto.setChecked(True)
     dlg.rb["badge_password"].setChecked(True)
-    assert dlg.problems(dlg.personnel()) == []
+    assert [m for m in dlg.problems(dlg.personnel()) if "sin proteger" not in m] == []
     dlg.accept()
     p = Personnel.load(home)
     rosa = p.find("Rosa")
@@ -283,7 +285,7 @@ def test_supervisor_lock_blocks_without_session(ctx, monkeypatch):
     assert win.gate.allow("recipes")  # sin protección: todo como antes
     assert not win.btn_session.isVisibleTo(win)
     Personnel([Person("Luis", badge="100"), Person("Ana", "supervisor", "200", password=hash_password("clave1"))],
-              login=LoginSettings(lock=True, protect=["recipes", "setup", "charts"], session_min=10)).save(home)
+              login=LoginSettings(protect=["recipes", "setup", "charts"], session_min=10)).save(home)
     win._update_session()
     denied = []
     win.gate.denied.connect(denied.append)
@@ -342,20 +344,37 @@ def test_supervisor_lock_blocks_without_session(ctx, monkeypatch):
     win._detach()
 
 
-def test_lock_needs_a_supervisor_who_can_log_in(ctx, monkeypatch):
+def test_protection_turns_on_with_the_first_supervisor(ctx):
     from extrusion_monitor.personnel import Personnel
     from extrusion_monitor.ui.personnel_dialog import C_ROLE, PersonnelDialog
     home = ctx.workspace.home
     dlg = PersonnelDialog(home, [])
     dlg._new("operator")
     assert dlg.table.cellWidget(0, C_ROLE).currentData() == "operator"  # operador por defecto
-    dlg.chk_lock.setChecked(True)
-    assert dlg.blocking(dlg.personnel())
+    p = dlg.personnel()
+    assert not p.protects("recipes") and any("sin proteger" in m for m in dlg.problems(p))  # aún sin supervisor
     dlg.table.cellWidget(0, C_ROLE).setCurrentIndex(dlg.table.cellWidget(0, C_ROLE).findData("supervisor"))
     dlg.table.item(0, 2).setText("9")
     dlg.set_password(0, "segura")
-    assert not dlg.blocking(dlg.personnel())
-    assert dlg.personnel().login.protects("personnel") and dlg.personnel().login.protects("recipes")
-    assert not dlg.personnel().login.protects("stop")
+    p = dlg.personnel()
+    assert p.protects("personnel") and p.protects("recipes") and p.protects("setup") and p.protects("charts")
+    assert not p.protects("stop")
     dlg.accept()
-    assert Personnel.load(home).login.lock
+    assert Personnel.load(home).protects("recipes")
+
+
+def test_steady_y_range_sidebar_and_search_focus(ctx):
+    from PySide6.QtCore import Qt
+
+    from extrusion_monitor.ui.common import steady_range
+    from extrusion_monitor.ui.main_window import MainWindow
+    r = steady_range(None, (0.0, 10.0))
+    assert steady_range(r, (1.0, 9.0)) == r  # ruido dentro de la escala: no se mueve
+    assert steady_range(r, (-1.0, 9.0)) == (-1.0, 10.0)  # se sale: crece de inmediato
+    assert steady_range(r, (4.0, 6.0)) == (4.0, 6.0)  # ya no hace falta tanta escala: se reduce
+    win = MainWindow(ctx)
+    assert win.search.focusPolicy() == Qt.ClickFocus  # al abrir no queda seleccionado el buscador
+    for nav in (win.nav, win.nav2):
+        assert nav.verticalScrollBarPolicy() == Qt.ScrollBarAlwaysOff
+        assert nav.horizontalScrollBarPolicy() == Qt.ScrollBarAlwaysOff
+    win._detach()

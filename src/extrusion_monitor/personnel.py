@@ -91,12 +91,12 @@ class Shift:
 class LoginSettings:
     auto_shift: bool = False  # al empezar cada turno, pedir quién entra
     confirm: str = "none"  # none | badge | badge_password (también al elegir usuario en la barra superior)
-    lock: bool = False  # ciertas acciones requieren el inicio de sesión de un supervisor
     protect: list[str] = field(default_factory=lambda: list(DEFAULT_PROTECT))
     session_min: int = 10  # minutos que dura la sesión de supervisor sin usarse
 
-    def protects(self, key: str) -> bool:
-        return self.lock and (key == "personnel" or key in self.protect)
+    def listed(self, key: str) -> bool:
+        """La acción está en la lista protegida (la de personal siempre)."""
+        return key == "personnel" or key in self.protect
 
 
 @dataclass
@@ -144,7 +144,7 @@ class Personnel:
             session_min = 10
         login = LoginSettings(bool(lg.get("auto_shift", False)),
                               lg.get("confirm") if lg.get("confirm") in CONFIRM_MODES else "none",
-                              bool(lg.get("lock", False)), protect, session_min)
+                              protect, session_min)
         return cls(people, shifts, login)
 
     def save(self, home: Path) -> None:
@@ -162,6 +162,10 @@ class Personnel:
 
     def find(self, name: str) -> Optional[Person]:
         return next((p for p in self.people if p.name == name), None)
+
+    def protects(self, key: str) -> bool:
+        """Protegida: en la lista y hay al menos un supervisor que puede iniciar sesión (si no, nadie podría)."""
+        return self.login.listed(key) and bool(self.supervisors_ready())
 
     def supervisors_ready(self) -> list[Person]:
         """Supervisores activos que pueden iniciar sesión (número de empleado y contraseña)."""
