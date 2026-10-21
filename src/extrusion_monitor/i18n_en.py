@@ -1123,6 +1123,16 @@ EN: dict[str, str] = {
     "☰ Tabla": "☰ Table",
     "Clic derecho en un mosaico: gráfico, tamaño y tiempo · doble clic: Tendencias":
         "Right-click a tile: chart, size and time · double-click: Trends",
+    # --- dashboard global con el estilo del monitor ---
+    "Buscar línea, área o estado…": "Search line, area or status…",
+    "Líneas con alarma o aviso (clic: mostrar solo esas)": "Lines with alarm or warning (click: show only those)",
+    "Reconocer avisos": "Acknowledge alerts",
+    "Modo TV": "TV mode",
+    "○ Carpeta de datos sin elegir": "○ Data folder not chosen",
+    "● Sin acceso a la carpeta de datos": "● No access to the data folder",
+    "● Carpeta de datos conectada · {n} líneas": "● Data folder connected · {n} lines",
+    "No se puede leer la carpeta de datos: revisa la red o los permisos (⚙ Configuración).":
+        "Cannot read the data folder: check the network or permissions (⚙ Settings).",
 }
 
 # Textos con valores: la clave es la plantilla en español («{}» = valor) y el resultado su traducción.

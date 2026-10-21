@@ -10,6 +10,12 @@ Numeración `MAYOR.MENOR.PARCHE`:
 
 ## [Sin publicar]
 
+### Dashboard global con el estilo del monitor (rama `feature/dashboard-estilo`)
+- Barra lateral con logo, texto y línea de la estación (Líneas, Problemas de proceso, Reconocer avisos,
+  Exportar CSV, Modo TV, Configuración) y barra superior con buscador, filtro, orden y campana de alarmas.
+- Tarjetas de resumen con el estilo del monitor. La ruta de la carpeta de datos ya no se muestra: solo si está
+  conectada y cuántas líneas hay.
+
 ### Variables en vivo con mosaicos (rama `feature/variables-mosaicos`)
 - Variables en vivo muestra un mosaico por variable, agrupados por pantalla del HMI y con filtro: estado
   (OK / aviso / alarma / dato viejo), valor y unidad, referencia y desviación, tolerancia y calidad de lectura.
