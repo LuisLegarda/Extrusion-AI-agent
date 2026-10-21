@@ -139,6 +139,7 @@ QPushButton, QToolButton {{ padding: 5px 12px; background: {t['surface2']}; bord
                            border-radius: 4px; }}
 QPushButton:hover, QToolButton:hover {{ border-color: {t['accent']}; }}
 QPushButton:pressed {{ background: {t['selection']}; }}
+QPushButton:checked {{ background: {t['accent']}; color: {t['accent_text']}; border-color: {t['accent']}; }}
 QGroupBox {{ border: 1px solid {t['border']}; border-radius: 6px; margin-top: 10px; padding-top: 6px; }}
 QGroupBox::title {{ subcontrol-origin: margin; left: 8px; padding: 0 4px; color: {t['title']}; font-weight: bold; }}
 QLabel#banner {{ font-size: 18px; font-weight: bold; padding: 6px 14px; border-radius: 6px; color: #ffffff; }}

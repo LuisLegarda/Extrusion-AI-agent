@@ -10,6 +10,14 @@ Numeración `MAYOR.MENOR.PARCHE`:
 
 ## [Sin publicar]
 
+### Variables en vivo con mosaicos (rama `feature/variables-mosaicos`)
+- Variables en vivo muestra un mosaico por variable, agrupados por pantalla del HMI y con filtro: estado
+  (OK / aviso / alarma / dato viejo), valor y unidad, referencia y desviación, tolerancia y calidad de lectura.
+- Clic derecho en un mosaico: gráfico (valor con tendencia corta, gauge, barra con límites, gráfica de tiempo,
+  histograma), tamaño (1×1, 2×1, 2×2) y tiempo mostrado. Doble clic: graficar en Tendencias. Se guarda solo;
+  con la protección de supervisor, cambiarlo pide la sesión («Tablero y gráficos»).
+- La tabla anterior sigue disponible con el botón «☰ Tabla»; la vista elegida se recuerda.
+
 ### Gráficas y bloqueos (rama `feature/graficas-y-bloqueos`)
 - Acción protegida sin sesión de supervisor: aviso «Se requiere supervisor» con el botón para iniciar sesión ahí
   mismo (número de empleado y contraseña); al entrar, el cambio se permite.

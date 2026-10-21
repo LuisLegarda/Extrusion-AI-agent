@@ -322,6 +322,14 @@ class MainWindow(QMainWindow):
         self.table = VariableTree()
         self.table.quality_fn = lambda vid: self.engine.acquirer.quality(vid)
         self.table.plotToggled.connect(self._plot_toggled)
+        from .live_tiles import LivePage, LiveTilesView
+        self.live_tiles = LiveTilesView(self._series, quality=lambda vid: self.engine.acquirer.quality(vid),
+                                        allow=self.gate.allow)
+        self.live_tiles.changed.connect(self._live_prefs_changed)
+        self.live_tiles.open_trend.connect(self.search_plot)
+        self.live_page = LivePage(self.table, self.live_tiles)
+        self.live_page.set_mode(self._view.get("live_mode", "tiles"), emit=False)
+        self.live_page.modeChanged.connect(lambda _m: self._save_view())
 
         self.trends = TrendPanel()
         self.trends.cmb_range.currentIndexChanged.connect(self._replot)
@@ -378,7 +386,7 @@ class MainWindow(QMainWindow):
         self.problems_page.allow = self.gate.allow
 
         self.pages: dict[str, QWidget] = {}
-        for key, w in (("home", self.home), ("variables", self.table), ("trends", trends_page), ("kpi", self.kpi),
+        for key, w in (("home", self.home), ("variables", self.live_page), ("trends", trends_page), ("kpi", self.kpi),
                        ("problems", self.problems_page), ("control", self.control_page),
                        ("spc", self.stats_panel), ("corr", self.corr_panel), ("behavior", self.behavior_panel),
                        ("events", tabs), ("reports", self.reports_page)):
@@ -784,6 +792,9 @@ class MainWindow(QMainWindow):
 
     def search_live(self, vid: str) -> None:
         self.show_page("variables")
+        if self.live_page.mode == "tiles":
+            self.live_tiles.filter.setText(self.ctx.config.var_label(self.ctx.config.variable(vid)))
+            return
         select = getattr(self.table, "select_var", None)
         if select is not None:
             select(vid)
@@ -908,8 +919,8 @@ class MainWindow(QMainWindow):
             self.home.update_snapshot(snap, force=True)
         if self.stack.currentWidget() is self.pages.get("trends"):
             self._replot()
-        if snap is not None and self.stack.currentWidget() is self.table:
-            self._update_table(snap)
+        if snap is not None and self.stack.currentWidget() is self.live_page:
+            self.live_page.update_snapshot(snap)
 
     def _fill_recipe_menu(self) -> None:
         self._recipe_menu.clear()
@@ -976,6 +987,7 @@ class MainWindow(QMainWindow):
             self._plotted = [v.id for v in cfg.variables if v.measured and v.trend][:3]
         self._plotted = [vid for vid in self._plotted if cfg.variable(vid)]
         self.table.rebuild(cfg, self._plotted)
+        self.live_tiles.rebuild(cfg, self._view.get("live_tiles") or {})
         self.plot_list.blockSignals(True)
         self.plot_list.clear()
         for v in cfg.variables:
@@ -1091,8 +1103,13 @@ class MainWindow(QMainWindow):
             "auto_y": self.trends.chk_auto_y.isChecked(), "ctrl": self.trends.chk_ctrl.isChecked(),
             "spc": list(self.stats_panel.selected), "corr": self.corr_panel.selected_ids(),
             "corr_x": self.corr_panel.cmb_x.currentData(), "corr_y": self.corr_panel.cmb_y.currentData(),
-            "page": self.current_page() or self._view.get("page")})
+            "page": self.current_page() or self._view.get("page"), "live_mode": self.live_page.mode,
+            "live_tiles": self.live_tiles.prefs})
         self._view_timer.start(800)  # se agrupan los cambios seguidos en una sola escritura
+
+    def _live_prefs_changed(self, prefs: dict) -> None:
+        self._view["live_tiles"] = prefs
+        self._save_view()
 
     def _write_view(self) -> None:
         try:
@@ -1371,8 +1388,8 @@ class MainWindow(QMainWindow):
         # Solo se dibuja la página visible (no carga la PC con gráficas ocultas).
         if page is self.home:
             self.home.update_snapshot(snap)
-        if page is self.table:
-            self._update_table(snap)
+        if page is self.live_page:
+            self.live_page.update_snapshot(snap)
         if page is self.pages["trends"]:
             self._update_plots(snap)
         self._refresh_analysis()
