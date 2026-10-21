@@ -13,18 +13,19 @@ from pathlib import Path
 from typing import Optional
 
 import pyqtgraph as pg
-from PySide6.QtCore import Qt, QTimer, QUrl
+from PySide6.QtCore import QSize, Qt, QTimer, QUrl
 from PySide6.QtGui import QActionGroup, QBrush, QColor, QDesktopServices, QKeySequence, QShortcut
 from PySide6.QtWidgets import (
     QApplication, QComboBox, QFileDialog, QFrame, QGridLayout, QHBoxLayout, QHeaderView, QLabel, QLineEdit,
     QListWidget, QListWidgetItem, QMainWindow, QMenu, QMessageBox, QPushButton, QScrollArea, QSplitter, QTableWidget,
-    QTableWidgetItem, QTabWidget, QVBoxLayout, QWidget,
+    QTableWidgetItem, QTabWidget, QToolButton, QVBoxLayout, QWidget,
 )
 
 from .. import version_label
 from ..fleet import FleetReader, FleetSettings, LineState, load_fleet_settings, save_fleet_settings
 from ..i18n import LANGS, lang as i18n_lang, tr, translate_text
-from . import theme
+from . import icons, theme
+from .home_status import StatusTile
 from .fleet_tiles import (CONN_TEXT, LEVEL_KEYS, LineCard, blink_timer, card_metrics, fmt_age, period_since, severity,
                           trend_key)
 
@@ -56,20 +57,22 @@ def fmt_val(v: dict) -> str:
     return f"{x:.{d}f}" if isinstance(d, int) else f"{x:.4g}"
 
 
-class SummaryTile(QFrame):
-    def __init__(self, title: str):
-        super().__init__()
-        self.setObjectName("card")
-        lay = QVBoxLayout(self)
-        lay.setContentsMargins(10, 6, 10, 6)
-        t = QLabel(tr(title))
-        t.setStyleSheet(f"color:{theme.c('muted')};")
-        lay.addWidget(t)
-        self.val = QLabel("—")
-        lay.addWidget(self.val)
+class FleetTile(StatusTile):
+    """Tarjeta de resumen con el estilo del monitor (ícono, valor y descripción)."""
 
-    def set(self, text: str, color: Optional[str] = None) -> None:
-        self.val.setText(f"<span style='font-size:22px; color:{color or theme.c('text')}'><b>{text}</b></span>")
+    def __init__(self, key: str, icon: str, title: str, color_key: str):
+        super().__init__(key, icon, title, "", color_key)
+        self.setCursor(Qt.ArrowCursor)
+        self.sub.hide()
+        self.setFixedHeight(58)
+        self._base = theme.c(color_key)
+
+    @property
+    def val(self) -> QLabel:
+        return self.value
+
+    def set(self, text: str, color: Optional[str] = None) -> None:  # noqa: D401 (misma firma que antes)
+        super().set(text, "", color or self._base)
 
 
 class LineDetail(QWidget):
@@ -257,28 +260,34 @@ class FleetWindow(QMainWindow):
         self._page = 0
 
         central = QWidget()
-        root = QVBoxLayout(central)
-        self.top = QWidget()
+        outer = QHBoxLayout(central)
+        outer.setContentsMargins(0, 0, 0, 0)
+        outer.setSpacing(0)
+        self.sidebar = self._build_sidebar()
+        outer.addWidget(self.sidebar)
+        right = QWidget()
+        right.setObjectName("content")
+        root = QVBoxLayout(right)
+        root.setContentsMargins(12, 10, 12, 6)
+        root.setSpacing(8)
+        outer.addWidget(right, 1)
+
+        # Barra superior (como el monitor): buscador, filtro, orden y campana de alarmas
+        self.top = QFrame()
+        self.top.setObjectName("topbar")
         top = QHBoxLayout(self.top)
-        top.setContentsMargins(0, 0, 0, 0)
-        self.lbl_dir = QLabel()
-        top.addWidget(self.lbl_dir, 1)
-        for text, slot, tip in (("⚙ Configuración", self.open_setup, "Carpeta de datos, indicadores, áreas y avisos"),
-                                ("✔ Reconocer avisos", self.acknowledge_all, "Detiene el parpadeo de las tarjetas (Ctrl+K)"),
-                                ("⤓ Exportar CSV", self.export_csv, "Estado y OEE de todas las líneas"),
-                                ("📉 Problemas de proceso", self.open_problems,
-                                 "Pareto de paros y defectos capturados en las líneas, con descarga CSV"),
-                                ("📺 Modo TV (F11)", self.toggle_tv, "Pantalla completa con páginas que rotan")):
-            b = QPushButton(text)
-            b.setToolTip(tip)
-            b.clicked.connect(slot)
-            top.addWidget(b)
+        top.setContentsMargins(10, 6, 10, 6)
+        top.setSpacing(10)
         self.ed_search = QLineEdit()
-        self.ed_search.setPlaceholderText("Buscar línea…")
-        self.ed_search.setMinimumWidth(150)
-        self.ed_search.setMaximumWidth(220)
+        self.ed_search.setObjectName("search")
+        self.ed_search.setPlaceholderText(tr("Buscar línea, área o estado…"))
+        self.ed_search.setClearButtonEnabled(True)
+        self.ed_search.setFocusPolicy(Qt.ClickFocus)
+        self.ed_search.addAction(icons.icon("search", theme.c("muted")), QLineEdit.LeadingPosition)
+        self.ed_search.setMinimumWidth(280)
         self.ed_search.textChanged.connect(lambda _: self.refresh(rescan=False))
-        top.addWidget(self.ed_search)
+        top.addWidget(self.ed_search, 2)
+        top.addStretch(1)
         self.cmb_filter = QComboBox()
         for k, label in FILTERS:
             self.cmb_filter.addItem(label, k)
@@ -290,12 +299,22 @@ class FleetWindow(QMainWindow):
             self.cmb_sort.addItem(label, k)
         self.cmb_sort.currentIndexChanged.connect(lambda _: self.refresh(rescan=False))
         top.addWidget(self.cmb_sort)
+        self.btn_bell = QToolButton()
+        self.btn_bell.setObjectName("bell")
+        self.btn_bell.setIconSize(QSize(18, 18))
+        self.btn_bell.setToolButtonStyle(Qt.ToolButtonTextBesideIcon)
+        self.btn_bell.setIcon(icons.icon("events", theme.c("nav_icon")))
+        self.btn_bell.setToolTip(tr("Líneas con alarma o aviso (clic: mostrar solo esas)"))
+        self.btn_bell.clicked.connect(lambda: self.cmb_filter.setCurrentIndex(self.cmb_filter.findData("alarm")))
+        top.addWidget(self.btn_bell)
         root.addWidget(self.top)
 
         summary = QHBoxLayout()
-        self.tiles = {k: SummaryTile(t) for k, t in (
-            ("lines", "Líneas"), ("running", "En marcha"), ("stopped", "Detenidas"), ("alarm", "Con alarma"),
-            ("offline", "Sin comunicación"), ("oee", "OEE promedio (turno)"))}
+        summary.setSpacing(10)
+        self.tiles = {k: FleetTile(k, ic, t, ck) for k, ic, t, ck in (
+            ("lines", "variables", "Líneas", "accent"), ("running", "play", "En marcha", "good_text"),
+            ("stopped", "pause", "Detenidas", "critical"), ("alarm", "alert", "Con alarma", "critical"),
+            ("offline", "stop", "Sin comunicación", "neutral"), ("oee", "oee", "OEE promedio (turno)", "accent"))}
         for t in self.tiles.values():
             summary.addWidget(t)
         self.lbl_page = QLabel()
@@ -350,6 +369,51 @@ class FleetWindow(QMainWindow):
         self._set_dir_label()
         self.detail.show_line(None)
         QTimer.singleShot(0, self.refresh)
+
+    # --- barra lateral (como el monitor) -----------------------------------------------------
+    def _build_sidebar(self) -> QWidget:
+        from .branding import header_widget
+        side = QWidget()
+        side.setObjectName("sidebar")
+        side.setFixedWidth(236)
+        lay = QVBoxLayout(side)
+        lay.setContentsMargins(10, 14, 10, 10)
+        lay.addWidget(header_widget(self.settings_file.parent))
+        lay.addSpacing(12)
+        self.nav = QListWidget()
+        self.nav.setObjectName("nav")
+        self.nav.setFocusPolicy(Qt.NoFocus)
+        self.nav.setIconSize(QSize(18, 18))
+        self.nav.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        self.nav.setVerticalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        items = [("lines", "Líneas", "home", None), ("problems", "Problemas de proceso", "problems", self.open_problems),
+                 ("ack", "Reconocer avisos", "check", self.acknowledge_all),
+                 ("csv", "Exportar CSV", "reports", self.export_csv), ("tv", "Modo TV", "page", self.toggle_tv),
+                 ("setup", "Configuración", "setup", self.open_setup)]
+        self._nav_actions = {}
+        for key, label, ic, slot in items:
+            it = QListWidgetItem(tr(label))
+            it.setIcon(icons.icon(ic, theme.c("nav_icon"), theme.c("accent_text")))
+            it.setData(Qt.UserRole, key)
+            it.setSizeHint(QSize(0, 36))
+            self.nav.addItem(it)
+            self._nav_actions[key] = slot
+        self.nav.setFixedHeight(len(items) * 38 + 6)
+        self.nav.setCurrentRow(0)
+        self.nav.itemClicked.connect(self._nav_clicked)
+        lay.addWidget(self.nav)
+        lay.addStretch(1)
+        self.lbl_dir = QLabel()  # estado de la carpeta de datos (sin mostrar la ruta)
+        self.lbl_dir.setWordWrap(True)
+        self.lbl_dir.setStyleSheet(f"color:{theme.c('muted')}; font-size:11px;")
+        lay.addWidget(self.lbl_dir)
+        return side
+
+    def _nav_clicked(self, item) -> None:
+        slot = self._nav_actions.get(item.data(Qt.UserRole))
+        self.nav.setCurrentRow(0)  # «Líneas» es la vista; lo demás son acciones o ventanas
+        if slot is not None:
+            slot()
 
     # --- menús: archivo, vista, idioma y tema ------------------------------------------------
     def _build_menus(self) -> None:
@@ -460,8 +524,14 @@ class FleetWindow(QMainWindow):
 
     # --- configuración ---------------------------------------------------------------------
     def _set_dir_label(self) -> None:
-        d = self.settings.dir
-        self.lbl_dir.setText(f"<b>{tr('Carpeta')}:</b> {d or tr('(sin elegir)')}")
+        """Estado de la carpeta de datos en la barra lateral, sin mostrar su ruta."""
+        if not self.settings.dir:
+            text = tr("○ Carpeta de datos sin elegir")
+        elif self.reader.error:
+            text = tr("● Sin acceso a la carpeta de datos")
+        else:
+            text = tr("● Carpeta de datos conectada · {n} líneas", n=len(self.reader.lines))
+        self.lbl_dir.setText(text)
 
     def _save_settings(self) -> None:
         try:
@@ -545,8 +615,10 @@ class FleetWindow(QMainWindow):
             self.cards[lid].update_line(lines[lid], now, s.offline_s, s.area_of(lines[lid]))
         self._layout(shown, now)
         self._summary(now)
+        self._set_dir_label()
         if self.reader.error:
-            self.empty.setText(tr("No se puede leer la carpeta: {e}", e=self.reader.error))
+            self.empty.setText(tr("No se puede leer la carpeta de datos: revisa la red o los permisos "
+                                  "(⚙ Configuración)."))
         elif not lines:
             self.empty.setText(tr("Ninguna línea ha escrito todavía en esta carpeta."))
         self.empty.setVisible(bool(self.reader.error) or not lines)
@@ -708,7 +780,10 @@ class FleetWindow(QMainWindow):
         self.tiles["lines"].set(str(len(lines)))
         self.tiles["running"].set(str(sum(x in ("running", "slow", "assumed") for x in states)), theme.c("good"))
         self.tiles["stopped"].set(str(sum(x in ("stopped", "microstop") for x in states)), theme.c("critical"))
-        self.tiles["alarm"].set(str(sum(bool(ln.status.get("n_alarms")) for ln in online)), theme.c("critical"))
+        n_alarm = sum(bool(ln.status.get("n_alarms")) for ln in online)
+        self.tiles["alarm"].set(str(n_alarm), theme.c("critical") if n_alarm else theme.c("good_text"))
+        self.btn_bell.setText(str(n_alarm) if n_alarm else "")
+        self.btn_bell.setIcon(icons.icon("events", theme.c("critical") if n_alarm else theme.c("nav_icon")))
         off = sum(c in ("offline", "closed") for c in conn)
         self.tiles["offline"].set(str(off), theme.c("neutral") if off else None)
         oees = [(ln.status.get("kpis") or {}).get("oee") for ln in online]
@@ -741,6 +816,7 @@ class FleetWindow(QMainWindow):
     def toggle_tv(self) -> None:
         self.tv = not self.tv
         self.top.setVisible(not self.tv)
+        self.sidebar.setVisible(not self.tv)
         self.menuBar().setVisible(not self.tv)
         self.detail.setVisible(not self.tv and self.act_detail.isChecked())
         self.events_box.setVisible(not self.tv and self.act_events.isChecked())
