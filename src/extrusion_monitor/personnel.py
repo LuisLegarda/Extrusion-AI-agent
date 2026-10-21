@@ -26,16 +26,18 @@ PROTECTABLE = {
     "recipes": "Cambiar la receta activa, editar recetas y límites",
     "setup": "Variables, pantallas, recorridos, cámaras y configuración del control (Configurar receta)",
     "charts": "Tablero de Inicio y dock (indicadores y gráficos)",
-    "analysis": "Variables de SPC y correlación y modelo de estabilidad mostrado",
+    "analysis": "Selección de variables (SPC, correlación, Variables en vivo) y modelo de estabilidad mostrado",
     "notify": "Notificaciones por correo y mensajes",
-    "control": "Activar el control automático o cambiar su modo",
-    "catalogs": "Causas de paro, defectos y entrenamiento de comportamientos",
+    "backups": "Respaldos y carpeta de datos (ver, crear o exportar)",
+    "control": "Modo de los lazos de control y activar el control automático",
+    "catalogs": "Causas de paro y defectos, y entrenar el comportamiento normal",
     "delete": "Eliminar capturas de paros y defectos",
-    "station": "Identidad de la estación, exportación y servidor",
+    "station": "Identidad de la estación, exportación al dashboard global, servidor y vistas del programa",
     "stop": "Detener el monitoreo y cerrar el programa",
 }
-DEFAULT_PROTECT = ["personnel", "recipes", "setup", "charts", "analysis", "notify"]
-PROTECT_VERSION = 3  # al agregar acciones protegibles nuevas que van protegidas por defecto
+DEFAULT_PROTECT = ["personnel", "recipes", "setup", "charts", "analysis", "notify", "station", "control", "catalogs",
+                   "backups"]
+PROTECT_VERSION = 4  # al agregar acciones protegibles nuevas que van protegidas por defecto
 
 
 def hash_password(password: str, salt: Optional[bytes] = None) -> str:
@@ -142,7 +144,8 @@ class Personnel:
         protect = lg.get("protect")
         protect = [k for k in protect if k in PROTECTABLE] if isinstance(protect, list) else list(DEFAULT_PROTECT)
         version = int(lg.get("protect_version", 1) or 1)
-        for key, since in (("analysis", 2), ("notify", 3)):  # nuevas: protegidas por defecto
+        for key, since in (("analysis", 2), ("notify", 3), ("station", 4), ("control", 4), ("catalogs", 4),
+                           ("backups", 4)):  # nuevas: protegidas por defecto
             if version < since and key not in protect:
                 protect.append(key)
         try:

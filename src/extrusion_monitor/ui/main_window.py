@@ -283,6 +283,7 @@ class MainWindow(QMainWindow):
         self._sup_user: Optional[str] = None
         self.gate.changed.connect(self._supervisor_changed)
         self._build_ui()
+        self._apply_nav_visibility()
         self._guard_controls()
         self._update_session()
         self._restore_view_controls()
@@ -324,7 +325,7 @@ class MainWindow(QMainWindow):
 
         self.table = VariableTree()
         self.table.quality_fn = lambda vid: self.engine.acquirer.quality(vid)
-        self.table.plotToggled.connect(self._plot_toggled)
+        self.table.plotToggled.connect(self._table_plot_toggled)
         from .live_tiles import LivePage, LiveTilesView
         self.live_tiles = LiveTilesView(self._series, quality=lambda vid: self.engine.acquirer.quality(vid),
                                         allow=self.gate.allow)
@@ -445,7 +446,7 @@ class MainWindow(QMainWindow):
         act = m.addAction("⤓ Exportar historial a CSV…", self.export_csv)
         act.setShortcut("Ctrl+E")
         m.addAction("📂 Abrir carpeta de reportes", self._open_reports_dir)
-        m.addAction("📂 Abrir carpeta de datos", lambda: self._open_dir(self.ctx.workspace.home))
+        m.addAction("📂 Abrir carpeta de datos", self._open_data_dir)
         m.addSeparator()
         m.addAction("🛟 Crear respaldo de la configuración", self._backup_now)
         m.addAction("📂 Abrir carpeta de respaldos", self._open_backups)
@@ -486,6 +487,10 @@ class MainWindow(QMainWindow):
         m.addAction("🏷 Identidad de la estación (logo, texto, línea)…", self.open_branding)
         m.addAction("👷 Personal (operadores y supervisores)…", self.open_personnel)
         m.addAction("📨 Notificaciones (correo y mensajes)…", self.open_notifications)
+        self.act_show_analysis = m.addAction("📐 Mostrar «Análisis estadístico» en el monitor")
+        self.act_show_analysis.setCheckable(True)
+        self.act_show_analysis.setChecked(self._ui_pref("show_analysis", True))
+        self.act_show_analysis.triggered.connect(self._show_analysis_toggled)
         m.addSeparator()
         lm = m.addMenu("🌐 Idioma / Language")
         grp = QActionGroup(lm)
@@ -930,9 +935,9 @@ class MainWindow(QMainWindow):
         row.addWidget(self.cmb_recipe)
         self.chk_auto = QCheckBox("Auto desde HMI")
         self.chk_auto.setChecked(self.engine.state.auto_recipe)
-        self.chk_auto.toggled.connect(self._auto_toggled)
-        self.act_auto.toggled.connect(self.chk_auto.setChecked)
-        self.chk_auto.toggled.connect(self.act_auto.setChecked)
+        # Un solo manejador para la casilla y el menú (sin conectarlos entre sí: evita avisos en cadena)
+        self.chk_auto.clicked.connect(self._auto_toggled)
+        self.act_auto.triggered.connect(self._auto_toggled)
         row.addWidget(self.chk_auto)
         self.btn_run = QToolButton()
         self.btn_run.setObjectName("run")
@@ -943,7 +948,8 @@ class MainWindow(QMainWindow):
     # --- navegación -----------------------------------------------------------------
     def show_page(self, key: str) -> None:
         w = self.pages.get(key)
-        if w is None:
+        if w is None or (key == "analysis" and hasattr(self, "act_show_analysis")
+                         and not self.act_show_analysis.isChecked()):
             return
         self.stack.setCurrentWidget(w)
         for i in range(self.nav.count()):
@@ -1004,7 +1010,20 @@ class MainWindow(QMainWindow):
         d.mkdir(parents=True, exist_ok=True)
         QDesktopServices.openUrl(QUrl.fromLocalFile(str(d)))
 
+    def _open_data_dir(self) -> None:
+        if self.gate.allow("backups"):
+            self._open_dir(self.ctx.workspace.home)
+
+    def _table_plot_toggled(self, vid: str, on: bool) -> None:
+        """Casilla «graficar» en Variables en vivo: es una selección de variables (protegible)."""
+        if not self.gate.allow("analysis"):
+            self.table.set_checked(vid, not on)
+            return
+        self._plot_toggled(vid, on)
+
     def _backup_now(self) -> None:
+        if not self.gate.allow("backups"):
+            return
         from ..backup import create_backup, prune
         try:
             out = create_backup(self.ctx.workspace.home, "manual")
@@ -1015,6 +1034,8 @@ class MainWindow(QMainWindow):
         QMessageBox.information(self, "Respaldo", f"{tr('Respaldo creado')}:\n{out}")
 
     def _open_backups(self) -> None:
+        if not self.gate.allow("backups"):
+            return
         from ..backup import backups_dir
         self._open_dir(backups_dir(self.ctx.workspace.home))
 
@@ -1108,6 +1129,8 @@ class MainWindow(QMainWindow):
 
     # --- recetas -------------------------------------------------------------
     def refresh_recipes(self) -> None:
+        if hasattr(self, "chk_auto"):
+            self._sync_auto()
         self.cmb_recipe.blockSignals(True)
         self.cmb_recipe.clear()
         self.cmb_recipe.addItem("— sin receta —", None)
@@ -1123,22 +1146,32 @@ class MainWindow(QMainWindow):
             self.refresh_recipes()  # sigue la receta que estaba
             return
         # Elegir manualmente una receta desactiva la selección automática.
-        if self.chk_auto.isChecked() and self.ctx.config.general.recipe_name_var:
-            self.chk_auto.setChecked(False)
+        if self.engine.state.auto_recipe and self.ctx.config.general.recipe_name_var:
+            self.engine.set_recipe(self.engine.state.recipe, auto=False)
         self.engine.set_recipe(name)
+        self._sync_auto()
         self._save_state()
 
+    def _sync_auto(self) -> None:
+        """Casilla y menú muestran el estado real (sin disparar sus señales)."""
+        on = self.engine.state.auto_recipe
+        for w in (self.chk_auto, self.act_auto):
+            w.blockSignals(True)
+            w.setChecked(on)
+            w.blockSignals(False)
+
     def _auto_toggled(self, on: bool) -> None:
-        if on != self.engine.state.auto_recipe and not self.gate.allow("recipes"):
-            self.chk_auto.blockSignals(True)
-            self.chk_auto.setChecked(self.engine.state.auto_recipe)
-            self.chk_auto.blockSignals(False)
-            self.act_auto.blockSignals(True)
-            self.act_auto.setChecked(self.engine.state.auto_recipe)
-            self.act_auto.blockSignals(False)
+        if getattr(self, "_auto_busy", False):
             return
-        self.engine.set_recipe(self.engine.state.recipe, auto=on)
-        self._save_state()
+        self._auto_busy = True
+        try:
+            if on != self.engine.state.auto_recipe and not self.gate.allow("recipes"):
+                return
+            self.engine.set_recipe(self.engine.state.recipe, auto=on)
+            self._save_state()
+        finally:
+            self._auto_busy = False
+            self._sync_auto()
 
     # --- preferencias de vista (se guardan solas) ------------------------------------------------------------
     def _restore_view_controls(self) -> None:
@@ -1653,6 +1686,12 @@ class MainWindow(QMainWindow):
             QApplication.alert(self)
 
     def closeEvent(self, event) -> None:
+        if not self._rebuilding and self.engine.running and not getattr(self, "_close_confirmed", False):
+            if QMessageBox.question(self, tr("Cerrar el programa"),
+                                    tr("El monitoreo está en ejecución. Si cierras el programa la línea deja de "
+                                       "vigilarse.\n\n¿Cerrar de todos modos?")) != QMessageBox.Yes:
+                event.ignore()
+                return
         if not self._rebuilding and not self.gate.allow("stop"):
             event.ignore()
             return
@@ -1693,6 +1732,31 @@ class MainWindow(QMainWindow):
         self.problems_page.timer.stop()
 
     # --- idioma y tema ------------------------------------------------------------
+    def _ui_pref(self, key: str, default):
+        return self.ctx.workspace.load_state().get("ui", {}).get(key, default)
+
+    def _show_analysis_toggled(self, on: bool) -> None:
+        """La sección de análisis estadístico se puede ocultar del monitor (por ejemplo, si se usa el dashboard)."""
+        if not self.gate.allow("station"):
+            self.act_show_analysis.setChecked(not on)
+            return
+        state = self.ctx.workspace.load_state()
+        state["ui"] = {**state.get("ui", {}), "show_analysis": on}
+        self.ctx.workspace.save_state(state)
+        self._apply_nav_visibility()
+
+    def _apply_nav_visibility(self) -> None:
+        show = self.act_show_analysis.isChecked()
+        visible = 0
+        for i in range(self.nav.count()):
+            it = self.nav.item(i)
+            hidden = it.data(Qt.UserRole) == "analysis" and not show
+            it.setHidden(hidden)
+            visible += not hidden
+        self.nav.setFixedHeight(visible * (NAV_ROW_H + 2) + 6)
+        if not show and self.current_page() == "analysis":
+            self.show_page("home")
+
     def _wheel_toggled(self, on: bool) -> None:
         """Rueda del ratón sobre las gráficas: zoom (normal) o desplazar la página (bloqueado). Se recuerda."""
         from .wheel_lock import lock as wheel_lock

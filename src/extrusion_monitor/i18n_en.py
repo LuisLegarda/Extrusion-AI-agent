@@ -1576,6 +1576,20 @@ EN: dict[str, str] = {
     "STARTTLS (puerto 587)": "STARTTLS (port 587)",
     "SSL/TLS (puerto 465)": "SSL/TLS (port 465)",
     "Sin cifrado": "No encryption",
+    # --- protecciones del monitor ---
+    "Respaldos y carpeta de datos (ver, crear o exportar)": "Backups and data folder (view, create or export)",
+    "Selección de variables (SPC, correlación, Variables en vivo) y modelo de estabilidad mostrado":
+        "Variable selection (SPC, correlation, Live variables) and the stability model shown",
+    "Modo de los lazos de control y activar el control automático":
+        "Control loop mode and turning on automatic control",
+    "Causas de paro y defectos, y entrenar el comportamiento normal":
+        "Stop causes and defects, and training normal behavior",
+    "Identidad de la estación, exportación al dashboard global, servidor y vistas del programa":
+        "Station identity, global dashboard export, server and program views",
+    "Cerrar el programa": "Close the program",
+    "El monitoreo está en ejecución. Si cierras el programa la línea deja de vigilarse.\n\n¿Cerrar de todos modos?":
+        "Monitoring is running. If you close the program the line stops being watched.\n\nClose anyway?",
+    "📐 Mostrar «Análisis estadístico» en el monitor": "📐 Show “Statistical analysis” in the monitor",
 }
 
 # Textos con valores: la clave es la plantilla en español («{}» = valor) y el resultado su traducción.

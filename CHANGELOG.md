@@ -10,6 +10,15 @@ Numeración `MAYOR.MENOR.PARCHE`:
 
 ## [Sin publicar]
 
+### Protecciones y detalles del monitor (rama `fix/protecciones-monitor`)
+- Protegidas por defecto con la sesión de supervisor (además de las anteriores): exportación al dashboard
+  global, identidad de la estación, modo de los lazos de control, causas de paro y defectos, entrenar el
+  comportamiento normal, respaldos y carpeta de datos, y la selección de variables en Variables en vivo.
+- Corregido: como operador, «Cargar automáticamente la receta del HMI» (menú Receta) dejaba el aviso de
+  supervisor en bucle sin poder cancelarlo.
+- Si el monitoreo está en marcha, cerrar el programa pide confirmación.
+- Configuración → «Mostrar Análisis estadístico en el monitor» (se puede ocultar si se usa el del dashboard).
+
 ### Notificaciones y reportes de análisis (rama `feature/notificaciones-reportes`)
 - Configuración → Notificaciones (y botón en Alarmas y eventos): avisos por correo (SMTP), Telegram o
   Teams / Slack / Google Chat (webhook) de las alertas elegidas: variable fuera de límite o en aviso, error de
