@@ -18,7 +18,7 @@ from PySide6.QtGui import QActionGroup, QBrush, QColor, QDesktopServices, QKeySe
 from PySide6.QtWidgets import (
     QApplication, QComboBox, QFileDialog, QFrame, QGridLayout, QHBoxLayout, QHeaderView, QLabel, QLineEdit,
     QListWidget, QListWidgetItem, QMainWindow, QMenu, QMessageBox, QPushButton, QScrollArea, QSplitter, QTableWidget,
-    QTableWidgetItem, QTabWidget, QToolButton, QVBoxLayout, QWidget,
+    QStackedWidget, QTableWidgetItem, QTabWidget, QToolButton, QVBoxLayout, QWidget,
 )
 
 from .. import version_label
@@ -293,7 +293,8 @@ class FleetWindow(QMainWindow):
             self.cmb_filter.addItem(label, k)
         self.cmb_filter.currentIndexChanged.connect(lambda _: self.refresh(rescan=False))
         top.addWidget(self.cmb_filter)
-        top.addWidget(QLabel("Orden:"))
+        self.lbl_sort = QLabel("Orden:")
+        top.addWidget(self.lbl_sort)
         self.cmb_sort = QComboBox()
         for k, label in SORTS:
             self.cmb_sort.addItem(label, k)
@@ -308,6 +309,12 @@ class FleetWindow(QMainWindow):
         self.btn_bell.clicked.connect(lambda: self.cmb_filter.setCurrentIndex(self.cmb_filter.findData("alarm")))
         top.addWidget(self.btn_bell)
         root.addWidget(self.top)
+        self.stack = QStackedWidget()  # páginas: líneas, analizador, problemas y análisis (en la misma ventana)
+        root.addWidget(self.stack, 1)
+        lines_page = QWidget()
+        lroot = QVBoxLayout(lines_page)
+        lroot.setContentsMargins(0, 0, 0, 0)
+        lroot.setSpacing(8)
 
         summary = QHBoxLayout()
         summary.setSpacing(10)
@@ -319,7 +326,7 @@ class FleetWindow(QMainWindow):
             summary.addWidget(t)
         self.lbl_page = QLabel()
         summary.addWidget(self.lbl_page)
-        root.addLayout(summary)
+        lroot.addLayout(summary)
 
         self.split = QSplitter(Qt.Horizontal)
         self.scroll = QScrollArea()
@@ -352,7 +359,9 @@ class FleetWindow(QMainWindow):
         self.detail = LineDetail(self.reader)
         self.split.addWidget(self.detail)
         self.split.setSizes([1000, 500])
-        root.addWidget(self.split, 1)
+        lroot.addWidget(self.split, 1)
+        self.pages = {"lines": lines_page}
+        self.stack.addWidget(lines_page)
         self.setCentralWidget(central)
         self._build_menus()
 
@@ -386,16 +395,26 @@ class FleetWindow(QMainWindow):
         self.nav.setIconSize(QSize(18, 18))
         self.nav.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
         self.nav.setVerticalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
-        items = [("lines", "Líneas", "home", None), ("problems", "Problemas de proceso", "problems", self.open_problems),
-                 ("ack", "Reconocer avisos", "check", self.acknowledge_all),
+        items = [("lines", "Líneas", "home", None), ("analyzer", "Analizador de planta", "kpi", None),
+                 ("problems", "Problemas de proceso", "problems", None),
+                 ("analysis", "Análisis estadístico", "analysis", None),
+                 ("ack", "Silenciar avisos", "check", self.acknowledge_all),
                  ("csv", "Exportar CSV", "reports", self.export_csv), ("tv", "Modo TV", "page", self.toggle_tv),
                  ("setup", "Configuración", "setup", self.open_setup)]
+        tips = {"ack": "Detiene el parpadeo y el sonido de las tarjetas de las líneas que entraron en alarma, se "
+                       "detuvieron o perdieron comunicación. Las alarmas siguen a la vista; si vuelve a pasar, "
+                       "vuelve a avisar.",
+                "analyzer": "Problemas, fallas, tiempos muertos, estabilidad y tendencia de todas las líneas, con "
+                            "conclusiones automáticas",
+                "analysis": "Análisis estadístico con los datos que publican los monitores (por línea, turno, día…)"}
         self._nav_actions = {}
         for key, label, ic, slot in items:
             it = QListWidgetItem(tr(label))
             it.setIcon(icons.icon(ic, theme.c("nav_icon"), theme.c("accent_text")))
             it.setData(Qt.UserRole, key)
             it.setSizeHint(QSize(0, 36))
+            if key in tips:
+                it.setToolTip(tr(tips[key]))
             self.nav.addItem(it)
             self._nav_actions[key] = slot
         self.nav.setFixedHeight(len(items) * 38 + 6)
@@ -410,10 +429,52 @@ class FleetWindow(QMainWindow):
         return side
 
     def _nav_clicked(self, item) -> None:
-        slot = self._nav_actions.get(item.data(Qt.UserRole))
-        self.nav.setCurrentRow(0)  # «Líneas» es la vista; lo demás son acciones o ventanas
-        if slot is not None:
-            slot()
+        key = item.data(Qt.UserRole)
+        slot = self._nav_actions.get(key)
+        if slot is None:
+            self.show_page(key)
+            return
+        self._select_nav(self.current_page)  # las acciones no cambian la página
+        slot()
+
+    def _select_nav(self, key: str) -> None:
+        for i in range(self.nav.count()):
+            if self.nav.item(i).data(Qt.UserRole) == key:
+                self.nav.setCurrentRow(i)
+
+    @property
+    def current_page(self) -> str:
+        w = self.stack.currentWidget()
+        return next((k for k, v in self.pages.items() if v is w), "lines")
+
+    def show_page(self, key: str) -> None:
+        """Páginas dentro de la misma ventana (se crean la primera vez que se abren)."""
+        if key not in self.pages:
+            home = self.settings_file.parent
+            if key == "problems":
+                from .fleet_problems import FleetProblemsPage
+                w = FleetProblemsPage(self)
+            elif key == "analyzer":
+                from .fleet_analyzer import FleetAnalyzer
+                w = FleetAnalyzer(lambda: self.reader, home)
+            elif key == "analysis":
+                from ..fleet_data import FleetStatsContext
+                from .stats_page import StatsPage
+                self.stats_ctx = FleetStatsContext(lambda: self.reader, home)
+                w = StatsPage(self.stats_ctx)
+            else:
+                return
+            self.pages[key] = w
+            self.stack.addWidget(w)
+        if key == "analysis":
+            self.stats_ctx.refresh()  # variables y líneas que haya en este momento
+        elif key in ("analyzer", "problems"):
+            self.pages[key].refresh()  # con los datos más recientes al abrirla
+        self.stack.setCurrentWidget(self.pages[key])
+        for wdg in (self.cmb_filter, self.cmb_sort, self.ed_search, self.lbl_sort):
+            wdg.setVisible(key == "lines")  # búsqueda, filtro y orden son de la vista de líneas
+        self.top.setVisible(key == "lines" and not self.tv)
+        self._select_nav(key)
 
     # --- menús: archivo, vista, idioma y tema ------------------------------------------------
     def _build_menus(self) -> None:
@@ -616,6 +677,7 @@ class FleetWindow(QMainWindow):
         self._layout(shown, now)
         self._summary(now)
         self._set_dir_label()
+        self._update_ack()
         if self.reader.error:
             self.empty.setText(tr("No se puede leer la carpeta de datos: revisa la red o los permisos "
                                   "(⚙ Configuración)."))
@@ -660,8 +722,18 @@ class FleetWindow(QMainWindow):
             QApplication.alert(self)
 
     def acknowledge_all(self) -> None:
+        """Silencia los avisos: deja de parpadear y de sonar (las alarmas siguen a la vista)."""
         for c in self.cards.values():
             c.acknowledge()
+        self._update_ack()
+
+    def _update_ack(self) -> None:
+        n = sum(1 for c in self.cards.values() if c.blinking)
+        for i in range(self.nav.count()):
+            it = self.nav.item(i)
+            if it.data(Qt.UserRole) == "ack":
+                it.setText(tr("Silenciar avisos") + (f"  ({n})" if n else ""))
+                it.setForeground(QColor(theme.c("critical")) if n else QColor(theme.c("nav_text")))
 
     def _visible(self, now: float) -> list[str]:
         lines = self.reader.lines
@@ -815,6 +887,8 @@ class FleetWindow(QMainWindow):
     # --- modo TV y exportación ---------------------------------------------------------------
     def toggle_tv(self) -> None:
         self.tv = not self.tv
+        if self.tv:
+            self.show_page("lines")
         self.top.setVisible(not self.tv)
         self.sidebar.setVisible(not self.tv)
         self.menuBar().setVisible(not self.tv)
@@ -836,14 +910,7 @@ class FleetWindow(QMainWindow):
         self.refresh(rescan=False)
 
     def open_problems(self) -> None:
-        from .fleet_problems import FleetProblemsDialog
-        dlg = getattr(self, "_problems_dlg", None)
-        if dlg is None:
-            dlg = self._problems_dlg = FleetProblemsDialog(self, self)
-        else:
-            dlg.refresh()
-        dlg.show()
-        dlg.raise_()
+        self.show_page("problems")
 
     def export_csv(self, path: Optional[str] = None) -> Optional[str]:
         if not path:

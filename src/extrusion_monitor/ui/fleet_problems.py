@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import time
 
-from PySide6.QtWidgets import QComboBox, QDialog, QHBoxLayout, QLabel, QPushButton, QVBoxLayout
+from PySide6.QtWidgets import QComboBox, QHBoxLayout, QLabel, QPushButton, QVBoxLayout, QWidget
 
 from ..fleet import read_problems
 from ..i18n import tr
@@ -13,15 +13,15 @@ PERIODS = [("Últimas 24 h", 86400), ("Últimos 7 días", 7 * 86400), ("Últimos
            ("Últimos 90 días", 90 * 86400)]
 
 
-class FleetProblemsDialog(QDialog):
-    """No modal: se puede dejar abierto junto al dashboard."""
+class FleetProblemsPage(QWidget):
+    """Página del dashboard (en la misma ventana): Pareto de paros y defectos de las líneas, con CSV."""
 
     def __init__(self, window, parent=None):
         super().__init__(parent)
         self.window = window  # FleetWindow: lector actual y áreas
-        self.setWindowTitle("Problemas de proceso · todas las líneas")
-        self.resize(1150, 760)
         root = QVBoxLayout(self)
+        root.setContentsMargins(0, 0, 0, 0)
+        root.addWidget(QLabel(f"<b style='font-size:16px'>{tr('Problemas de proceso · todas las líneas')}</b>"))
         bar = QHBoxLayout()
         bar.addWidget(QLabel("Líneas:"))
         self.cmb_lines = QComboBox()

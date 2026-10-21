@@ -14,7 +14,7 @@ from typing import Optional
 import numpy as np
 
 GROUPS = {"": "Sin agrupar", "shift": "Turno", "day": "Día", "week": "Semana", "month": "Mes", "hour": "Hora del día",
-          "operator": "Operador", "recipe": "Receta"}
+          "operator": "Operador", "recipe": "Receta", "line": "Línea"}  # «Línea»: solo en el dashboard global
 MAX_POINTS = 60000
 
 
@@ -27,6 +27,7 @@ class DataRequest:
     shift: str = ""  # filtro: solo este turno
     operator: str = ""  # filtro: solo este operador
     recipe: str = ""  # filtro: solo esta receta
+    line: str = ""  # filtro: solo esta línea (dashboard global)
 
     def to_dict(self) -> dict:
         return dict(self.__dict__)
@@ -71,7 +72,8 @@ class Timeline:
             return
         before = historian.events_between(0, since)  # el estado vigente al empezar el rango
         rows = historian.events_between(since, until)
-        for ts, kind, _lvl, _rule, var, _msg, recipe in list(before)[-2000:] + list(rows):
+        for row in list(before)[-2000:] + list(rows):
+            ts, kind, _lvl, _rule, var, _msg, recipe = row[:7]
             if kind == "crew":
                 self.ops.append((ts, var or ""))
             elif kind == "recipe_change":
@@ -114,7 +116,7 @@ def shift_names(t: np.ndarray, shifts, starts: list[str]) -> np.ndarray:
 
 
 def labels(t: np.ndarray, by: str, timeline: Optional[Timeline], shifts, starts: list[str]) -> np.ndarray:
-    if not by or not len(t):
+    if not by or not len(t) or by == "line":  # «línea» solo aplica a los datos del dashboard global
         return np.full(len(t), "", dtype=object)
     if by == "shift":
         return shift_names(t, shifts, starts)
@@ -137,6 +139,21 @@ def _downsample(t: np.ndarray, y: np.ndarray, max_points: int) -> tuple[np.ndarr
     return tt, yy, float((t[-1] - t[0]) / max(1, m))
 
 
+def _filtered(t, y, req: DataRequest, timeline, shifts, starts):
+    keep = np.isfinite(y)
+    t, y = t[keep], y[keep]
+    if req.shift and len(t):
+        keep = shift_names(t, shifts, starts) == req.shift
+        t, y = t[keep], y[keep]
+    if req.operator and len(t):
+        keep = timeline.operators(t) == req.operator
+        t, y = t[keep], y[keep]
+    if req.recipe and len(t):
+        keep = timeline.recipes_at(t) == req.recipe
+        t, y = t[keep], y[keep]
+    return t, y
+
+
 def fetch(historian, config, req: DataRequest, shifts=(), max_points: int = MAX_POINTS) -> list[VarData]:
     """Series de las variables pedidas, ya filtradas y con su etiqueta de grupo."""
     need_tl = req.group_by in ("operator", "recipe") or req.operator or req.recipe
@@ -149,21 +166,35 @@ def fetch(historian, config, req: DataRequest, shifts=(), max_points: int = MAX_
         if v is None or historian is None:
             continue
         label = v.name if names.count(v.name) == 1 else config.var_label(v)  # corto si no se repite
+        if hasattr(historian, "samples_by_line"):  # dashboard global: varias líneas
+            by_line = historian.samples_by_line(vid, req.since, req.until)
+            if req.line:
+                by_line = {k: r for k, r in by_line.items() if k == req.line}
+            parts, avg = [], 0.0
+            per = max(1000, max_points // max(1, len(by_line)))
+            for ln, rows in by_line.items():
+                t = np.array([r[0] for r in rows], float)
+                y = np.array([np.nan if r[1] is None else r[1] for r in rows], float)
+                t, y = _filtered(t, y, req, timeline, shifts, starts)
+                t, y, a = _downsample(t, y, per)  # por línea: no se mezclan líneas al promediar
+                avg = max(avg, a)
+                parts.append((t, y, np.full(len(t), ln, dtype=object)))
+            if parts:
+                t = np.concatenate([p[0] for p in parts])
+                y = np.concatenate([p[1] for p in parts])
+                lines = np.concatenate([p[2] for p in parts])
+                order = np.argsort(t, kind="stable")
+                t, y, lines = t[order], y[order], lines[order]
+            else:
+                t, y, lines = np.empty(0), np.empty(0), np.empty(0, dtype=object)
+            g = lines if req.group_by == "line" else labels(t, req.group_by, timeline, shifts, starts)
+            out.append(VarData(vid, label, v.unit, t, y, g, avg))
+            continue
         rows = historian.samples(vid, req.since, req.until)
         rows = [r for r in rows if r[1] is not None]
         t = np.array([r[0] for r in rows], float)
         y = np.array([r[1] for r in rows], float)
-        keep = np.isfinite(y)
-        t, y = t[keep], y[keep]
-        if req.shift and len(t):
-            keep = shift_names(t, shifts, starts) == req.shift
-            t, y = t[keep], y[keep]
-        if req.operator and len(t):
-            keep = timeline.operators(t) == req.operator
-            t, y = t[keep], y[keep]
-        if req.recipe and len(t):
-            keep = timeline.recipes_at(t) == req.recipe
-            t, y = t[keep], y[keep]
+        t, y = _filtered(t, y, req, timeline, shifts, starts)
         t, y, avg = _downsample(t, y, max_points)
         g = labels(t, req.group_by, timeline, shifts, starts)
         out.append(VarData(vid, label, v.unit, t, y, g, avg))

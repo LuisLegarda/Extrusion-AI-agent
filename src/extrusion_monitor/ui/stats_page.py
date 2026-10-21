@@ -116,6 +116,8 @@ def build_render(ctx, rec: dict) -> tuple[Render, int]:
             recs = [r for r in recs if r.get("shift") == req.shift]
         if req.recipe:
             recs = [r for r in recs if r.get("recipe") == req.recipe]
+        if req.line:
+            recs = [r for r in recs if r.get("line") == req.line]
         extra["problems"] = recs
     R = Render(rec, data, ctx, extra)
     if rec["type"] != "pareto" and not any(len(v.y) for v in data):
@@ -134,8 +136,8 @@ def subtitle(rec: dict) -> str:
     p = rec.get("params", {})
     rng = time.strftime("%d/%m/%Y %H:%M", time.localtime(p.get("since", 0))) + " → " + \
         time.strftime("%d/%m/%Y %H:%M", time.localtime(p.get("until", 0)))
-    filters = [f"{tr(lb)}: {p[k]}" for k, lb in (("shift", "Turno"), ("operator", "Operador"), ("recipe", "Receta"))
-               if p.get(k)]
+    filters = [f"{tr(lb)}: {p[k]}" for k, lb in (("line", "Línea"), ("shift", "Turno"), ("operator", "Operador"),
+                                                 ("recipe", "Receta")) if p.get(k)]
     return f"{tr(TYPES[rec['type']][0])} · {rng}" + (" · " + " · ".join(filters) if filters else "")
 
 
@@ -224,8 +226,11 @@ class AnalysisDialog(QDialog):
         rng.addWidget(QLabel("→"))
         rng.addWidget(self.ed_to)
         fl.addRow(tr("Desde / hasta"), rng)
+        self.fleet = bool(getattr(ctx, "fleet", False))  # dashboard global: datos de varias líneas
         self.cmb_group = QComboBox()
         for k, label in GROUPS.items():
+            if k == "line" and not self.fleet:
+                continue
             self.cmb_group.addItem(tr(label), k)
         self.cmb_group.setCurrentIndex(max(0, self.cmb_group.findData(p.get("group_by", ""))))
         fl.addRow(tr("Agrupar por"), self.cmb_group)
@@ -248,8 +253,16 @@ class AnalysisDialog(QDialog):
         for n in ctx.recipes.names():
             self.cmb_recipe.addItem(n, n)
         self.cmb_recipe.setCurrentIndex(max(0, self.cmb_recipe.findData(p.get("recipe", ""))))
+        self.cmb_line = QComboBox()
+        self.cmb_line.addItem(tr("Todas"), "")
+        for n in (ctx.lines if self.fleet else []):
+            self.cmb_line.addItem(n, n)
+        self.cmb_line.setCurrentIndex(max(0, self.cmb_line.findData(p.get("line", ""))))
         filt = QHBoxLayout()
-        for lb, w in ((tr("Turno"), self.cmb_shift), (tr("Operador"), self.cmb_op), (tr("Receta"), self.cmb_recipe)):
+        pairs = [(tr("Turno"), self.cmb_shift), (tr("Operador"), self.cmb_op), (tr("Receta"), self.cmb_recipe)]
+        if self.fleet:
+            pairs.insert(0, (tr("Línea"), self.cmb_line))
+        for lb, w in pairs:
             filt.addWidget(QLabel(lb))
             filt.addWidget(w, 1)
         fl.addRow(tr("Solo"), filt)
@@ -492,7 +505,7 @@ class AnalysisDialog(QDialog):
                    "until": float(self.ed_to.dateTime().toSecsSinceEpoch()),
                    "group_by": self.cmb_group.currentData() if self.cmb_group.isEnabled() else "",
                    "shift": self.cmb_shift.currentData(), "operator": self.cmb_op.currentData(),
-                   "recipe": self.cmb_recipe.currentData()}
+                   "recipe": self.cmb_recipe.currentData(), "line": self.cmb_line.currentData() if self.fleet else ""}
         if kind == "multi":
             p["vars"] = self.checked_vars()[:MAX_VARS]
         elif kind == "one":

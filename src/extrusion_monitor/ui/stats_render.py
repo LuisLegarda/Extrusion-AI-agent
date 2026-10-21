@@ -917,7 +917,7 @@ def render_pareto(R: Render) -> None:
 
 PARETO_SOURCES = [("downtime", "Paros"), ("quality", "Defectos de calidad")]
 PARETO_BY = [("reason", "Causa / defecto"), ("category", "Categoría"), ("operator", "Operador"), ("shift", "Turno"),
-             ("day", "Día"), ("month", "Mes"), ("recipe", "Receta")]
+             ("day", "Día"), ("month", "Mes"), ("recipe", "Receta"), ("line", "Línea")]
 PARETO_MEASURES = [("minutes", "Minutos"), ("count", "Número de capturas"), ("scrap", "Desperdicio")]
 
 RENDERERS = {

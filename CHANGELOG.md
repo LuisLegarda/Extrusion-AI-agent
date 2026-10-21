@@ -10,6 +10,18 @@ Numeración `MAYOR.MENOR.PARCHE`:
 
 ## [Sin publicar]
 
+### Dashboard: analizador de planta, problemas y análisis estadístico (rama `feature/dashboard-analisis`)
+- Las secciones del dashboard se abren dentro de la misma ventana: Líneas, Analizador de planta, Problemas de
+  proceso (antes era una ventana aparte) y Análisis estadístico.
+- Analizador de planta: conclusiones automáticas ordenadas por importancia; indicadores por línea (OEE, pérdidas
+  de disponibilidad, rendimiento y calidad, Δ contra el periodo anterior, estabilidad, índice 5.0, Cpk, paros,
+  minutos de paro, MTTR, MTBF, desperdicio, alarmas por hora y costo del paro); gráficas de OEE y pérdidas,
+  tiempo muerto, causas principales de la planta y tendencias diarias de OEE, estabilidad e índice 5.0; tabla de
+  Industria 5.0 (personas, resiliencia, sostenibilidad).
+- Análisis estadístico en el dashboard con los datos que publican los monitores (promedios por minuto), con
+  filtro y agrupación por línea; el Pareto también agrupa por línea.
+- «Reconocer avisos» ahora se llama «Silenciar avisos», muestra cuántas líneas están avisando y explica qué hace.
+
 ### Protecciones y detalles del monitor (rama `fix/protecciones-monitor`)
 - Protegidas por defecto con la sesión de supervisor (además de las anteriores): exportación al dashboard
   global, identidad de la estación, modo de los lazos de control, causas de paro y defectos, entrenar el
