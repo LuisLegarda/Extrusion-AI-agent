@@ -73,6 +73,11 @@ class FleetHistorian:
         rows = [r for rs in self.samples_by_line(vid, since, until).values() for r in rs]
         return sorted(rows)
 
+    def rows_by_line(self, since: float, until: Optional[float] = None) -> dict[str, list[dict]]:
+        """Renglones completos de la tendencia por minuto (indicadores, producción, estado, usuario)."""
+        until = until or time.time()
+        return {ln.name: list(_rows(ln, TREND_DIR, since, until)) for ln in self.lines()}
+
     def kpis_by_line(self, since: float, until: Optional[float] = None) -> dict[str, list[tuple[float, dict]]]:
         """Indicadores por minuto de cada línea: {línea: [(ts, {oee, availability, …})]}."""
         until = until or time.time()

@@ -1638,6 +1638,112 @@ EN: dict[str, str] = {
         "Problems, failures, downtime, stability and trend of all lines, with automatic findings",
     "Análisis estadístico con los datos que publican los monitores (por línea, turno, día…)":
         "Statistical analysis with the data published by the monitors (by line, shift, day…)",
+    # --- dashboard: metas, mapa, mantenimiento y reporte semanal ---
+    "Dashboard global": "Global dashboard",
+    "Producción contra meta": "Production vs target",
+    "Metas del mes (semáforo)": "Monthly goals (traffic light)",
+    "Turnos y operadores: comparación entre líneas": "Shifts and operators: comparison across lines",
+    "🎯 Metas y costos…": "🎯 Goals and costs…",
+    "Metas por línea, costos y reporte semanal": "Goals by line, costs and weekly report",
+    "Guardar este análisis como PDF": "Save this analysis as PDF",
+    "Reporte de planta": "Plant report",
+    "Costo del desperdicio": "Scrap cost",
+    "Costo total": "Total cost",
+    "Producción diaria por línea (líneas punteadas: meta diaria)":
+        "Daily production by line (dashed lines: daily target)",
+    "Sin datos de producción: los monitores deben tener el OEE configurado y esta versión (publica la "
+    "producción del turno cada minuto).":
+        "No production data: the monitors need OEE configured and this version (it publishes the shift "
+        "production every minute).",
+    "El ranking de operadores aparece cuando los monitores registran el usuario en turno (barra superior "
+    "del monitor).":
+        "The operator ranking appears when the monitors record the user on shift (monitor top bar).",
+    "Meta por turno": "Target per shift",
+    "Meta del periodo": "Period target",
+    "Cumplimiento": "Attainment",
+    "Desperdicio por día": "Scrap per day",
+    "Cumplimiento de producción": "Production attainment",
+    "Define metas por línea en «🎯 Metas y costos» para ver el semáforo del mes.":
+        "Set goals by line in “🎯 Goals and costs” to see the monthly traffic light.",
+    "Línea · indicador": "Line · indicator",
+    "Meta": "Goal",
+    "Este mes": "This month",
+    "Mes anterior": "Previous month",
+    "OEE y minutos de paro por turno": "OEE and stop minutes by shift",
+    "Ranking de operadores (OEE promedio en las horas que estuvieron en turno)":
+        "Operator ranking (average OEE during their hours on shift)",
+    "Tiempo en turno": "Time on shift",
+    "🎯 Metas, costos y reporte semanal…": "🎯 Goals, costs and weekly report…",
+    "📺 Modo TV con el mapa de planta": "📺 TV mode with the plant map",
+    "Reporte semanal de la planta (adjunto).": "Weekly plant report (attached).",
+    "Reporte semanal de planta": "Weekly plant report",
+    "Acomodar (arrastra las líneas)": "Arrange (drag the lines)",
+    "🗺 Plano de fondo…": "🗺 Background plan…",
+    "⤢ Ajustar a la pantalla": "⤢ Fit to screen",
+    "Plano de la planta": "Plant layout",
+    "Imágenes (*.png *.jpg *.jpeg *.bmp)": "Images (*.png *.jpg *.jpeg *.bmp)",
+    "Mapa de planta": "Plant map",
+    "Las horas cuentan solo el tiempo en marcha que publica el monitor de la línea. Al llegar al 80 % se "
+    "marca en amarillo y al 100 % en rojo.":
+        "Hours count only the running time published by the line monitor. At 80 % it turns yellow and at "
+        "100 % red.",
+    "Equipo / componente": "Equipment / component",
+    "Servicio cada (horas de operación)": "Service every (operating hours)",
+    "Nota": "Note",
+    "Nuevo equipo": "New equipment",
+    "Línea:": "Line:",
+    "Fallas en:": "Failures in:",
+    "Cada (h de operación)": "Every (operating h)",
+    "Horas desde el servicio": "Hours since service",
+    "Avance": "Progress",
+    "Último servicio": "Last service",
+    "+ Equipo": "+ Equipment",
+    "✔ Servicio hecho": "✔ Service done",
+    "al día": "up to date",
+    "próximo": "due soon",
+    "vencido": "overdue",
+    "La falla más frecuente es «{c}»: ocurre cada {h} h de operación en promedio y tarda {m} min en "
+    "resolverse. Es candidata a mantenimiento preventivo.":
+        "The most frequent failure is “{c}”: it happens every {h} operating hours on average and takes "
+        "{m} min to fix. It is a candidate for preventive maintenance.",
+    "Sin paros capturados en el periodo.": "No captured stops in the period.",
+    "Servicio hecho": "Service done",
+    "¿Registrar el servicio de «{e}» hoy? Las horas vuelven a cero.":
+        "Record the service of “{e}” today? Hours go back to zero.",
+    "Mantenimiento": "Maintenance",
+    "Plan preventivo por horas de operación": "Preventive plan by operating hours",
+    "Fallas por causa (paros capturados)": "Failures by cause (captured stops)",
+    "Metas, costos y reporte semanal": "Goals, costs and weekly report",
+    "🎯 Metas": "🎯 Goals",
+    "Moneda": "Currency",
+    "Costo de una hora de paro": "Cost of one hour of downtime",
+    "Costo por unidad de desperdicio (m, kg…)": "Cost per unit of scrap (m, kg…)",
+    "Con estos costos el analizador muestra cuánto cuestan los paros y el desperdicio (costo de la mala "
+    "calidad) por línea y en total.":
+        "With these costs the analyzer shows how much stops and scrap cost (cost of poor quality) by line "
+        "and in total.",
+    "💲 Costos": "💲 Costs",
+    "Enviar cada semana el reporte del analizador (PDF) por correo o mensaje":
+        "Send the analyzer report (PDF) every week by email or message",
+    "📨 Destinatarios y canales…": "📨 Recipients and channels…",
+    "Enviar ahora el reporte de los últimos 7 días": "Send the last 7 days report now",
+    "El PDF también se guarda en la carpeta «reportes» del dashboard.":
+        "The PDF is also saved in the dashboard “reportes” folder.",
+    "📄 Reporte semanal": "📄 Weekly report",
+    "Metas por línea (0 = sin meta). La fila «Todas las líneas» aplica a las que no tienen metas propias.":
+        "Goals by line (0 = no goal). The “All lines” row applies to lines without their own goals.",
+    "Producción por turno": "Production per shift",
+    "OEE mínimo (%)": "Minimum OEE (%)",
+    "Disponibilidad mínima (%)": "Minimum availability (%)",
+    "MTTR máximo (min)": "Maximum MTTR (min)",
+    "Desperdicio máximo por día": "Maximum scrap per day",
+    "Lunes": "Monday",
+    "Martes": "Tuesday",
+    "Miércoles": "Wednesday",
+    "Jueves": "Thursday",
+    "Viernes": "Friday",
+    "Sábado": "Saturday",
+    "Domingo": "Sunday",
 }
 
 # Textos con valores: la clave es la plantilla en español («{}» = valor) y el resultado su traducción.

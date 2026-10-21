@@ -10,6 +10,22 @@ Numeración `MAYOR.MENOR.PARCHE`:
 
 ## [Sin publicar]
 
+### Dashboard para ingeniería y gerencia (rama `feature/planta-gerencia`)
+- Producción contra meta: producción por turno y por día de cada línea contra su meta, con % de cumplimiento.
+  El monitor ahora publica cada minuto la producción acumulada del turno, el estado de la máquina y el usuario
+  en turno.
+- Metas por línea (o para todas) y semáforo del mes: OEE, disponibilidad, MTTR, desperdicio por día y
+  cumplimiento de producción, contra el mes anterior.
+- Costos: hora de paro y unidad de desperdicio; costo del paro, del desperdicio y total (costo de la mala
+  calidad) por línea y en las conclusiones.
+- Turnos y operadores: OEE y paros por turno en cada línea y ranking de operadores entre líneas.
+- Mapa de planta: las líneas en su ubicación (plano de fondo opcional, se acomodan arrastrando), color por estado
+  y parpadeo en alarma; también en modo TV.
+- Mantenimiento: plan preventivo por equipo con horas de operación (amarillo al 80 %, rojo al 100 %, «servicio
+  hecho») y fallas por causa con MTBF y MTTR.
+- Reporte semanal automático del analizador (PDF) por correo o mensaje, el día y hora elegidos; también «Enviar
+  ahora» y «📄 Reporte PDF» en el analizador.
+
 ### Dashboard: analizador de planta, problemas y análisis estadístico (rama `feature/dashboard-analisis`)
 - Las secciones del dashboard se abren dentro de la misma ventana: Líneas, Analizador de planta, Problemas de
   proceso (antes era una ventana aparte) y Análisis estadístico.
