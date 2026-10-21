@@ -228,8 +228,29 @@ class FleetExporter:
             kpis = {k: round(v, 4) for k, v in (self.engine.kpis or {}).items() if v is not None}
             if acc or kpis:
                 v = {vid: [round(sum(xs) / len(xs), 6), min(xs), max(xs), xs[-1]] for vid, xs in acc.items()}
-                self._trend.append({"ts": round(now, 1), "from": round(start, 1), "v": v, "k": kpis})
+                row = {"ts": round(now, 1), "from": round(start, 1), "v": v, "k": kpis}
+                row.update(self._production_fields())
+                self._trend.append(row)
                 self._trend = self._trend[-MAX_PENDING:]
+
+    def _production_fields(self) -> dict:
+        """Para el dashboard: producción acumulada del turno («p»: [inicio del turno, total, conforme]), estado de
+        la máquina («s») y usuario en turno («u»). Sirven para producción contra meta, horas de operación y la
+        comparación de turnos y operadores entre líneas."""
+        out = {}
+        res = self._oee
+        if res is not None:
+            out["p"] = [round(res.start, 1), round(res.length_total or 0, 3), round(res.length_good or 0, 3)]
+            if res.intervals:
+                out["s"] = res.intervals[-1].state
+        try:
+            from .personnel import crew
+            user = crew(self.workspace.load_state())["user"]
+            if user:
+                out["u"] = user
+        except Exception:
+            pass
+        return out
 
     def _purge(self, d: Path, now: float) -> None:
         keep = self.settings.retention_days * 86400

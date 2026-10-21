@@ -37,8 +37,21 @@ def _esc(text: str) -> str:
     return esc(text)
 
 
-def write_pdf(ctx, records: list[dict], path: Path, title: str, where: str = "") -> Path:
-    """Calcula cada análisis y lo pone en el PDF (imagen de gráficas y tablas, a lo ancho de la hoja)."""
+def grab_widget(w, width: int = RENDER_W):
+    """Imagen completa de un widget aunque no esté en pantalla."""
+    w.setAttribute(Qt.WA_DontShowOnScreen, True)
+    w.resize(width, max(400, w.sizeHint().height()))
+    w.show()
+    QApplication.processEvents()
+    w.resize(width, max(400, w.sizeHint().height()))
+    QApplication.processEvents()
+    img = w.grab().toImage()
+    w.hide()
+    return img
+
+
+def write_images_pdf(sections: list[tuple[str, str, object]], path: Path, title: str, where: str = "") -> Path:
+    """PDF A4 con un título y, por sección, su encabezado, subtítulo y la imagen a lo ancho (partida por página)."""
     from reportlab.lib import colors
     from reportlab.lib.pagesizes import A4
     from reportlab.lib.styles import getSampleStyleSheet
@@ -48,8 +61,7 @@ def write_pdf(ctx, records: list[dict], path: Path, title: str, where: str = "")
     path = Path(path)
     path.parent.mkdir(parents=True, exist_ok=True)
     styles = getSampleStyleSheet()
-    h1 = styles["Title"]
-    h2 = styles["Heading2"]
+    h1, h2 = styles["Title"], styles["Heading2"]
     small = styles["BodyText"].clone("small", fontSize=8, leading=10, textColor=colors.HexColor("#52514e"))
     page_w, page_h = A4
     margin = 14 * mm
@@ -57,42 +69,42 @@ def write_pdf(ctx, records: list[dict], path: Path, title: str, where: str = "")
     story = [Paragraph(_esc(title), h1),
              Paragraph(_esc(" · ".join(x for x in (where, time.strftime("%d/%m/%Y %H:%M")) if x)), small),
              Spacer(1, 6 * mm)]
-    tmp = Path(tempfile.mkdtemp(prefix="analisis_"))
-    for k, rec in enumerate(records):
-        R, n = build_render(ctx, rec)
-        R.setAttribute(Qt.WA_DontShowOnScreen, True)
-        R.resize(RENDER_W, max(400, R.sizeHint().height()))
-        R.show()
-        QApplication.processEvents()
-        R.resize(RENDER_W, max(400, R.sizeHint().height()))
-        QApplication.processEvents()
-        img = R.grab().toImage()
-        R.hide()
-        R.deleteLater()
-        story.append(Paragraph(_esc(rec.get("title") or default_title(rec, ctx.engine.config)), h2))
-        story.append(Paragraph(_esc(subtitle(rec) + (f" · {n:,} {tr('datos')}" if n else "")), small))
+    tmp = Path(tempfile.mkdtemp(prefix="reporte_"))
+    for k, (head, sub, img) in enumerate(sections):
+        if head:
+            story.append(Paragraph(_esc(head), h2))
+        if sub:
+            story.append(Paragraph(_esc(sub), small))
         story.append(Spacer(1, 2 * mm))
-        # se parte la imagen en trozos del alto de la hoja
         scale = avail_w / img.width()
         chunk = int(avail_h / scale)
-        y = 0
-        part = 0
+        y = part = 0
         while y < img.height():
             h = min(chunk, img.height() - y)
-            piece = img.copy(0, y, img.width(), h)
-            f = tmp / f"a{k}_{part}.png"
-            piece.save(str(f))
+            f = tmp / f"s{k}_{part}.png"
+            img.copy(0, y, img.width(), h).save(str(f))
             story.append(Image(str(f), width=avail_w, height=h * scale))
             y += h
             part += 1
             if y < img.height():
                 story.append(PageBreak())
-        if k < len(records) - 1:
+        if k < len(sections) - 1:
             story.append(PageBreak())
-    doc = SimpleDocTemplate(str(path), pagesize=A4, leftMargin=margin, rightMargin=margin, topMargin=margin,
-                            bottomMargin=margin, title=_latin(title))
-    doc.build(story)
+    SimpleDocTemplate(str(path), pagesize=A4, leftMargin=margin, rightMargin=margin, topMargin=margin,
+                      bottomMargin=margin, title=_latin(title)).build(story)
     return path
+
+
+def write_pdf(ctx, records: list[dict], path: Path, title: str, where: str = "") -> Path:
+    """Calcula cada análisis y lo pone en el PDF (imagen de gráficas y tablas, a lo ancho de la hoja)."""
+    sections = []
+    for rec in records:
+        R, n = build_render(ctx, rec)
+        img = grab_widget(R)
+        R.deleteLater()
+        sections.append((rec.get("title") or default_title(rec, ctx.engine.config),
+                         subtitle(rec) + (f" · {n:,} {tr('datos')}" if n else ""), img))
+    return write_images_pdf(sections, path, title, where)
 
 
 class ReportDialog(QDialog):

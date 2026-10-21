@@ -27,10 +27,16 @@ def make_plant(root, now):
         files = {}
         for i in range(3 * 24 * 60):
             ts = now - 3 * 86400 + 60 * i
-            row = {"ts": ts, "v": {"diam": [3.2 + 0.01 * k + rng.normal(0, 0.01), 0, 0],
-                                   "vel": [350 + rng.normal(0, 2), 0, 0]},
+            from extrusion_monitor.analysis.oee import shift_start
+            sh = shift_start(ts, ["06:00", "14:00", "22:00"])
+            run = (i % 60) < 55  # 5 min detenida cada hora
+            row = {"ts": ts, "from": ts - 60, "v": {"diam": [3.2 + 0.01 * k + rng.normal(0, 0.01), 0, 0],
+                                                   "vel": [350 + rng.normal(0, 2), 0, 0]},
                    "k": {"oee": 80 - 15 * k + rng.normal(0, 2), "availability": 90 - 10 * k, "performance": 92,
-                         "quality": 97, "stability": 95 - 2 * k - 0.001 * i * k, "i5": 85 - 20 * k}}
+                         "quality": 97, "stability": 95 - 2 * k - 0.001 * i * k, "i5": 85 - 20 * k},
+                   # producción acumulada del turno (10 m/min), estado de la máquina y usuario en turno
+                   "p": [sh, (ts - sh) / 60 * 10, (ts - sh) / 60 * 9.5], "s": "running" if run else "stopped",
+                   "u": "Ana" if time.localtime(ts).tm_hour < 14 else "Luis"}
             files.setdefault(day_name(ts), []).append(json.dumps(row))
         for fname, lines in files.items():
             (d / TREND_DIR / fname).write_text("\n".join(lines) + "\n", "utf-8")
@@ -106,4 +112,87 @@ def test_dashboard_pages_open_inside_the_window(tmp_path):
     assert w.pages["analyzer"].summary is not None and len(w.pages["analyzer"].summary.lines) == 2
     item = next(w.nav.item(i) for i in range(w.nav.count()) if w.nav.item(i).data(0x0100) == "ack")
     assert "Silenciar" in item.text() and item.toolTip()
+    w.close()
+
+
+def test_production_shifts_operators_failures_and_goals(tmp_path):
+    from extrusion_monitor.analysis.plant import summarize
+    from extrusion_monitor.fleet import FleetReader
+    from extrusion_monitor.fleet_data import FleetHistorian
+    from extrusion_monitor.plant_settings import Equipment, PlantSettings, Targets
+    now = time.time()
+    make_plant(tmp_path / "planta", now)
+    r = FleetReader(tmp_path / "planta")
+    r.scan()
+    plant = PlantSettings(cost_stop_h=600, cost_scrap_unit=2, default_targets=Targets(production_shift=4000, oee=75))
+    plant.targets["Línea 2"] = Targets(production_shift=6000, oee=70, mttr_min=15)
+    plant.equipment["Línea 1"] = [Equipment("Tornillo", 10, now - 2 * 86400)]
+    plant.save(tmp_path / "home")
+    p2 = PlantSettings.load(tmp_path / "home")
+    assert p2.target("Línea 1").production_shift == 4000 and p2.target("Línea 2").mttr_min == 15
+    s = summarize(FleetHistorian(r), now - 2 * 86400, now, plant=p2)
+    m1, m2 = s.lines
+    assert m1.produced > 0 and m1.n_shifts >= 6 and m1.compliance is not None
+    assert m2.compliance < m1.compliance  # misma producción, meta más alta
+    assert m1.run_h == pytest.approx(48 * 55 / 60, rel=0.05)
+    assert m1.scrap_cost == pytest.approx(m1.scrap * 2) and m1.quality_cost == pytest.approx(m1.cost + m1.scrap_cost)
+    assert {"Ana", "Luis"} <= set(m1.by_user) and len(m1.by_shift) >= 2
+    assert m2.failures["Cambio de dado"]["n"] == 2 and m2.failures["Cambio de dado"]["mtbf"] > 0
+    texts = " ".join(i.text for i in s.insights)
+    assert "cumplimiento" in texts and "MTTR" in texts and "Costo de paros y desperdicio" in texts
+    from extrusion_monitor.ui.fleet_maint import maintenance_status
+    st = maintenance_status(FleetHistorian(r), p2, now)["Línea 1"][0]
+    assert st["state"] == "due" and st["hours"] > 10
+
+
+def test_dashboard_new_pages_dialog_and_weekly_report(tmp_path):
+    from PySide6.QtWidgets import QApplication
+    QApplication.instance() or QApplication([])
+    from extrusion_monitor.notify import NotifySettings
+    from extrusion_monitor.plant_settings import Equipment, PlantSettings
+    from extrusion_monitor.ui.fleet_plant_dialog import PlantDialog
+    from extrusion_monitor.ui.fleet_window import FleetWindow
+    now = time.time()
+    make_plant(tmp_path / "planta", now)
+    w = FleetWindow(str(tmp_path / "planta"), tmp_path / "fleet.json")
+    w.refresh()
+    home = tmp_path
+    dlg = PlantDialog(home, ["Línea 1", "Línea 2"])
+    dlg.spins[("__todas__", "production_shift")].setValue(4500)
+    dlg.spins[("Línea 2", "oee")].setValue(70)
+    dlg.sp_stop.setValue(900)
+    dlg.chk_weekly.setChecked(True)
+    dlg.accept()
+    plant = PlantSettings.load(home)
+    assert plant.default_targets.production_shift == 4500 and plant.targets["Línea 2"].oee == 70
+    assert plant.cost_stop_h == 900 and plant.weekly.enabled
+    plant.equipment["Línea 1"] = [Equipment("Tornillo", 2000, now - 86400)]
+    plant.save(home)
+    for key in ("map", "maintenance", "analyzer"):
+        w.show_page(key)
+        assert w.current_page == key
+    assert set(w.pages["map"].items) == {"L1", "L2"}
+    w.pages["map"]._moved("L1", 300, 120)
+    assert PlantSettings.load(home).map_pos["Línea 1"] == [300, 120]
+    maint = w.pages["maintenance"]
+    assert maint.tbl.rowCount() == 1 and "Tornillo" in maint.tbl.item(0, 0).text()
+    maint.tbl.setCurrentCell(0, 0)
+    maint.serviced(confirm=False)
+    assert PlantSettings.load(home).equipment["Línea 1"][0].last_service > now - 5
+    # reporte semanal: cuando toca, genera el PDF y lo manda (canal simulado)
+    sent = []
+    ns = NotifySettings()
+    ns.webhook.enabled = True
+    ns.set_secret("webhook", "https://hook")
+    ns.save(home)
+    w.notifier.reload()
+    w.notifier.senders = {"webhook": lambda s, m: sent.append(m)}
+    p = PlantSettings.load(home)
+    p.weekly.last = 0
+    p.save(home)
+    assert w.weekly_due(now)
+    path = w.send_weekly()
+    w.notifier.flush()
+    assert path and path.exists() and path.read_bytes().startswith(b"%PDF")
+    assert sent and sent[0].attachment == path and not w.weekly_due(now)
     w.close()
