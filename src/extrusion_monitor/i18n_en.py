@@ -1590,6 +1590,54 @@ EN: dict[str, str] = {
     "El monitoreo está en ejecución. Si cierras el programa la línea deja de vigilarse.\n\n¿Cerrar de todos modos?":
         "Monitoring is running. If you close the program the line stops being watched.\n\nClose anyway?",
     "📐 Mostrar «Análisis estadístico» en el monitor": "📐 Show “Statistical analysis” in the monitor",
+    # --- dashboard: analizador y páginas ---
+    "Para estimar cuánto cuesta el tiempo muerto (0 = no mostrar)":
+        "To estimate how much downtime costs (0 = do not show)",
+    "Conclusiones del periodo": "Findings for the period",
+    "Indicadores por línea": "Indicators by line",
+    "Disp.": "Avail.",
+    "Rend.": "Perf.",
+    "Cal.": "Qual.",
+    "Δ OEE": "Δ OEE",
+    "Min paro": "Stop min",
+    "Alarmas/h": "Alarms/h",
+    "Δ OEE: contra el periodo anterior de la misma duración. MTTR: duración promedio de un paro. MTBF: "
+    "tiempo de operación entre paros. Paros planeados no cuentan.":
+        "Δ OEE: vs the previous period of the same length. MTTR: average stop duration. MTBF: operating "
+        "time between stops. Planned stops do not count.",
+    "OEE y sus pérdidas por línea (%)": "OEE and its losses by line (%)",
+    "Principales causas de paro de la planta (min)": "Top plant stop causes (min)",
+    "Industria 5.0: personas, resiliencia y sostenibilidad": "Industry 5.0: people, resilience and sustainability",
+    "Índice 5.0 (0–100): combina la carga de alarmas para el operador, la estabilidad del proceso y su "
+    "recuperación tras los paros. Más alto es mejor.":
+        "5.0 index (0–100): combines the alarm load on the operator, process stability and recovery after "
+        "stops. Higher is better.",
+    "Costo de una hora de paro:": "Cost of one hour of downtime:",
+    "No hay líneas en la carpeta de datos todavía.": "There are no lines in the data folder yet.",
+    "OEE diario por línea": "Daily OEE by line",
+    "Estabilidad diaria por línea (%)": "Daily stability by line (%)",
+    "Índice 5.0 diario por línea": "Daily 5.0 index by line",
+    "Costo del paro": "Downtime cost",
+    "Tiempo muerto por línea (min)": "Downtime by line (min)",
+    "Alarmas/h\n(carga del operador)": "Alarms/h\n(operator load)",
+    "Estabilidad\n(resiliencia)": "Stability\n(resilience)",
+    "Tendencia de\nestabilidad": "Stability\ntrend",
+    "Desperdicio\n(sostenibilidad)": "Scrap\n(sustainability)",
+    "Sin hallazgos importantes: las líneas operan dentro de lo normal.":
+        "No important findings: the lines operate within normal.",
+    "Sin paros capturados": "No captured stops",
+    "Analizador de planta": "Plant analyzer",
+    "pts/día": "pts/day",
+    "Silenciar avisos": "Silence alerts",
+    "Detiene el parpadeo y el sonido de las tarjetas de las líneas que entraron en alarma, se detuvieron "
+    "o perdieron comunicación. Las alarmas siguen a la vista; si vuelve a pasar, vuelve a avisar.":
+        "Stops the blinking and sound of the cards of lines that went into alarm, stopped or lost "
+        "communication. Alarms stay visible; if it happens again, it alerts again.",
+    "Problemas, fallas, tiempos muertos, estabilidad y tendencia de todas las líneas, con conclusiones "
+    "automáticas":
+        "Problems, failures, downtime, stability and trend of all lines, with automatic findings",
+    "Análisis estadístico con los datos que publican los monitores (por línea, turno, día…)":
+        "Statistical analysis with the data published by the monitors (by line, shift, day…)",
 }
 
 # Textos con valores: la clave es la plantilla en español («{}» = valor) y el resultado su traducción.
