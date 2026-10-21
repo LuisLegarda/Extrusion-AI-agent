@@ -10,6 +10,20 @@ Numeración `MAYOR.MENOR.PARCHE`:
 
 ## [Sin publicar]
 
+### Análisis estadístico (rama `feature/analisis-estadistico`)
+- Nueva sección lateral «Análisis estadístico» con navegador de análisis: crear, abrir con un clic, cambiar
+  (doble clic), duplicar, renombrar y eliminar; se guardan en `<datos>/analisis/` y se recalculan con el historial.
+- 14 análisis: estadística descriptiva (media, desv. estándar, varianza, mín/máx, rango, mediana, cuartiles,
+  suma de cuadrados, asimetría, curtosis), comparar grupos (gráfica de intervalos, ANOVA y t de Welch),
+  normalidad (Anderson-Darling), histograma (superpuesto o por panel), boxplot, gráfica de tiempo, barras,
+  capacidad (Cp, Cpk, Pp, Ppk, Cpm, PPM), Capability Sixpack, cartas I-MR y X̄-R, Pareto de paros y defectos,
+  matriz multivariable con correlación, contorno y regresión (lineal, cuadrática, interacciones) con
+  simulación de respuesta.
+- Datos por rango de fecha y hora, agrupados o filtrados por turno, día, semana, mes, hora, operador y receta.
+  El usuario en turno se registra en el historial para poder agrupar por operador.
+- Cada análisis trae una interpretación en lenguaje claro. Título del análisis y de cada gráfica (doble clic) y
+  colores de barras y líneas editables; exportación a PNG y CSV.
+
 ### Dashboard global con el estilo del monitor (rama `feature/dashboard-estilo`)
 - Barra lateral con logo, texto y línea de la estación (Líneas, Problemas de proceso, Reconocer avisos,
   Exportar CSV, Modo TV, Configuración) y barra superior con buscador, filtro, orden y campana de alarmas.

@@ -1133,6 +1133,350 @@ EN: dict[str, str] = {
     "● Carpeta de datos conectada · {n} líneas": "● Data folder connected · {n} lines",
     "No se puede leer la carpeta de datos: revisa la red o los permisos (⚙ Configuración).":
         "Cannot read the data folder: check the network or permissions (⚙ Settings).",
+    # --- análisis estadístico ---
+    "Datos": "Data",
+    "Desde / hasta": "From / to",
+    "Agrupar por": "Group by",
+    "Todos": "All",
+    "Solo": "Only",
+    "Respuesta (Y)": "Response (Y)",
+    "Opciones": "Options",
+    "De la receta": "From recipe",
+    "Toma los límites de alarma de la receta activa": "Takes the alarm limits of the active recipe",
+    "Especificación": "Specification",
+    "Barras del histograma": "Histogram bars",
+    "Curva normal": "Normal curve",
+    "Un panel por grupo (en lugar de superponer)": "One panel per group (instead of overlaying)",
+    "Valor de las barras": "Bar value",
+    "Valores individuales y rango móvil (I-MR)": "Individuals and moving range (I-MR)",
+    "Medias y rangos de subgrupos (X̄-R)": "Subgroup means and ranges (X̄-R)",
+    "Carta": "Chart",
+    "Tamaño de subgrupo": "Subgroup size",
+    "Resolución de la cuadrícula": "Grid resolution",
+    "Las variables se comparan en los mismos instantes, cada tantos segundos":
+        "Variables are compared at the same instants, every so many seconds",
+    "Emparejar datos cada": "Pair data every",
+    "Términos cuadráticos (curvatura)": "Quadratic terms (curvature)",
+    "Interacciones entre factores": "Interactions between factors",
+    "Capturas": "Entries",
+    "Agrupar capturas por": "Group entries by",
+    "Medir": "Measure",
+    "Calcular": "Calculate",
+    "＋ Nuevo análisis": "＋ New analysis",
+    "Doble clic para cambiar el título": "Double-click to change the title",
+    "Crea un análisis con «＋ Nuevo análisis»: estadística descriptiva, histogramas, cajas, gráficas de "
+    "tiempo y de barras, normalidad, capacidad y Sixpack, cartas de control, comparación de turnos, días, "
+    "meses u operadores, Pareto de paros y defectos, correlación, contorno y regresión con simulación de "
+    "respuesta.<br><br>Cada análisis queda en el navegador: clic para verlo, doble clic para cambiarlo.":
+        "Create an analysis with “＋ New analysis”: descriptive statistics, histograms, boxplots, time and "
+        "bar charts, normality, capability and Sixpack, control charts, comparison of shifts, days, "
+        "months or operators, Pareto of stops and defects, correlation, contour and regression with "
+        "response simulation.<br><br>Each analysis stays in the navigator: click to view it, double-click "
+        "to change it.",
+    "Título del análisis": "Analysis title",
+    "Colores de barras y líneas": "Bar and line colors",
+    "Colores del tema": "Theme colors",
+    "por": "by",
+    "Cambiar el análisis": "Change the analysis",
+    "Nuevo análisis": "New analysis",
+    "Z (respuesta)": "Z (response)",
+    "Título": "Title",
+    "Factores (X): marca uno o varios": "Factors (X): check one or more",
+    "El fin del periodo debe ser posterior al inicio.": "The end of the period must be after the start.",
+    "Marca al menos dos variables.": "Check at least two variables.",
+    "Marca al menos un factor (X) distinto de la respuesta.": "Check at least one factor (X) other than the response.",
+    "Indica al menos un límite de especificación (LIE o LSE).": "Enter at least one specification limit (LSL or USL).",
+    "Para comparar, agrupa (turno, día, mes, operador…) o marca dos o más variables.":
+        "To compare, group (shift, day, month, operator…) or check two or more variables.",
+    "🎨 Colores": "🎨 Colors",
+    "Color de barras y líneas": "Bar and line color",
+    "⟳ Recalcular": "⟳ Recalculate",
+    "Vuelve a leer el historial": "Reads the history again",
+    "⤓ Imagen": "⤓ Image",
+    "Guardar el análisis como imagen PNG": "Save the analysis as a PNG image",
+    "⤓ CSV": "⤓ CSV",
+    "Guardar la tabla de resultados": "Save the results table",
+    "Serie 1": "Series 1",
+    "Guardar imagen": "Save image",
+    "Guardar tabla": "Save table",
+    "Marca hasta {n} variables": "Check up to {n} variables",
+    "✎ Cambiar": "✎ Change",
+    "Cambiar datos, variables u opciones": "Change data, variables or options",
+    "⧉ Duplicar": "⧉ Duplicate",
+    "Copia para probar otra variación": "Copy to try another variation",
+    "Aa Renombrar": "Aa Rename",
+    "Cambiar el título del análisis": "Change the analysis title",
+    "🗑 Eliminar": "🗑 Delete",
+    "Quitar el análisis del navegador": "Remove the analysis from the navigator",
+    "No se pudo guardar el navegador: {e}": "Could not save the navigator: {e}",
+    "Análisis estadístico": "Statistical analysis",
+    "¿Quitar «{t}» del navegador?": "Remove “{t}” from the navigator?",
+    "No hay datos de esas variables en el periodo elegido (con los filtros aplicados).":
+        "There is no data for those variables in the chosen period (with the filters applied).",
+    "Tipo de análisis": "Analysis type",
+    "Navegador de análisis": "Analysis navigator",
+    "No se pudo calcular: {e}": "Could not calculate: {e}",
+    "datos": "data points",
+    "{v}: Cpk {k} · Ppk {pk}. Se esperan {ppm} PPM fuera de especificación.":
+        "{v}: Cpk {k} · Ppk {pk}. {ppm} PPM out of specification are expected.",
+    "El modelo explica el <b>{r} %</b> de la variación de {y}.":
+        "The model explains <b>{r} %</b> of the variation of {y}.",
+    "Porcentaje": "Percent",
+    " · datos promediados cada {s} s por ser muchos": " · data averaged every {s} s because there are many",
+    "Estadística descriptiva": "Descriptive statistics",
+    "<b>{h}</b>: media {m}, desviación estándar {s} (CV {cv} %), de {mn} a {mx}. La mitad de los datos "
+    "está entre {q1} y {q3}.":
+        "<b>{h}</b>: mean {m}, standard deviation {s} (CV {cv} %), from {mn} to {mx}. Half of the data is "
+        "between {q1} and {q3}.",
+    "Histograma de {v}": "Histogram of {v}",
+    "Gráfica de caja de {v}": "Boxplot of {v}",
+    "Gráfica de tiempo de {v}": "Time series of {v}",
+    "{s} por grupo": "{s} by group",
+    "Gráfica de intervalos (media e IC 95 %)": "Interval plot (mean and 95 % CI)",
+    "Grupos": "Groups",
+    "ANOVA de un factor": "One-way ANOVA",
+    "<b>Hay diferencia significativa entre los grupos</b> (p = {p} < 0.05). Media más alta: <b>{a}</b> "
+    "({ma}); más baja: <b>{b}</b> ({mb}). El factor explica el {r} % de la variación.":
+        "<b>There is a significant difference between the groups</b> (p = {p} < 0.05). Highest mean: "
+        "<b>{a}</b> ({ma}); lowest: <b>{b}</b> ({mb}). The factor explains {r} % of the variation.",
+    "<b>No hay diferencia significativa</b> entre los grupos (p = {p} ≥ 0.05): las diferencias observadas "
+    "pueden deberse al azar.":
+        "<b>There is no significant difference</b> between the groups (p = {p} ≥ 0.05): the observed "
+        "differences may be due to chance.",
+    "Gráfica de probabilidad normal de {v}": "Normal probability plot of {v}",
+    "<b>El proceso es capaz</b>": "<b>The process is capable</b>",
+    "Capacidad del proceso de {v}": "Process capability of {v}",
+    "Últimas 25 observaciones": "Last 25 observations",
+    "Observación": "Observation",
+    "Gráfica de capacidad": "Capability plot",
+    "Carta X̄ (subgrupos de {n})": "X̄ chart (subgroups of {n})",
+    "Carta de valores individuales (I)": "Individuals chart (I)",
+    "Carta R": "R chart",
+    "Carta de rango móvil (MR)": "Moving range chart (MR)",
+    "Correlación de Pearson (r)": "Pearson correlation (r)",
+    "Contorno de {z} contra {x} y {y}": "Contour of {z} vs {x} and {y}",
+    "Coeficientes": "Coefficients",
+    "Residuos contra ajustados": "Residuals vs fits",
+    "Probabilidad normal de los residuos": "Normal probability of residuals",
+    "Mueve los factores en la simulación para ver la respuesta esperada.":
+        "Move the factors in the simulation to see the expected response.",
+    "Superficie de respuesta: {y}": "Response surface: {y}",
+    "Pareto de {k} por {b}": "Pareto of {k} by {b}",
+    "% acumulado": "cumulative %",
+    "<b>{k} de {n}</b> categorías concentran el 80 % ({top}). Atacar primero «{first}» ({pct} % del "
+    "total) es lo que más reduce {m}.":
+        "<b>{k} of {n}</b> categories make up 80 % ({top}). Tackling “{first}” first ({pct} % of the "
+        "total) reduces {m} the most.",
+    "Título de la gráfica": "Chart title",
+    "Desv. est.": "StDev",
+    "Mediana": "Median",
+    "Rango IQ": "IQR",
+    "Mínimo": "Minimum",
+    "Máximo": "Maximum",
+    "Grupo": "Group",
+    "Se necesitan al menos dos grupos con datos: agrupa (turno, día, mes, operador…) o elige varias "
+    "variables.":
+        "At least two groups with data are needed: group (shift, day, month, operator…) or choose several "
+        "variables.",
+    "IC 95 % bajo": "95 % CI low",
+    "IC 95 % alto": "95 % CI high",
+    "Prueba t (Welch): diferencia de medias {d} (IC 95 %: {a} a {b}), t = {t}, p = {p}. ":
+        "t-test (Welch): difference of means {d} (95 % CI: {a} to {b}), t = {t}, p = {p}. ",
+    "Se necesitan al menos 8 datos con variación.": "At least 8 data points with variation are needed.",
+    "Estadístico": "Statistic",
+    "<b>Los datos siguen una distribución normal</b> (Anderson-Darling p = {p} ≥ 0.05): los índices de "
+    "capacidad Cp/Cpk son confiables.":
+        "<b>The data follow a normal distribution</b> (Anderson-Darling p = {p} ≥ 0.05): the Cp/Cpk "
+        "capability indices are reliable.",
+    "Datos del proceso": "Process data",
+    "Índice": "Index",
+    "Dentro (corto plazo)": "Within (short term)",
+    "General (largo plazo)": "Overall (long term)",
+    "<b>El proceso es apenas capaz</b> (mejorar la variación o el centrado)":
+        "<b>The process is barely capable</b> (improve variation or centering)",
+    "<b>El proceso no es capaz</b>": "<b>The process is not capable</b>",
+    "superior": "upper",
+    "inferior": "lower",
+    "El proceso está <b>descentrado</b> hacia el límite {s}: centrarlo subiría el Cpk a ~{cp}.":
+        "The process is <b>off-center</b> toward the {s} limit: centering it would raise Cpk to ~{cp}.",
+    "La variación a largo plazo es mucho mayor que la de corto plazo (Ppk ≪ Cpk): hay cambios entre "
+    "turnos, recetas o con el tiempo.":
+        "Long-term variation is much larger than short-term (Ppk ≪ Cpk): there are changes between "
+        "shifts, recipes or over time.",
+    "Dentro": "Within",
+    "Indica al menos un límite de especificación (LIE o LSE) y elige un rango con 5 datos o más.":
+        "Enter at least one specification limit (LSL or USL) and choose a range with 5 or more data "
+        "points.",
+    "Indica al menos un límite de especificación y elige un rango con datos suficientes.":
+        "Enter at least one specification limit and choose a range with enough data.",
+    "Carta I": "I chart",
+    "Carta de rango móvil": "Moving range chart",
+    "Histograma de capacidad": "Capability histogram",
+    "Gráfica de probabilidad normal": "Normal probability plot",
+    "La carta I tiene <b>{n} puntos fuera de control</b>: el proceso no es estable y los índices pueden "
+    "no representar el futuro.":
+        "The I chart has <b>{n} out-of-control points</b>: the process is not stable and the indices may "
+        "not represent the future.",
+    "Las cartas no muestran puntos fuera de control: el proceso es estable.":
+        "The charts show no out-of-control points: the process is stable.",
+    "Los datos no son normales (p = {p}).": "The data are not normal (p = {p}).",
+    "Datos insuficientes para la carta de control.": "Not enough data for the control chart.",
+    "Prueba": "Test",
+    "Puntos": "Points",
+    "<b>Proceso estable</b>: ningún punto sale de los límites ni hay corridas.":
+        "<b>Stable process</b>: no point is outside the limits and there are no runs.",
+    "Se necesitan al menos dos variables con datos en los mismos momentos.":
+        "At least two variables with data at the same moments are needed.",
+    "fuerte": "strong",
+    "directa": "positive",
+    "inversa": "negative",
+    "<b>{x}</b> y <b>{y}</b>: relación {s} {d} (r = {r}, p = {p})":
+        "<b>{x}</b> and <b>{y}</b>: {s} {d} relationship (r = {r}, p = {p})",
+    "Correlación no es causalidad: confirma con un cambio controlado.":
+        "Correlation is not causation: confirm with a controlled change.",
+    "Se necesitan las tres variables (X, Y, Z) con datos en los mismos momentos.":
+        "The three variables (X, Y, Z) with data at the same moments are needed.",
+    "{z} más alto ({zmax}) con {x} ≈ {xa} y {y} ≈ {ya}; más bajo ({zmin}) con {x} ≈ {xb} y {y} ≈ {yb}. "
+    "Las zonas sin color no tienen datos.":
+        "Highest {z} ({zmax}) with {x} ≈ {xa} and {y} ≈ {ya}; lowest ({zmin}) with {x} ≈ {xb} and {y} ≈ "
+        "{yb}. Areas without color have no data.",
+    "Se necesitan la respuesta (Y) y al menos un factor (X) con datos en los mismos momentos.":
+        "The response (Y) and at least one factor (X) with data at the same moments are needed.",
+    "No hay suficientes datos para ajustar el modelo.": "There is not enough data to fit the model.",
+    "S = {s} · R² = {r2} % · R² ajustado = {r2a} % · F = {f} · p = {p} · N = {n}":
+        "S = {s} · R² = {r2} % · adjusted R² = {r2a} % · F = {f} · p = {p} · N = {n}",
+    "Término": "Term",
+    "Coeficiente": "Coefficient",
+    "Error est.": "SE",
+    "¿Significativo?": "Significant?",
+    "Gráfica de línea ajustada": "Fitted line plot",
+    "Observado contra ajustado": "Observed vs fitted",
+    "Ajustado": "Fitted",
+    "Observado": "Observed",
+    "Factores significativos (p < 0.05): {s}.": "Significant factors (p < 0.05): {s}.",
+    "Ningún factor es significativo: el modelo no sirve para predecir.":
+        "No factor is significant: the model is not useful for prediction.",
+    "R² bajo: faltan factores importantes o la relación no es de este tipo.":
+        "Low R²: important factors are missing or the relationship is of a different kind.",
+    "No hay capturas en el rango elegido.": "There are no entries in the chosen range.",
+    "La distribución es asimétrica (asimetría {a}): revisa la normalidad antes de calcular capacidad.":
+        "The distribution is skewed (skewness {a}): check normality before calculating capability.",
+    "Densidad": "Density",
+    "Frecuencia": "Frequency",
+    "La serie con menor variación es <b>{n}</b> (desv. est. {s}). Compara las medias y la dispersión de "
+    "cada serie; para saber si la diferencia es real usa «Comparar grupos».":
+        "The series with the least variation is <b>{n}</b> (StDev {s}). Compare the means and spread of "
+        "each series; to know whether the difference is real use “Compare groups”.",
+    "La caja muestra el 50 % central de los datos y la línea, la mediana; el punto es la media y las × "
+    "son valores atípicos. Mayor dispersión: <b>{n}</b> (rango IQ {r}).":
+        "The box shows the central 50 % of the data and the line the median; the dot is the mean and the "
+        "× are outliers. Largest spread: <b>{n}</b> (IQR {r}).",
+    "Sin tendencias marcadas en el periodo: los valores se mantienen alrededor de su media.":
+        "No marked trends in the period: values stay around their mean.",
+    "Entre grupos": "Between groups",
+    "Error (dentro)": "Error (within)",
+    "Total": "Total",
+    "Valor p": "p-value",
+    "<b>Los datos no siguen una distribución normal</b> (Anderson-Darling p = {p} < 0.05). Puede haber "
+    "mezcla de condiciones (turnos, recetas, arranques) o una distribución sesgada: separa por grupo o "
+    "interpreta Cp/Cpk con cuidado.":
+        "<b>The data do not follow a normal distribution</b> (Anderson-Darling p = {p} < 0.05). There may "
+        "be mixed conditions (shifts, recipes, start-ups) or a skewed distribution: split by group or "
+        "interpret Cp/Cpk carefully.",
+    "Desv. est. (dentro)": "StDev (within)",
+    "Desv. est. (general)": "StDev (overall)",
+    "Fuera de límites de control": "Outside control limits",
+    "9 o más seguidos del mismo lado": "9 or more in a row on the same side",
+    "Rango fuera de límites": "Range outside limits",
+    "<b>Proceso fuera de control</b>: {a} puntos fuera de límites, {b} en corridas y {c} rangos fuera. "
+    "Busca causas especiales en esos momentos (cambio de receta, arranque, material).":
+        "<b>Process out of control</b>: {a} points outside limits, {b} in runs and {c} ranges out. Look "
+        "for special causes at those moments (recipe change, start-up, material).",
+    "moderada": "moderate",
+    "débil": "weak",
+    "(sin dato)": "(no data)",
+    "<b>{v}</b> tiene una tendencia {d} de {s} {u}/h en el periodo.":
+        "<b>{v}</b> is trending {d} by {s} {u}/h in the period.",
+    "observadas": "observed",
+    "esperadas": "expected",
+    "IC 95 % de la media: {a} a {b} · IP 95 % de una lectura: {c} a {d}":
+        "95 % CI of the mean: {a} to {b} · 95 % PI of a reading: {c} to {d}",
+    "Ecuación de regresión": "Regression equation",
+    "Simulación de respuesta": "Response simulation",
+    "⚠ Fuera del rango de los datos: la predicción es una extrapolación.":
+        "⚠ Outside the data range: the prediction is an extrapolation.",
+    "Barras": "Bars",
+    "a subir": "up",
+    "a bajar": "down",
+    "Media, desviación estándar, varianza, mínimo y máximo, rango, mediana, cuartiles, suma de cuadrados, "
+    "asimetría y curtosis, por variable y grupo.":
+        "Mean, standard deviation, variance, minimum and maximum, range, median, quartiles, sum of "
+        "squares, skewness and kurtosis, by variable and group.",
+    "Comparar grupos (t / ANOVA)": "Compare groups (t / ANOVA)",
+    "¿Hay diferencia real entre turnos, días, meses, operadores o recetas? Gráfica de intervalos, ANOVA "
+    "de un factor y prueba t.":
+        "Is there a real difference between shifts, days, months, operators or recipes? Interval plot, "
+        "one-way ANOVA and t-test.",
+    "Prueba de normalidad": "Normality test",
+    "Gráfica de probabilidad normal y prueba de Anderson-Darling.":
+        "Normal probability plot and Anderson-Darling test.",
+    "Histograma": "Histogram",
+    "Distribución con curva normal; varias variables o grupos superpuestos o en paneles.":
+        "Distribution with normal curve; several variables or groups overlaid or in panels.",
+    "Gráfica de caja (boxplot)": "Boxplot",
+    "Mediana, cuartiles y atípicos por variable o grupo.": "Median, quartiles and outliers by variable or group.",
+    "Valores en el tiempo de una o varias variables.": "Values over time of one or several variables.",
+    "Gráfica de barras": "Bar chart",
+    "Media, mediana, suma, conteo o desviación por grupo.": "Mean, median, sum, count or deviation by group.",
+    "Análisis de capacidad": "Capability analysis",
+    "Cp, Cpk, Pp, Ppk, Cpm y PPM con histograma y curvas dentro y general.":
+        "Cp, Cpk, Pp, Ppk, Cpm and PPM with histogram and within and overall curves.",
+    "Capacidad Sixpack": "Capability Sixpack",
+    "Cartas I y MR, últimas 25 observaciones, histograma, probabilidad normal y gráfica de capacidad.":
+        "I and MR charts, last 25 observations, histogram, normal probability and capability plot.",
+    "Carta de control (I-MR / X̄-R)": "Control chart (I-MR / X̄-R)",
+    "Límites de control y puntos fuera de control o corridas.": "Control limits and out-of-control points or runs.",
+    "Pareto de paros y defectos": "Pareto of stops and defects",
+    "Paros o defectos capturados por causa, categoría, operador, turno, día o mes.":
+        "Captured stops or defects by cause, category, operator, shift, day or month.",
+    "Multivariable (matriz y correlación)": "Multivariable (matrix and correlation)",
+    "Matriz de dispersión y correlación de Pearson entre varias variables.":
+        "Scatter matrix and Pearson correlation between several variables.",
+    "Gráfica de contorno": "Contour plot",
+    "Cómo cambia una variable (Z) según otras dos (X, Y).": "How one variable (Z) changes with two others (X, Y).",
+    "Regresión y simulación de respuesta": "Regression and response simulation",
+    "Modelo de la respuesta según los factores (lineal, cuadrático, interacciones), significancia y "
+    "simulador: mueve los factores y ve la respuesta esperada.":
+        "Model of the response from the factors (linear, quadratic, interactions), significance and "
+        "simulator: move the factors and see the expected response.",
+    "Estadística básica": "Basic statistics",
+    "Gráficas": "Graphs",
+    "Paros y defectos": "Stops and defects",
+    "Relaciones": "Relationships",
+    "Personalizado": "Custom",
+    "Suma": "Sum",
+    "Conteo": "Count",
+    "Desviación estándar": "Standard deviation",
+    "Día": "Day",
+    "Mes": "Month",
+    "Minutos": "Minutes",
+    "Número de capturas": "Number of entries",
+    "Defectos de calidad": "Quality defects",
+    "N": "N",
+    "Desv. estándar": "StDev",
+    "Varianza": "Variance",
+    "Error estándar de la media": "SE of the mean",
+    "Coef. de variación (%)": "Coef. of variation (%)",
+    "Q1": "Q1",
+    "Q3": "Q3",
+    "Rango intercuartil": "Interquartile range",
+    "Suma de cuadrados (corregida)": "Sum of squares (corrected)",
+    "Suma de cuadrados (sin corregir)": "Sum of squares (uncorrected)",
+    "Asimetría": "Skewness",
+    "Curtosis": "Kurtosis",
+    "Sin agrupar": "Not grouped",
+    "Semana": "Week",
+    "Hora del día": "Hour of day",
 }
 
 # Textos con valores: la clave es la plantilla en español («{}» = valor) y el resultado su traducción.

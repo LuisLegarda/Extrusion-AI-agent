@@ -9,7 +9,8 @@ a = Analysis(
     ["run.py"],
     pathex=["../src"],
     hiddenimports=hidden,
-    datas=collect_data_files("reportlab"),  # fuentes de los reportes PDF
+    # fuentes de los reportes PDF y mapas de color de las gráficas de contorno (análisis estadístico)
+    datas=collect_data_files("reportlab") + collect_data_files("pyqtgraph", includes=["colors/maps/*.csv"]),
     excludes=["tkinter", "matplotlib", "PySide6.QtWebEngineCore", "PySide6.Qt3DCore"],
 )
 pyz = PYZ(a.pure)
