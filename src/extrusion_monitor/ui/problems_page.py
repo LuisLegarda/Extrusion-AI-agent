@@ -386,6 +386,8 @@ class CapturePanel(QWidget):
         rec = self.engine.historian.add_problem(rec)
         if self.ctx.exporter is not None:
             self.ctx.exporter.queue_problem("add", rec)
+        if getattr(self.ctx, "notifier", None) is not None:
+            self.ctx.notifier.problem_saved(rec)  # desperdicio alto (si se eligió avisar)
         if rec["planned"]:
             self.engine.kpis_ts = None  # un paro planeado cambia el OEE: se recalcula en el siguiente ciclo
         state = self.ctx.workspace.load_state()

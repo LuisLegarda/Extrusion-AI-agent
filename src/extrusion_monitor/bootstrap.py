@@ -26,6 +26,7 @@ class AppContext:
     template_ocr: TemplateOcr  # siempre disponible para enseñar caracteres
     demo: bool = False
     exporter: Optional["FleetExporter"] = None  # estado de la línea para el dashboard global
+    notifier: Optional[object] = None  # avisos por correo / mensajes (lo crea la ventana principal una sola vez)
 
 
 def build(home: Optional[Path] = None, demo: bool = False, source: Optional[FrameSource] = None,

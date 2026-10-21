@@ -65,6 +65,8 @@ TYPE_GROUPS = ["Estadística básica", "Gráficas", "Calidad", "Paros y defectos
 PRESETS = [("Últimas 8 h", 8 * 3600), ("Últimas 24 h", 86400), ("Últimos 7 días", 7 * 86400),
            ("Últimos 30 días", 30 * 86400), ("Últimos 90 días", 90 * 86400), ("Personalizado", -1)]
 MAX_VARS = 8
+SCHEDULES = [("", "No programar"), ("shift", "Cada turno (turno anterior)"), ("day", "Cada día (día anterior)"),
+             ("week", "Cada semana (semana anterior)")]
 
 
 def project_file(home: Path) -> Path:
@@ -79,12 +81,62 @@ def load_project(home: Path) -> list[dict]:
         return []
 
 
-def save_project(home: Path, records: list[dict]) -> None:
+def load_schedule_state(home: Path) -> dict:
+    try:
+        return dict(json.loads(project_file(home).read_text(encoding="utf-8")).get("schedule_state") or {})
+    except (OSError, ValueError, AttributeError):
+        return {}
+
+
+def save_project(home: Path, records: list[dict], schedule_state: Optional[dict] = None) -> None:
     f = project_file(home)
     f.parent.mkdir(parents=True, exist_ok=True)
+    state = load_schedule_state(home) if schedule_state is None else schedule_state
     tmp = f.with_suffix(".json.tmp")
-    tmp.write_text(json.dumps({"analyses": records}, ensure_ascii=False, indent=1), encoding="utf-8")
+    tmp.write_text(json.dumps({"analyses": records, "schedule_state": state}, ensure_ascii=False, indent=1),
+                   encoding="utf-8")
     tmp.replace(f)
+
+
+def build_render(ctx, rec: dict) -> tuple[Render, int]:
+    """Calcula un análisis con el historial y devuelve su área de resultados (y cuántos datos usó)."""
+    cfg = ctx.engine.config
+    p = rec.get("params", {})
+    from ..personnel import Personnel
+    shifts = Personnel.load(ctx.workspace.home).shifts
+    req = DataRequest.from_dict(p)
+    data = fetch(ctx.engine.historian, cfg, req, shifts) if rec["type"] != "pareto" else []
+    extra = {}
+    if rec["type"] == "pareto":
+        recs = problems_table(ctx.engine.historian, req.since, req.until, p.get("source", "downtime"), shifts,
+                              cfg.oee.shift_starts)
+        if req.operator:
+            recs = [r for r in recs if r.get("operator") == req.operator]
+        if req.shift:
+            recs = [r for r in recs if r.get("shift") == req.shift]
+        if req.recipe:
+            recs = [r for r in recs if r.get("recipe") == req.recipe]
+        extra["problems"] = recs
+    R = Render(rec, data, ctx, extra)
+    if rec["type"] != "pareto" and not any(len(v.y) for v in data):
+        R.empty(tr("No hay datos de esas variables en el periodo elegido (con los filtros aplicados)."))
+    else:
+        try:
+            RENDERERS[rec["type"]](R)
+        except Exception as e:  # un análisis con datos raros no debe tumbar la página
+            import logging
+            logging.getLogger(__name__).exception("análisis %s", rec["type"])
+            R.empty(tr("No se pudo calcular: {e}", e=e))
+    return R, sum(len(v.y) for v in data)
+
+
+def subtitle(rec: dict) -> str:
+    p = rec.get("params", {})
+    rng = time.strftime("%d/%m/%Y %H:%M", time.localtime(p.get("since", 0))) + " → " + \
+        time.strftime("%d/%m/%Y %H:%M", time.localtime(p.get("until", 0)))
+    filters = [f"{tr(lb)}: {p[k]}" for k, lb in (("shift", "Turno"), ("operator", "Operador"), ("recipe", "Receta"))
+               if p.get(k)]
+    return f"{tr(TYPES[rec['type']][0])} · {rng}" + (" · " + " · ".join(filters) if filters else "")
 
 
 def default_title(rec: dict, config) -> str:
@@ -321,6 +373,13 @@ class AnalysisDialog(QDialog):
         self.cmb_measure.setCurrentIndex(max(0, self.cmb_measure.findData(p.get("measure", "minutes"))))
         opt("measure", tr("Medir"), self.cmb_measure)
         self.form.addWidget(self.box_opt)
+        self.cmb_sched = QComboBox()
+        for k, lb in SCHEDULES:
+            self.cmb_sched.addItem(tr(lb), k)
+        self.cmb_sched.setCurrentIndex(max(0, self.cmb_sched.findData(rec.get("schedule", ""))))
+        self.cmb_sched.setToolTip(tr("Se calcula solo con el periodo que terminó y se agrega al reporte PDF programado "
+                                     "(carpeta de reportes; también por correo si está activado)"))
+        self.form.addWidget(self._row(tr("Programar"), self.cmb_sched))
         self.ed_title = QLineEdit(rec.get("title", ""))
         self.ed_title.setPlaceholderText(tr("automático"))
         self.form.addWidget(self._row(tr("Título"), self.ed_title))
@@ -457,7 +516,7 @@ class AnalysisDialog(QDialog):
         rec.setdefault("id", uuid.uuid4().hex[:10])
         rec.setdefault("created", time.time())
         rec.setdefault("style", {})
-        rec.update(type=t, params=p, title=self.ed_title.text().strip())
+        rec.update(type=t, params=p, title=self.ed_title.text().strip(), schedule=self.cmb_sched.currentData())
         return rec
 
     def problems(self) -> list[str]:
@@ -541,7 +600,9 @@ class StatsPage(QWidget):
         self.lbl_title.mouseDoubleClickEvent = lambda _e: self.rename()
         head.addWidget(self.lbl_title, 1)
         self.tool_btns = []
-        for text, slot, tip in ((tr("🎨 Colores"), self.colors, tr("Color de barras y líneas")),
+        for text, slot, tip in ((tr("📄 Reporte PDF"), self.export_pdf,
+                                 tr("Junta varios análisis en un PDF para juntas o auditorías")),
+                                (tr("🎨 Colores"), self.colors, tr("Color de barras y líneas")),
                                 (tr("⟳ Recalcular"), lambda: self.show_record(self.lst.currentRow(), force=True),
                                  tr("Vuelve a leer el historial")),
                                 (tr("⤓ Imagen"), self.export_png, tr("Guardar el análisis como imagen PNG")),
@@ -567,6 +628,31 @@ class StatsPage(QWidget):
             self.lst.setCurrentRow(0)
         else:
             self._welcome()
+        from PySide6.QtCore import QTimer
+        self.sched_timer = QTimer(self)
+        self.sched_timer.timeout.connect(self.run_scheduled)
+        self.sched_timer.start(60000)  # análisis programados: al terminar cada turno, día o semana
+        QTimer.singleShot(5000, self.run_scheduled)
+
+    def where(self) -> str:
+        from .branding import Branding
+        b = Branding.load(self.home)
+        return " · ".join(x for x in (self.engine.config.machine_name, b.text, b.line) if x)
+
+    def run_scheduled(self) -> list:
+        from .stats_report import run_due
+        try:
+            return run_due(self)
+        except Exception:
+            import logging
+            logging.getLogger(__name__).exception("análisis programados")
+            return []
+
+    def export_pdf(self) -> None:
+        from .stats_report import export_dialog
+        path = export_dialog(self)
+        if path:
+            QMessageBox.information(self, tr("Reporte PDF"), tr("Reporte guardado:\n{p}", p=path))
 
     # --- navegador ---
     def _fill(self, select: Optional[int] = None) -> None:
@@ -676,49 +762,18 @@ class StatsPage(QWidget):
             return
         rec = self.records[row]
         cfg = self.engine.config
-        p = rec.get("params", {})
         QApplication.setOverrideCursor(Qt.WaitCursor)
         try:
-            from ..personnel import Personnel
-            shifts = Personnel.load(self.home).shifts
-            req = DataRequest.from_dict(p)
-            data = fetch(self.engine.historian, cfg, req, shifts) if rec["type"] != "pareto" else []
-            extra = {}
-            if rec["type"] == "pareto":
-                recs = problems_table(self.engine.historian, req.since, req.until, p.get("source", "downtime"), shifts,
-                                      cfg.oee.shift_starts)
-                if req.operator:
-                    recs = [r for r in recs if r.get("operator") == req.operator]
-                if req.shift:
-                    recs = [r for r in recs if r.get("shift") == req.shift]
-                if req.recipe:
-                    recs = [r for r in recs if r.get("recipe") == req.recipe]
-                extra["problems"] = recs
-            R = Render(rec, data, self.ctx, extra)
+            R, n = build_render(self.ctx, rec)
             R.titleEdited.connect(lambda k, t, row=row: self._chart_title(row, k, t))
-            needs_data = rec["type"] != "pareto"
-            if needs_data and not any(len(v.y) for v in data):
-                R.empty(tr("No hay datos de esas variables en el periodo elegido (con los filtros aplicados)."))
-            else:
-                try:
-                    RENDERERS[rec["type"]](R)
-                except Exception as e:  # un análisis con datos raros no debe tumbar la página
-                    import logging
-                    logging.getLogger(__name__).exception("análisis %s", rec["type"])
-                    R.empty(tr("No se pudo calcular: {e}", e=e))
         finally:
             QApplication.restoreOverrideCursor()
         self.current = R
         self.area.setWidget(R)
         self.lbl_title.setText(f"<span style='font-size:18px; color:{theme.c('title')}'><b>"
                                f"{rec.get('title') or default_title(rec, cfg)}</b></span>")
-        n = sum(len(v.y) for v in data)
-        rng = time.strftime("%d/%m/%Y %H:%M", time.localtime(p.get("since", 0))) + " → " + \
-            time.strftime("%d/%m/%Y %H:%M", time.localtime(p.get("until", 0)))
-        filters = [f"{tr(lb)}: {p[k]}" for k, lb in (("shift", "Turno"), ("operator", "Operador"), ("recipe", "Receta"))
-                   if p.get(k)]
-        self.lbl_sub.setText(f"{tr(TYPES[rec['type']][0])} · {rng}" + (f" · {n:,} {tr('datos')}" if n else "")
-                             + (" · " + " · ".join(filters) if filters else ""))
+        self.lbl_sub.setText(subtitle(rec) + (f" · {n:,} {tr('datos')}" if n else "")
+                             + (f" · ⏱ {tr(dict(SCHEDULES)[rec['schedule']])}" if rec.get("schedule") else ""))
 
     def _chart_title(self, row: int, key: str, text: str) -> None:
         rec = self.records[row]
