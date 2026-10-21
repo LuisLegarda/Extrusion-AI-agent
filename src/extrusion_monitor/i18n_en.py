@@ -1098,6 +1098,31 @@ EN: dict[str, str] = {
     "Arrastra para cambiar el alto de la gráfica (doble clic: alto automático)":
         "Drag to change the chart height (double-click: automatic height)",
     "🔒 Bloquear zoom de las gráficas con la rueda del ratón": "🔒 Lock chart zoom with the mouse wheel",
+    # --- variables en vivo (mosaicos) ---
+    "Clic derecho: gráfico, tamaño y tiempo · doble clic: graficar en Tendencias":
+        "Right-click: chart, size and time · double-click: plot in Trends",
+    "DATO VIEJO": "STALE",
+    "SIN LÍMITES": "NO LIMITS",
+    "Tolerancia {lo} … {hi}": "Tolerance {lo} … {hi}",
+    "Aviso {lo} … {hi}": "Warning {lo} … {hi}",
+    "lectura OK": "reading OK",
+    "lectura con falla": "reading failed",
+    "pantalla no visible ahora": "screen not visible now",
+    "Filtrar variables…": "Filter variables…",
+    "Sin pantalla": "No screen",
+    "Gráfico": "Chart",
+    "Tamaño": "Size",
+    "Normal (1 × 1)": "Normal (1 × 1)",
+    "Ancho (2 × 1)": "Wide (2 × 1)",
+    "Grande (2 × 2)": "Large (2 × 2)",
+    "Tiempo mostrado (gráfica e histograma)": "Time shown (chart and histogram)",
+    "📈 Graficar en Tendencias": "📈 Plot in Trends",
+    "Restablecer este mosaico": "Reset this tile",
+    "Vista:": "View:",
+    "▦ Mosaicos": "▦ Tiles",
+    "☰ Tabla": "☰ Table",
+    "Clic derecho en un mosaico: gráfico, tamaño y tiempo · doble clic: Tendencias":
+        "Right-click a tile: chart, size and time · double-click: Trends",
 }
 
 # Textos con valores: la clave es la plantilla en español («{}» = valor) y el resultado su traducción.
