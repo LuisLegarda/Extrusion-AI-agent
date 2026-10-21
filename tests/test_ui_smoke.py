@@ -304,7 +304,9 @@ def test_language_and_theme_switch(ctx, tmp_path):
     dark = rebuilt_windows[-1]
     QApplication.processEvents()
     assert theme.is_dark() and QApplication.instance().palette().window().color().name() == theme.c("page")
-    others = [cb for cb in dark.engine.listeners if cb != ctx.exporter.offer]  # el exportador escucha aparte
+    # el exportador y las notificaciones escuchan aparte (una sola vez, no por ventana)
+    others = [cb for cb in dark.engine.listeners if cb not in (ctx.exporter.offer, ctx.notifier.on_snapshot)]
+    assert dark.engine.listeners.count(ctx.notifier.on_snapshot) == 1
     assert dark.engine.listeners.count(dark.bridge.snapshot.emit) == 1 and len(others) == 1
     dark.on_snapshot(ctx.engine.step())
     apply_ui_prefs({})  # vuelve a español / claro para las demás pruebas

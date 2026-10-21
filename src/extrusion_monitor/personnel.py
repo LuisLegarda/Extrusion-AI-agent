@@ -27,14 +27,15 @@ PROTECTABLE = {
     "setup": "Variables, pantallas, recorridos, cámaras y configuración del control (Configurar receta)",
     "charts": "Tablero de Inicio y dock (indicadores y gráficos)",
     "analysis": "Variables de SPC y correlación y modelo de estabilidad mostrado",
+    "notify": "Notificaciones por correo y mensajes",
     "control": "Activar el control automático o cambiar su modo",
     "catalogs": "Causas de paro, defectos y entrenamiento de comportamientos",
     "delete": "Eliminar capturas de paros y defectos",
     "station": "Identidad de la estación, exportación y servidor",
     "stop": "Detener el monitoreo y cerrar el programa",
 }
-DEFAULT_PROTECT = ["personnel", "recipes", "setup", "charts", "analysis"]
-PROTECT_VERSION = 2  # al agregar acciones protegibles nuevas que van protegidas por defecto
+DEFAULT_PROTECT = ["personnel", "recipes", "setup", "charts", "analysis", "notify"]
+PROTECT_VERSION = 3  # al agregar acciones protegibles nuevas que van protegidas por defecto
 
 
 def hash_password(password: str, salt: Optional[bytes] = None) -> str:
@@ -140,8 +141,10 @@ class Personnel:
         lg = data.get("login") or {}
         protect = lg.get("protect")
         protect = [k for k in protect if k in PROTECTABLE] if isinstance(protect, list) else list(DEFAULT_PROTECT)
-        if int(lg.get("protect_version", 1) or 1) < 2 and "analysis" not in protect:
-            protect.append("analysis")  # nueva en la versión 2: protegida por defecto
+        version = int(lg.get("protect_version", 1) or 1)
+        for key, since in (("analysis", 2), ("notify", 3)):  # nuevas: protegidas por defecto
+            if version < since and key not in protect:
+                protect.append(key)
         try:
             session_min = max(1, min(240, int(lg.get("session_min", 10))))
         except (TypeError, ValueError):

@@ -10,6 +10,20 @@ Numeración `MAYOR.MENOR.PARCHE`:
 
 ## [Sin publicar]
 
+### Notificaciones y reportes de análisis (rama `feature/notificaciones-reportes`)
+- Configuración → Notificaciones (y botón en Alarmas y eventos): avisos por correo (SMTP), Telegram o
+  Teams / Slack / Google Chat (webhook) de las alertas elegidas: variable fuera de límite o en aviso, error de
+  lectura (tras N s), pantalla o cámara sin imagen, paro de máquina (tras N min, y aviso al reanudar), paro
+  acumulado del turno, desperdicio alto en una captura o en el turno, Cpk bajo sostenido, OEE bajo al cerrar el
+  turno, comportamiento anormal, tendencia al límite, control automático detenido por seguridad, inicio de
+  sesión de supervisor, cambio de receta, monitoreo detenido o programa cerrado y reportes programados.
+- Tiempo de espera para no repetir el mismo aviso, pausa general, botón «Enviar prueba» e historial de envíos.
+  Los envíos van en un hilo aparte con reintentos y quedan en el registro de eventos. Contraseñas y tokens se
+  guardan cifrados (DPAPI de Windows). Protegido con la sesión de supervisor.
+- Análisis estadístico: «📄 Reporte PDF» junta varios análisis (gráficas, tablas e interpretación) en un PDF.
+- Análisis programados (cada turno, día o semana): se recalculan con el periodo que terminó, el PDF se guarda en
+  la carpeta de reportes (`analisis/`) y, si se eligió, se envía por correo o Telegram.
+
 ### Análisis estadístico (rama `feature/analisis-estadistico`)
 - Nueva sección lateral «Análisis estadístico» con navegador de análisis: crear, abrir con un clic, cambiar
   (doble clic), duplicar, renombrar y eliminar; se guardan en `<datos>/analisis/` y se recalculan con el historial.

@@ -10,7 +10,7 @@ from PySide6.QtCore import QEvent, QSize, Qt, QTimer, QUrl
 from PySide6.QtGui import QAction, QActionGroup, QBrush, QColor, QDesktopServices, QShortcut
 from PySide6.QtWidgets import (
     QApplication, QCheckBox, QComboBox, QDialog, QFileDialog, QFrame, QHeaderView, QLabel, QListWidget,
-    QHBoxLayout, QListWidgetItem, QMainWindow, QMenu, QMessageBox, QSplitter, QStackedWidget, QTableWidget,
+    QHBoxLayout, QListWidgetItem, QMainWindow, QMenu, QMessageBox, QPushButton, QSplitter, QStackedWidget, QTableWidget,
     QTableWidgetItem, QTabWidget, QToolButton, QVBoxLayout, QWidget,
 )
 
@@ -279,6 +279,9 @@ class MainWindow(QMainWindow):
         self.dock = None  # barra compacta que queda sobre el HMI al minimizar (se crea al usarla)
         from .supervisor import SupervisorGate
         self.gate = SupervisorGate(ctx.workspace.home, self)  # acciones que piden un supervisor (opcional)
+        self.notifier = self._make_notifier()
+        self._sup_user: Optional[str] = None
+        self.gate.changed.connect(self._supervisor_changed)
         self._build_ui()
         self._guard_controls()
         self._update_session()
@@ -374,6 +377,10 @@ class MainWindow(QMainWindow):
         tabs.addTab(self.findings, "Hallazgos activos")
         self.log = QListWidget()
         tabs.addTab(self.log, "Registro de eventos")
+        btn_notify = QPushButton(tr("📨 Notificaciones…"))
+        btn_notify.setToolTip(tr("Enviar avisos por correo o mensaje de las alarmas elegidas"))
+        btn_notify.clicked.connect(self.open_notifications)
+        tabs.setCornerWidget(btn_notify)
         self.tabs = tabs
 
         from .reports_page import ReportsPage
@@ -478,6 +485,7 @@ class MainWindow(QMainWindow):
         m.addAction("🌐 Dashboard global (exportación)…", self.open_station)
         m.addAction("🏷 Identidad de la estación (logo, texto, línea)…", self.open_branding)
         m.addAction("👷 Personal (operadores y supervisores)…", self.open_personnel)
+        m.addAction("📨 Notificaciones (correo y mensajes)…", self.open_notifications)
         m.addSeparator()
         lm = m.addMenu("🌐 Idioma / Language")
         grp = QActionGroup(lm)
@@ -714,6 +722,47 @@ class MainWindow(QMainWindow):
         g(self.corr_panel.cmb_x, "analysis")
         g(self.corr_panel.cmb_y, "analysis")
         g(self.behavior_panel.cmb, "analysis")
+
+    # --- notificaciones ------------------------------------------------------------------------
+    def _make_notifier(self):
+        """Uno solo por programa (sobrevive al cambiar idioma o tema): escucha cada lectura del motor."""
+        n = getattr(self.ctx, "notifier", None)
+        if n is not None:
+            return n
+        from ..notify import Notifier
+        from .branding import Branding
+        home = self.ctx.workspace.home
+
+        def where() -> str:
+            b = Branding.load(home)
+            return " · ".join(x for x in (self.ctx.config.machine_name, b.line) if x)
+
+        def logged(msg, channel, status) -> None:
+            if self.engine.historian is None:
+                return
+            ok = status == "ok"
+            self.engine.historian.write_events([(time.time(), "notify", int(Level.INFO if ok else Level.WARN),
+                                                 "AVISO", channel, (f"Aviso enviado por {channel}: " if ok else
+                                                                    f"No se pudo enviar por {channel} ({status}): ")
+                                                 + msg.subject, self.engine.state.recipe)])
+
+        n = Notifier(home, self.engine, who=lambda: crew(self.ctx.workspace.load_state())["user"], where=where,
+                     on_result=logged)
+        self.ctx.notifier = n
+        self.engine.listeners.append(n.on_snapshot)
+        return n
+
+    def _supervisor_changed(self) -> None:
+        user = self.gate.user if self.gate.active() else None
+        if user and user != self._sup_user:
+            self.notifier.supervisor_login(user)
+        self._sup_user = user
+
+    def open_notifications(self) -> None:
+        if not self.gate.allow("notify"):
+            return
+        from .notify_dialog import NotifyDialog
+        NotifyDialog(self.notifier, self).exec()
 
     def _session_clicked(self) -> None:
         if self.gate.active():
@@ -1141,6 +1190,7 @@ class MainWindow(QMainWindow):
             if not self.gate.allow("stop"):
                 return
             self.engine.stop()
+            self.notifier.monitor_stopped()
             self.act_run.setText(tr("▶ Iniciar monitoreo"))
             self._set_banner(None, tr("DETENIDO"))
         else:
@@ -1612,6 +1662,8 @@ class MainWindow(QMainWindow):
         self._detach()
         if not self._rebuilding:
             self.engine.stop()
+            self.notifier.monitor_stopped(closing=True)
+            self.notifier.flush(8.0)  # que salga el aviso antes de cerrar
             if self.ctx.exporter is not None:
                 self.ctx.exporter.stop(closed=True)  # el dashboard global muestra «programa cerrado»
             self._save_state()

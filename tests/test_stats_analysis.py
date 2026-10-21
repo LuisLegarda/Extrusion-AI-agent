@@ -172,3 +172,26 @@ def test_page_in_sidebar_and_crew_changes_are_logged(ctx):
     ev = [e for e in ctx.engine.historian.events_between(time.time() - 60, time.time() + 60) if e[1] == "crew"]
     assert ev and ev[-1][4] == "Rosa"
     win._detach()
+
+
+def test_pdf_report_and_scheduled_analyses(ctx, tmp_path):
+    from extrusion_monitor.ui.stats_page import StatsPage, load_schedule_state
+    from extrusion_monitor.ui.stats_report import period_start, run_due, write_pdf
+    page = StatsPage(ctx)
+    now = time.time()
+    for kind in ("capability", "pareto", "histogram"):
+        page.add({"id": kind, "type": kind, "title": "", "style": {}, "schedule": "day" if kind != "histogram" else "",
+                  "params": {"since": now - 3 * 86400, "until": now, **ALL[kind]}})
+    pdf = write_pdf(ctx, page.records, tmp_path / "r.pdf", "Reporte de prueba", "Línea 1")
+    data = pdf.read_bytes()
+    assert data.startswith(b"%PDF") and len(data) > 20000
+    # programados: la primera vez solo marca el periodo; al terminar el día genera el PDF del día anterior
+    assert run_due(page, now) == []
+    day0 = period_start("day", now, [])
+    assert load_schedule_state(page.home)["day"] == day0
+    sent = []
+    ctx.notifier = type("N", (), {"report_ready": lambda self, p, t: sent.append((p, t))})()
+    made = run_due(page, day0 + 86400 + 60)
+    assert len(made) == 1 and made[0].exists() and "Analisis_day_" in made[0].name and sent
+    assert run_due(page, day0 + 86400 + 120) == []  # ya se hizo el de ese día
+    assert period_start("week", now, []) <= day0 and period_start("shift", now, ["06:00", "14:00", "22:00"]) <= now
