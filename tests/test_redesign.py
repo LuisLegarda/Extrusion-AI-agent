@@ -398,3 +398,60 @@ def test_login_from_the_warning_allows_the_change(ctx):
     win.gate.ask = lambda people, reason: "Ana"
     assert win.gate.allow("analysis") and win.gate.user == "Ana"
     win._detach()
+
+
+def test_auto_recipe_warning_cancels_cleanly_and_new_protections(ctx, monkeypatch):
+    from PySide6.QtWidgets import QMessageBox
+
+    from extrusion_monitor.personnel import Person, Personnel, hash_password
+    from extrusion_monitor.ui.main_window import MainWindow
+    Personnel([Person("Ana", "supervisor", "200", password=hash_password("clave1"))]).save(ctx.workspace.home)
+    p = Personnel.load(ctx.workspace.home)
+    for key in ("station", "control", "catalogs", "backups", "analysis", "notify"):
+        assert p.protects(key), key
+    win = MainWindow(ctx)
+    offers = []
+    win.gate.offer = lambda reason: offers.append(reason) and False
+    before = ctx.engine.state.auto_recipe
+    win.act_auto.trigger()  # menú Receta → Cargar automáticamente: un aviso, y al cancelar queda como estaba
+    assert len(offers) == 1 and ctx.engine.state.auto_recipe == before
+    assert win.act_auto.isChecked() == before and win.chk_auto.isChecked() == before
+    win.chk_auto.click()
+    assert len(offers) == 2 and win.chk_auto.isChecked() == before
+    # otras acciones protegidas
+    for fn in (win._backup_now, win._open_backups, win._open_data_dir, win.open_branding, win.open_station,
+               win.open_problems_config, win.open_behavior):
+        fn()
+    assert len(offers) == 9
+    win.table.set_checked("diam", "diam" not in win._plotted)
+    win._table_plot_toggled("diam", "diam" not in win._plotted)
+    assert len(offers) == 10
+    # cerrar con el monitoreo en marcha pregunta
+    asked = []
+    monkeypatch.setattr(QMessageBox, "question", lambda *a, **k: asked.append(a[1]) or QMessageBox.No)
+    ctx.engine.start()
+    try:
+        win.gate.offer = lambda reason: False
+        win.close()
+        assert asked  # preguntó antes de cerrar
+        assert ctx.engine.running  # no se cerró
+    finally:
+        ctx.engine.stop()
+    win._detach()
+
+
+def test_analysis_page_can_be_hidden(ctx):
+    from extrusion_monitor.ui.main_window import MainWindow
+    win = MainWindow(ctx)
+    item = next(win.nav.item(i) for i in range(win.nav.count()) if win.nav.item(i).data(0x0100) == "analysis")
+    assert not item.isHidden()
+    win._show_analysis_toggled(False)
+    win.act_show_analysis.setChecked(False)
+    win._apply_nav_visibility()
+    assert item.isHidden()
+    win.show_page("analysis")
+    assert win.current_page() != "analysis"
+    win2 = MainWindow(ctx)  # se recuerda
+    assert not win2.act_show_analysis.isChecked()
+    win2._detach()
+    win._detach()
