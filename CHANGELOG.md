@@ -10,6 +10,14 @@ Numeración `MAYOR.MENOR.PARCHE`:
 
 ## [Sin publicar]
 
+### Gráficas y bloqueos (rama `feature/graficas-y-bloqueos`)
+- Acción protegida sin sesión de supervisor: aviso «Se requiere supervisor» con el botón para iniciar sesión ahí
+  mismo (número de empleado y contraseña); al entrar, el cambio se permite.
+- Protegidas también (por defecto): las variables de SPC y de correlación y el modelo de estabilidad mostrado.
+- Tendencias, SPC y Control: el alto de cada gráfica se cambia arrastrando su barra inferior con el ratón
+  (doble clic: alto automático); si ya no caben, la página se desplaza.
+- Ver → «Bloquear zoom de las gráficas con la rueda del ratón»: la rueda desplaza la página en lugar de acercar.
+
 ### Detalles de interfaz (rama `fix/detalles-interfaz`)
 - Al abrir el programa el buscador ya no queda seleccionado (se activa con un clic o Ctrl+K).
 - La protección con supervisor se activa sola en cuanto hay un supervisor con número de empleado y contraseña

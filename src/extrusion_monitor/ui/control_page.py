@@ -7,7 +7,7 @@ from typing import Optional
 import pyqtgraph as pg
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (
-    QComboBox, QDialog, QFrame, QGridLayout, QHBoxLayout, QLabel, QPushButton, QScrollArea, QVBoxLayout, QWidget,
+    QComboBox, QDialog, QFrame, QGridLayout, QHBoxLayout, QLabel, QPushButton, QVBoxLayout, QWidget,
 )
 
 from ..control import MODE_LABELS
@@ -205,12 +205,8 @@ class ControlPage(QWidget):
         self.empty = QLabel(tr("No hay lazos de control configurados."))
         self.empty.setAlignment(Qt.AlignCenter)
         lay.addWidget(self.empty)
-        self.area = QScrollArea()
-        self.area.setWidgetResizable(True)
-        self.inner = QWidget()
-        self.inner_lay = QVBoxLayout(self.inner)
-        self.inner_lay.addStretch()
-        self.area.setWidget(self.inner)
+        from .resizable import ResizableStack
+        self.area = ResizableStack(min_h=260)  # alto de cada lazo (y su gráfica) ajustable con el ratón
         lay.addWidget(self.area, 1)
         self.cards: dict[str, LoopCard] = {}
         self.refresh()
@@ -221,12 +217,11 @@ class ControlPage(QWidget):
 
     def rebuild(self) -> None:
         for c in self.cards.values():
-            c.setParent(None)
-            c.deleteLater()
+            self.area.remove(c)
         self.cards.clear()
         for lp in self.engine.config.controls:
             card = LoopCard(self, lp.id)
-            self.inner_lay.insertWidget(self.inner_lay.count() - 1, card)
+            self.area.add(card)
             self.cards[lp.id] = card
         self.empty.setVisible(not self.cards)
         self.area.setVisible(bool(self.cards))
