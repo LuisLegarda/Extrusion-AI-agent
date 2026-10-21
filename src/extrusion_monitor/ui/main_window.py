@@ -42,7 +42,7 @@ RANGES = [("5 min", 300), ("15 min", 900), ("30 min", 1800), ("1 h", 3600), ("4 
 
 NAV_ITEMS = [("home", "Inicio", "🏠"), ("variables", "Variables en vivo", "📟"), ("trends", "Tendencias", "📈"),
              ("kpi", "KPI / OEE", "🏭"), ("problems", "Problemas de proceso", "⚠"), ("control", "Control", "🎛"),
-             ("spc", "SPC", "📊"), ("corr", "Correlación", "🔗"),
+             ("spc", "SPC", "📊"), ("corr", "Correlación", "🔗"), ("analysis", "Análisis estadístico", "📐"),
              ("behavior", "Estabilidad (IA)", "🧠"), ("events", "Alarmas y eventos", "🔔")]
 def _close_quietly(dlg) -> None:
     """Cierra un aviso que pudo cerrarse (y destruirse) ya por su cuenta."""
@@ -361,6 +361,8 @@ class MainWindow(QMainWindow):
         self.analysis_pages = (self.stats_panel, self.corr_panel, self.behavior_panel)
         self._analysis_at = 0.0
         self.kpi = KpiDashboard(self.engine)
+        from .stats_page import StatsPage
+        self.stats_page = StatsPage(self.ctx)
 
         tabs = QTabWidget()
         self.findings = QTableWidget(0, 5)
@@ -388,7 +390,8 @@ class MainWindow(QMainWindow):
         self.pages: dict[str, QWidget] = {}
         for key, w in (("home", self.home), ("variables", self.live_page), ("trends", trends_page), ("kpi", self.kpi),
                        ("problems", self.problems_page), ("control", self.control_page),
-                       ("spc", self.stats_panel), ("corr", self.corr_panel), ("behavior", self.behavior_panel),
+                       ("spc", self.stats_panel), ("corr", self.corr_panel),
+                       ("analysis", self.stats_page), ("behavior", self.behavior_panel),
                        ("events", tabs), ("reports", self.reports_page)):
             self.pages[key] = w
             self.stack.addWidget(w)
@@ -658,6 +661,7 @@ class MainWindow(QMainWindow):
         state = self.ctx.workspace.load_state()
         person = Personnel.load(self.ctx.workspace.home).find(name)
         c = crew(state)
+        crew_before = c["user"]
         state["crew"] = {"user": name, "role": person.role if person else ("operator" if name else ""),
                          "shift_key": shift_key if shift_key is not None else c["shift_key"]}
         if name:
@@ -665,6 +669,13 @@ class MainWindow(QMainWindow):
         self.ctx.workspace.save_state(state)
         if self.gate.user is not None and self.gate.user != name:
             self.gate.end()  # cambió quién está en turno: la sesión de supervisor se cierra
+        if self.engine.historian is not None and name != crew_before:
+            try:  # queda en el historial: el análisis estadístico agrupa y filtra por operador
+                self.engine.historian.write_events([(self.engine.clock(), "crew", int(Level.INFO), "USUARIO",
+                                                     name, f"Usuario en turno: {name or '—'}",
+                                                     self.engine.state.recipe)])
+            except Exception:
+                pass
         self.fill_crew()
         self.problems_page.capture.reload_config()
 
