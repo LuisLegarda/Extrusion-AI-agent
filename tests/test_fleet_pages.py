@@ -138,7 +138,8 @@ def test_production_shifts_operators_failures_and_goals(tmp_path):
     assert {"Ana", "Luis"} <= set(m1.by_user) and len(m1.by_shift) >= 2
     assert m2.failures["Cambio de dado"]["n"] == 2 and m2.failures["Cambio de dado"]["mtbf"] > 0
     texts = " ".join(i.text for i in s.insights)
-    assert "cumplimiento" in texts and "MTTR" in texts and "Costo de paros y desperdicio" in texts
+    # según la hora del día una línea va arriba o abajo de su meta: «cumplió» o «… de cumplimiento»
+    assert "cumpli" in texts and "MTTR" in texts and "Costo de paros y desperdicio" in texts
 
 
 def test_dashboard_new_pages_dialog_and_weekly_report(tmp_path):
