@@ -426,7 +426,8 @@ class MainWindow(QMainWindow):
         self.act_tour_pause.toggled.connect(self._tour_pause)
         from .wheel_lock import lock as wheel_lock
         self.act_wheel = QAction("🔒 Bloquear zoom de las gráficas con la rueda del ratón", self, checkable=True)
-        self.act_wheel.setChecked(bool(self.ctx.workspace.load_state().get("ui", {}).get("lock_wheel", False)))
+        # bloqueado por defecto: la rueda desplaza la página y no acerca las gráficas sin querer
+        self.act_wheel.setChecked(bool(self.ctx.workspace.load_state().get("ui", {}).get("lock_wheel", True)))
         wheel_lock().enabled = self.act_wheel.isChecked()
         self.act_wheel.toggled.connect(self._wheel_toggled)
         self.act_top = QAction("📌 Siempre visible", self, checkable=True)
@@ -487,6 +488,7 @@ class MainWindow(QMainWindow):
         m.addAction("🏷 Identidad de la estación (logo, texto, línea)…", self.open_branding)
         m.addAction("👷 Personal (operadores y supervisores)…", self.open_personnel)
         m.addAction("📨 Notificaciones (correo y mensajes)…", self.open_notifications)
+        m.addAction(self.act_wheel)
         self.act_show_analysis = m.addAction("📐 Mostrar «Análisis estadístico» en el monitor")
         self.act_show_analysis.setCheckable(True)
         self.act_show_analysis.setChecked(self._ui_pref("show_analysis", True))
@@ -516,7 +518,6 @@ class MainWindow(QMainWindow):
             act.triggered.connect(lambda _=False, key=key: self.show_page(key))
             self.addAction(act)
         m.addAction(self.act_top)
-        m.addAction(self.act_wheel)
         act = m.addAction("Pantalla completa", self._toggle_fullscreen)
         act.setShortcut("F11")
         act = m.addAction("▭ Minimizar a dock", self.minimize_to_dock)

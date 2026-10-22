@@ -10,6 +10,13 @@ from pathlib import Path
 from typing import Optional
 
 
+MAINT_KINDS = {"preventive": "Preventivo", "corrective": "Correctivo", "none": "No es mantenimiento"}
+PREVENTIVE_WORDS = ("preventiv", "programad", "limpieza", "calibraci", "lubricaci", "inspecci", "cambio de filtro",
+                    "pm ")
+CORRECTIVE_WORDS = ("correctiv", "falla", "reparaci", "averí", "averi", "daño", "dano", "descompost", "refacci",
+                    "mantenimiento", "mecánic", "mecanic", "eléctric", "electric")
+
+
 @dataclass
 class Targets:
     production_shift: float = 0.0  # producción por turno (unidad de longitud del monitor; 0 = sin meta)
@@ -49,6 +56,11 @@ class PlantSettings:
     map_pos: dict[str, list[float]] = field(default_factory=dict)  # línea -> [x, y] en el mapa
     map_image: str = ""  # plano de la planta (ruta de imagen)
     weekly: Weekly = field(default_factory=Weekly)
+    # mantenimiento (solo se lee de los paros capturados en los monitores):
+    maint_rules: dict[str, str] = field(default_factory=dict)  # «categoría» o «categoría › causa» -> tipo
+    pm_days: dict[str, float] = field(default_factory=dict)  # línea -> cada cuántos días toca preventivo
+    default_pm_days: float = 30.0
+    extra_lines: list[str] = field(default_factory=list)  # líneas sin monitor todavía (se muestran «sin datos»)
 
     @staticmethod
     def file(home: Path) -> Path:
@@ -82,6 +94,10 @@ class PlantSettings:
             w = d.get("weekly") or {}
             s.weekly = Weekly(bool(w.get("enabled")), int(w.get("weekday", 0)) % 7, int(w.get("hour", 7)) % 24,
                               float(w.get("last", 0)))
+            s.maint_rules = {str(k): v for k, v in (d.get("maint_rules") or {}).items() if v in MAINT_KINDS}
+            s.pm_days = {str(k): float(v) for k, v in (d.get("pm_days") or {}).items()}
+            s.default_pm_days = float(d.get("default_pm_days", 30.0))
+            s.extra_lines = [str(x) for x in d.get("extra_lines", []) if str(x).strip()]
         except (TypeError, ValueError, AttributeError):
             pass
         return s
@@ -92,6 +108,22 @@ class PlantSettings:
         tmp = f.with_suffix(".json.tmp")
         tmp.write_text(json.dumps(asdict(self), ensure_ascii=False, indent=1), encoding="utf-8")
         tmp.replace(f)
+
+    def pm_every(self, line: str) -> float:
+        return self.pm_days.get(line) or self.default_pm_days
+
+    def maint_kind(self, rec: dict) -> str:
+        """«preventive», «corrective» o «none» para un paro capturado."""
+        cat, reason = str(rec.get("category") or ""), str(rec.get("reason") or "")
+        for key in (f"{cat} › {reason}", cat):
+            if key in self.maint_rules:
+                return self.maint_rules[key]
+        text = f"{cat} {reason}".lower()
+        if any(k in text for k in PREVENTIVE_WORDS):
+            return "preventive"
+        if any(k in text for k in CORRECTIVE_WORDS):
+            return "corrective"
+        return "none"
 
     def target(self, line: str) -> Targets:
         t = self.targets.get(line)

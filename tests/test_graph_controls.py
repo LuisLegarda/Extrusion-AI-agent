@@ -84,6 +84,8 @@ def test_wheel_lock_scrolls_page_instead_of_zooming(ctx):
         QApplication.sendEvent(w.viewport(), ev)
         QApplication.processEvents()
 
+    assert win.act_wheel.isChecked() and lock().enabled  # bloqueado por defecto
+    win.act_wheel.setChecked(False)
     win.act_wheel.setChecked(True)
     assert lock().enabled and ctx.workspace.load_state()["ui"]["lock_wheel"] is True
     before = vb.viewRange()

@@ -1744,6 +1744,72 @@ EN: dict[str, str] = {
     "Viernes": "Friday",
     "Sábado": "Saturday",
     "Domingo": "Sunday",
+    # --- mantenimiento y mapa ---
+    "Última actualización: {a}": "Last update: {a}",
+    "SIN COMUNICACIÓN": "NO COMMUNICATION",
+    "CERRADO": "CLOSED",
+    "ALARMAS": "ALARMS",
+    "Velocidad": "Speed",
+    "AVISOS": "WARNINGS",
+    "desde": "for",
+    "de la meta": "of target",
+    "hace {d} días": "{d} days ago",
+    "hace {h} h": "{h} h ago",
+    "Clasificación de mantenimiento": "Maintenance classification",
+    "Tipos de paro": "Stop types",
+    "Frecuencia de preventivo": "Preventive frequency",
+    "⚙ Clasificación…": "⚙ Classification…",
+    "Qué paros son preventivo o correctivo y cada cuánto toca preventivo":
+        "Which stops are preventive or corrective and how often preventive is due",
+    "Solo lectura: los datos vienen de los paros que capturan los operadores en el monitor de cada línea "
+    "(Problemas de proceso).":
+        "Read only: data comes from the stops operators capture in each line monitor (Process problems).",
+    "Estado por línea": "Status by line",
+    "Estado del preventivo": "Preventive status",
+    "Último preventivo": "Last preventive",
+    "Último correctivo": "Last corrective",
+    "Preventivos": "Preventive",
+    "Correctivos": "Corrective",
+    "MTTR correctivo": "Corrective MTTR",
+    "MTBF correctivo": "Corrective MTBF",
+    "Horas de mantenimiento por línea": "Maintenance hours by line",
+    "Preventivo": "Preventive",
+    "Correctivo": "Corrective",
+    "Registros de mantenimiento ({n})": "Maintenance records ({n})",
+    "Comentario": "Comment",
+    "Paros capturados en los monitores: elige cuáles son mantenimiento preventivo o correctivo. "
+    "«Automático» decide por palabras como «preventivo», «limpieza», «calibración» (preventivo) o "
+    "«falla», «reparación», «mantenimiento» (correctivo).":
+        "Stops captured in the monitors: choose which are preventive or corrective maintenance. "
+        "“Automatic” decides by words such as “preventive”, “cleaning”, “calibration” (preventive) or "
+        "“failure”, “repair”, “maintenance” (corrective).",
+    "Categoría › causa": "Category › cause",
+    "Cada cuántos días le toca preventivo a cada línea (para marcar «próximo» al 80 % y «atrasado» al "
+    "pasarse).":
+        "How often (days) each line is due for preventive maintenance (marks “due soon” at 80 % and "
+        "“overdue” after).",
+    "Días (0 = el de todas)": "Days (0 = the default)",
+    "Líneas sin monitor todavía (separadas por coma):": "Lines without a monitor yet (comma separated):",
+    "Preventivos atrasados": "Overdue preventive",
+    "Paros por mantenimiento": "Maintenance stops",
+    "en el periodo": "in the period",
+    "eventos · horas": "events · hours",
+    "Mantenimiento programado": "Scheduled maintenance",
+    "% del tiempo de mantenimiento": "% of maintenance time",
+    "duración promedio": "average duration",
+    "Desperdicio por mantenimiento": "Scrap from maintenance",
+    "preventivo + correctivo": "preventive + corrective",
+    "de": "of",
+    "Sin paros de mantenimiento en el periodo. Si los operadores los capturan con otro nombre, ajústalo "
+    "en «⚙ Clasificación».":
+        "No maintenance stops in the period. If operators capture them with another name, adjust it in “⚙ "
+        "Classification”.",
+    "cada {d} d": "every {d} d",
+    "Último año": "Last year",
+    "No es mantenimiento": "Not maintenance",
+    "atrasado": "overdue",
+    "sin preventivo": "no preventive",
+    "sin datos": "no data",
 }
 
 # Textos con valores: la clave es la plantilla en español («{}» = valor) y el resultado su traducción.

@@ -119,14 +119,13 @@ def test_production_shifts_operators_failures_and_goals(tmp_path):
     from extrusion_monitor.analysis.plant import summarize
     from extrusion_monitor.fleet import FleetReader
     from extrusion_monitor.fleet_data import FleetHistorian
-    from extrusion_monitor.plant_settings import Equipment, PlantSettings, Targets
+    from extrusion_monitor.plant_settings import PlantSettings, Targets
     now = time.time()
     make_plant(tmp_path / "planta", now)
     r = FleetReader(tmp_path / "planta")
     r.scan()
     plant = PlantSettings(cost_stop_h=600, cost_scrap_unit=2, default_targets=Targets(production_shift=4000, oee=75))
     plant.targets["Línea 2"] = Targets(production_shift=6000, oee=70, mttr_min=15)
-    plant.equipment["Línea 1"] = [Equipment("Tornillo", 10, now - 2 * 86400)]
     plant.save(tmp_path / "home")
     p2 = PlantSettings.load(tmp_path / "home")
     assert p2.target("Línea 1").production_shift == 4000 and p2.target("Línea 2").mttr_min == 15
@@ -139,17 +138,15 @@ def test_production_shifts_operators_failures_and_goals(tmp_path):
     assert {"Ana", "Luis"} <= set(m1.by_user) and len(m1.by_shift) >= 2
     assert m2.failures["Cambio de dado"]["n"] == 2 and m2.failures["Cambio de dado"]["mtbf"] > 0
     texts = " ".join(i.text for i in s.insights)
-    assert "cumplimiento" in texts and "MTTR" in texts and "Costo de paros y desperdicio" in texts
-    from extrusion_monitor.ui.fleet_maint import maintenance_status
-    st = maintenance_status(FleetHistorian(r), p2, now)["Línea 1"][0]
-    assert st["state"] == "due" and st["hours"] > 10
+    # según la hora del día una línea va arriba o abajo de su meta: «cumplió» o «… de cumplimiento»
+    assert "cumpli" in texts and "MTTR" in texts and "Costo de paros y desperdicio" in texts
 
 
 def test_dashboard_new_pages_dialog_and_weekly_report(tmp_path):
     from PySide6.QtWidgets import QApplication
     QApplication.instance() or QApplication([])
     from extrusion_monitor.notify import NotifySettings
-    from extrusion_monitor.plant_settings import Equipment, PlantSettings
+    from extrusion_monitor.plant_settings import PlantSettings
     from extrusion_monitor.ui.fleet_plant_dialog import PlantDialog
     from extrusion_monitor.ui.fleet_window import FleetWindow
     now = time.time()
@@ -166,19 +163,13 @@ def test_dashboard_new_pages_dialog_and_weekly_report(tmp_path):
     plant = PlantSettings.load(home)
     assert plant.default_targets.production_shift == 4500 and plant.targets["Línea 2"].oee == 70
     assert plant.cost_stop_h == 900 and plant.weekly.enabled
-    plant.equipment["Línea 1"] = [Equipment("Tornillo", 2000, now - 86400)]
-    plant.save(home)
     for key in ("map", "maintenance", "analyzer"):
         w.show_page(key)
         assert w.current_page == key
-    assert set(w.pages["map"].items) == {"L1", "L2"}
-    w.pages["map"]._moved("L1", 300, 120)
-    assert PlantSettings.load(home).map_pos["Línea 1"] == [300, 120]
+    tiles = w.pages["map"].items
+    assert set(tiles) == {"L1", "L2"} and "Línea 1" in tiles["L1"].lbl_name.text()
     maint = w.pages["maintenance"]
-    assert maint.tbl.rowCount() == 1 and "Tornillo" in maint.tbl.item(0, 0).text()
-    maint.tbl.setCurrentCell(0, 0)
-    maint.serviced(confirm=False)
-    assert PlantSettings.load(home).equipment["Línea 1"][0].last_service > now - 5
+    assert maint.cmb_line.count() == 3  # «todas» + las dos líneas, sin agregarlas a mano
     # reporte semanal: cuando toca, genera el PDF y lo manda (canal simulado)
     sent = []
     ns = NotifySettings()
@@ -196,3 +187,57 @@ def test_dashboard_new_pages_dialog_and_weekly_report(tmp_path):
     assert path and path.exists() and path.read_bytes().startswith(b"%PDF")
     assert sent and sent[0].attachment == path and not w.weekly_due(now)
     w.close()
+
+
+def add_maintenance(root, now):
+    """Paros de mantenimiento capturados en los monitores (preventivo y correctivo)."""
+    from extrusion_monitor.fleet import PROBLEMS_DIR, month_name
+    recs = [("L1", "Mantenimiento", "Preventivo de cabezal", 10, 3600, 4),
+            ("L1", "Mantenimiento", "Falla de bomba de vacío", 2, 1800, 12),
+            ("L2", "Mecánico", "Reparación de jalador", 1, 2700, 0),
+            ("L2", "Limpieza", "Limpieza programada", 40, 1200, 0)]
+    for k, (lid, cat, reason, days, dur, scrap) in enumerate(recs):
+        path = root / lid / PROBLEMS_DIR / month_name(now - days * 86400)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        with open(path, "a", encoding="utf-8") as f:
+            f.write(json.dumps({"op": "add", "uid": f"m{k}", "kind": "downtime", "start": now - days * 86400,
+                                "end": now - days * 86400 + dur, "duration_s": dur, "category": cat, "reason": reason,
+                                "planned": 0, "scrap": scrap, "unit": "m", "operator": "Ana"}) + "\n")
+
+
+def test_maintenance_reads_preventive_and_corrective_from_captured_stops(tmp_path):
+    from PySide6.QtWidgets import QApplication
+    QApplication.instance() or QApplication([])
+    from extrusion_monitor.analysis.maintenance import summarize_maintenance
+    from extrusion_monitor.fleet import FleetReader
+    from extrusion_monitor.fleet_data import FleetHistorian
+    from extrusion_monitor.plant_settings import PlantSettings
+    from extrusion_monitor.ui.fleet_maint import ClassifyDialog, FleetMaintenance
+    now = time.time()
+    make_plant(tmp_path / "planta", now)
+    add_maintenance(tmp_path / "planta", now)
+    r = FleetReader(tmp_path / "planta")
+    r.scan()
+    plant = PlantSettings(default_pm_days=30, extra_lines=["Línea 3"])
+    plant.save(tmp_path)
+    s = summarize_maintenance(FleetHistorian(r), plant, now - 30 * 86400, now)
+    by = {m.name: m for m in s.lines}
+    l1, l2 = by["Línea 1"], by["Línea 2"]
+    assert (l1.n_prev, l1.n_corr) == (1, 1) and l1.min_prev == pytest.approx(60) and l1.scrap_corr == 12
+    assert l1.state == "ok" and l1.days_since_prev == pytest.approx(10, abs=0.1)
+    assert l2.n_corr == 1 and l2.n_prev == 0 and l2.last_prev is not None and l2.state == "late"  # hace 40 días
+    assert not by["Línea 3"].has_data  # agregada a mano, sin monitor
+    assert len(s.events) == 3 and s.events[0].start > s.events[-1].start
+    # «Cambio de dado» no es mantenimiento por omisión; con la clasificación sí
+    page = FleetMaintenance(lambda: r, tmp_path)
+    page.refresh()
+    dlg = ClassifyDialog(tmp_path, ["Cambio › Cambio de dado"], ["Línea 1", "Línea 2"])
+    dlg.combos["Cambio › Cambio de dado"].setCurrentIndex(dlg.combos["Cambio › Cambio de dado"].findData("preventive"))
+    dlg.days["Línea 2"].setValue(60)
+    dlg.accept()
+    p2 = PlantSettings.load(tmp_path)
+    s2 = summarize_maintenance(FleetHistorian(r), p2, now - 30 * 86400, now)
+    m2 = {m.name: m for m in s2.lines}["Línea 2"]
+    assert m2.n_prev == 2 and m2.pm_days == 60 and m2.state == "ok"
+    page.refresh()
+    assert page.summary is not None and page.cmb_line.count() == 4

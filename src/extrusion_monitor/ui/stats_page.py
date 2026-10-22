@@ -162,7 +162,10 @@ class AnalysisDialog(QDialog):
         self.engine = ctx.engine
         self.cfg = ctx.engine.config
         self.setWindowTitle(tr("Cambiar el análisis") if record else tr("Nuevo análisis"))
-        self.resize(980, 680)
+        scr = QApplication.primaryScreen()
+        avail = scr.availableGeometry() if scr is not None else None
+        self.resize(min(1180, int(avail.width() * 0.92)) if avail else 1100,
+                    min(760, int(avail.height() * 0.9)) if avail else 720)
         rec = record or {"type": "histogram", "params": {}}
         p = rec.get("params", {})
         root = QHBoxLayout(self)
@@ -181,19 +184,23 @@ class AnalysisDialog(QDialog):
                     it = QListWidgetItem(icons.icon(ic, theme.c("nav_icon"), theme.c("accent_text")), "  " + tr(name))
                     it.setData(Qt.UserRole, key)
                     self.lst_type.addItem(it)
-        self.lst_type.setMinimumWidth(300)
+        self.lst_type.setMinimumWidth(230)
+        self.lst_type.setMaximumWidth(300)
+        self.lst_type.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        self.lst_type.setTextElideMode(Qt.ElideRight)
         self.lst_type.currentItemChanged.connect(lambda *_: self._type_changed())
         left.addWidget(self.lst_type, 1)
         self.lbl_desc = QLabel()
         self.lbl_desc.setWordWrap(True)
         self.lbl_desc.setStyleSheet(f"color:{theme.c('text2')};")
         left.addWidget(self.lbl_desc)
-        root.addLayout(left, 2)
+        root.addLayout(left, 1)
         # opciones
         right = QVBoxLayout()
         scroll = QScrollArea()
         scroll.setWidgetResizable(True)
         scroll.setFrameShape(QFrame.NoFrame)
+        scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)  # todo se acomoda a lo ancho
         body = QWidget()
         self.form = QVBoxLayout(body)
         scroll.setWidget(body)
@@ -258,13 +265,17 @@ class AnalysisDialog(QDialog):
         for n in (ctx.lines if self.fleet else []):
             self.cmb_line.addItem(n, n)
         self.cmb_line.setCurrentIndex(max(0, self.cmb_line.findData(p.get("line", ""))))
-        filt = QHBoxLayout()
+        # filtros en dos columnas: no se recortan en ventanas angostas
+        filt = QGridLayout()
         pairs = [(tr("Turno"), self.cmb_shift), (tr("Operador"), self.cmb_op), (tr("Receta"), self.cmb_recipe)]
         if self.fleet:
             pairs.insert(0, (tr("Línea"), self.cmb_line))
-        for lb, w in pairs:
-            filt.addWidget(QLabel(lb))
-            filt.addWidget(w, 1)
+        for k, (lb, w) in enumerate(pairs):  # un filtro por renglón: nunca se recortan
+            w.setSizeAdjustPolicy(QComboBox.AdjustToMinimumContentsLengthWithIcon)
+            w.setMinimumContentsLength(10)
+            filt.addWidget(QLabel(lb), k, 0)
+            filt.addWidget(w, k, 1)
+        filt.setColumnStretch(1, 1)
         fl.addRow(tr("Solo"), filt)
         self.form.addWidget(box)
 
@@ -317,17 +328,20 @@ class AnalysisDialog(QDialog):
         for chk, k in ((self.chk_lsl, "lsl"), (self.chk_usl, "usl"), (self.chk_target, "target")):
             chk.setChecked(p.get(k) is not None)
         spec = QWidget()
-        sl = QHBoxLayout(spec)
+        sl = QGridLayout(spec)
         sl.setContentsMargins(0, 0, 0, 0)
-        for chk, lb, sp in ((self.chk_lsl, "LIE", self.sp_lsl), (self.chk_target, tr("Objetivo"), self.sp_target),
-                            (self.chk_usl, "LSE", self.sp_usl)):
+        for k, (chk, lb, sp) in enumerate(((self.chk_lsl, "LIE", self.sp_lsl), (self.chk_target, tr("Objetivo"),
+                                                                                 self.sp_target),
+                                           (self.chk_usl, "LSE", self.sp_usl))):
             chk.setText(lb)
-            sl.addWidget(chk)
-            sl.addWidget(sp, 1)
+            sl.addWidget(chk, k, 0)
+            sl.addWidget(sp, k, 1)
         btn_rec = QPushButton(tr("De la receta"))
         btn_rec.setToolTip(tr("Toma los límites de alarma de la receta activa"))
         btn_rec.clicked.connect(self._spec_from_recipe)
-        sl.addWidget(btn_rec)
+        btn_rec.setVisible(not getattr(ctx, "fleet", False))  # el dashboard no tiene receta activa
+        sl.addWidget(btn_rec, 3, 0, 1, 2, Qt.AlignLeft)
+        sl.setColumnStretch(1, 1)
         opt("spec", tr("Especificación"), spec)
         self.sp_bins = QSpinBox()
         self.sp_bins.setRange(0, 200)
@@ -417,6 +431,8 @@ class AnalysisDialog(QDialog):
 
     def _var_combo(self, current) -> QComboBox:
         c = QComboBox()
+        c.setSizeAdjustPolicy(QComboBox.AdjustToMinimumContentsLengthWithIcon)
+        c.setMinimumContentsLength(18)
         for v in self.cfg.variables:
             if v.numeric:
                 c.addItem(self.cfg.var_label(v) + (f" [{v.unit}]" if v.unit else ""), v.id)
