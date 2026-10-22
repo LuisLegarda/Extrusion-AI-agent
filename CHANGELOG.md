@@ -10,6 +10,17 @@ Numeración `MAYOR.MENOR.PARCHE`:
 
 ## [Sin publicar]
 
+### Mantenimiento, mapa y ajustes (rama `feature/mantenimiento-ajustes`)
+- Mantenimiento del dashboard como administrador de preventivos y correctivos de solo lectura: clasifica los
+  paros capturados en los monitores (por categoría y causa, con reglas ajustables), muestra indicadores
+  (preventivos atrasados, eventos y horas, % de mantenimiento programado, MTTR correctivo, desperdicio), el
+  estado de cada línea (último preventivo y correctivo, hace cuánto, MTBF) y la lista de registros. Las líneas
+  aparecen solas; se pueden agregar líneas sin monitor. Se quitó la captura de equipos del dashboard.
+- Mapa de planta con mosaicos por línea (como Variables en vivo): estado, OEE, producción del turno contra la
+  meta, receta, velocidad, paros y alarmas, agrupados por área.
+- Ventana «Nuevo análisis»: ya no se recortan opciones en pantallas angostas.
+- Bloqueo del zoom con la rueda: activado por defecto y en el menú Configuración del monitor y del dashboard.
+
 ### Dashboard para ingeniería y gerencia (rama `feature/planta-gerencia`)
 - Producción contra meta: producción por turno y por día de cada línea contra su meta, con % de cumplimiento.
   El monitor ahora publica cada minuto la producción acumulada del turno, el estado de la máquina y el usuario

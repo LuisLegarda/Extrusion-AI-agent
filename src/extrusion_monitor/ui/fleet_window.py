@@ -518,6 +518,12 @@ class FleetWindow(QMainWindow):
         m.addAction("Líneas y áreas…", lambda: self.open_setup(2))
         m.addAction("🎯 Metas, costos y reporte semanal…", self.open_plant)
         m.addAction("📨 Notificaciones (correo y mensajes)…", self.open_notifications)
+        from .wheel_lock import lock as wheel_lock
+        self.act_wheel = m.addAction("🔒 Bloquear zoom de las gráficas con la rueda del ratón")
+        self.act_wheel.setCheckable(True)
+        self.act_wheel.setChecked(bool(self._ui_state().get("ui", {}).get("lock_wheel", True)))
+        wheel_lock().enabled = self.act_wheel.isChecked()
+        self.act_wheel.toggled.connect(self._wheel_toggled)
         m.addSeparator()
         lm = m.addMenu("🌐 Idioma / Language")
         grp = QActionGroup(lm)
@@ -566,6 +572,16 @@ class FleetWindow(QMainWindow):
             return json.loads(self.state_file.read_text(encoding="utf-8"))
         except (OSError, ValueError):
             return {}
+
+    def _wheel_toggled(self, on: bool) -> None:
+        from .wheel_lock import lock as wheel_lock
+        wheel_lock().enabled = on
+        state = self._ui_state()
+        state["ui"] = {**state.get("ui", {}), "lock_wheel": on}
+        try:
+            self.state_file.write_text(json.dumps(state, indent=2, ensure_ascii=False), encoding="utf-8")
+        except OSError:
+            pass
 
     def _set_ui_pref(self, key: str, value: str) -> None:
         state = self._ui_state()
