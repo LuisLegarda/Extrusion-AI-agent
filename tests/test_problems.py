@@ -114,6 +114,8 @@ def test_capture_page_save_split_and_config(tmp_path):
     ctx = build(tmp_path / "data", demo=True)
     h = ctx.engine.historian
     now = time.time()
+    # un turno que empezó hace 2 h: el paro cae en el turno sin importar la hora a la que corra la prueba
+    ctx.engine.config.oee.shift_starts = [time.strftime("%H:%M", time.localtime(now - 7200))]
     for i in range(360):  # paro de 15 min hace 25–10 min
         ts = now - 3600 + i * 10
         stopped = now - 1500 <= ts < now - 600
