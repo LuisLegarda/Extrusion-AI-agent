@@ -10,6 +10,12 @@ Numeración `MAYOR.MENOR.PARCHE`:
 
 ## [Sin publicar]
 
+### Análisis del dashboard sin monitoreo (rama `fix/analisis-dashboard-sin-monitoreo`)
+- El análisis estadístico del dashboard mostraba vacío cuando el monitor de la línea estaba abierto sin
+  monitorear: al abrirlo se reescribía `status.json` sin la lista de variables. Ahora el monitor publica
+  siempre el catálogo de variables de la receta y el dashboard también recupera las variables de los
+  archivos de tendencia de la carpeta (sirve con datos de versiones anteriores).
+
 ### Mantenimiento, mapa y ajustes (rama `feature/mantenimiento-ajustes`)
 - Mantenimiento del dashboard como administrador de preventivos y correctivos de solo lectura: clasifica los
   paros capturados en los monitores (por categoría y causa, con reglas ajustables), muestra indicadores

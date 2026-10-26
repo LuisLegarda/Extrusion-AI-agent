@@ -45,6 +45,52 @@ def _rows(line: LineState, sub: str, since: float, until: float):
             continue
 
 
+_TREND_IDS: dict[str, tuple[float, list[str]]] = {}  # archivo -> (mtime, ids de variables con datos)
+TREND_SCAN_FILES = 7  # archivos diarios recientes en los que se buscan variables
+
+
+def _trend_ids(line: LineState) -> list[str]:
+    """Variables que aparecen en los archivos de tendencia recientes de la línea (aunque no se esté monitoreando)."""
+    try:
+        files = sorted(p for p in (line.path / TREND_DIR).glob("*.jsonl"))[-TREND_SCAN_FILES:]
+    except OSError:
+        return []
+    ids: dict[str, None] = {}
+    for p in files:
+        try:
+            mtime = p.stat().st_mtime
+        except OSError:
+            continue
+        hit = _TREND_IDS.get(str(p))
+        if hit is None or hit[0] != mtime:
+            found: dict[str, None] = {}
+            try:
+                with open(p, "rb") as f:
+                    for raw in f:
+                        try:
+                            found.update(dict.fromkeys((json.loads(raw).get("v") or {})))
+                        except (ValueError, AttributeError):
+                            continue
+            except OSError:
+                continue
+            hit = _TREND_IDS[str(p)] = (mtime, list(found))
+        ids.update(dict.fromkeys(hit[1]))
+    return list(ids)
+
+
+def line_variables(line: LineState) -> list[dict]:
+    """Variables de la línea para el análisis: las publicadas en vivo, el catálogo de la receta y, si el monitor no
+    está monitoreando (o es de una versión anterior), las que tienen datos en la carpeta de tendencias."""
+    st = line.status or {}
+    out: dict[str, dict] = {}
+    for v in (st.get("variables") or []) + (st.get("catalog") or []):
+        if v.get("id") and v["id"] not in out:
+            out[v["id"]] = v
+    for vid in _trend_ids(line):
+        out.setdefault(vid, {"id": vid, "name": vid, "kind": "actual"})
+    return list(out.values())
+
+
 class FleetHistorian:
     """Historial «virtual» de las líneas elegidas (todas, o la que se filtre)."""
 
@@ -124,14 +170,15 @@ class FleetConfig:
         self.pages: list = []
         by_id: dict[str, FleetVar] = {}
         for ln in sorted(reader.lines.values(), key=lambda ln: ln.name):
-            for v in ln.status.get("variables") or []:
+            for v in line_variables(ln):
                 if v.get("kind") in ("text", "selector"):
                     continue
                 fv = by_id.get(v["id"])
                 if fv is None:
                     fv = by_id[v["id"]] = FleetVar(v["id"], v.get("name") or v["id"], v.get("unit") or "",
                                                    v.get("kind") or "actual")
-                fv.lines.append(ln.name)
+                if ln.name not in fv.lines:
+                    fv.lines.append(ln.name)
         self.variables = list(by_id.values())
         self.oee = SimpleNamespace(shift_starts=shift_starts or DEFAULT_SHIFTS, enabled=False, speed_var=None)
         self.general = SimpleNamespace(sample_interval_s=60.0)
