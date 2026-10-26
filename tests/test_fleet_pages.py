@@ -241,3 +241,38 @@ def test_maintenance_reads_preventive_and_corrective_from_captured_stops(tmp_pat
     assert m2.n_prev == 2 and m2.pm_days == 60 and m2.state == "ok"
     page.refresh()
     assert page.summary is not None and page.cmb_line.count() == 4
+
+
+def test_analysis_variables_without_monitoring(tmp_path):
+    """Monitor abierto sin monitorear (o de versión anterior): el análisis del dashboard igual ve las variables."""
+    from extrusion_monitor.bootstrap import build
+    from extrusion_monitor.fleet import STATUS_FILE, FleetReader, StationSettings
+    from extrusion_monitor.fleet_data import FleetConfig, FleetHistorian
+    now = time.time()
+    shared = tmp_path / "planta"
+    make_plant(shared, now)
+    # versión anterior / status sin «variables»: se recuperan de la carpeta de tendencias
+    for d in shared.iterdir():
+        st = json.loads((d / STATUS_FILE).read_text("utf-8"))
+        st.pop("variables")
+        (d / STATUS_FILE).write_text(json.dumps(st), "utf-8")
+    r = FleetReader(shared)
+    r.scan()
+    cfg = FleetConfig(r)
+    assert {v.id for v in cfg.variables} == {"diam", "vel"}
+    assert cfg.variable("diam").lines == ["Línea 1", "Línea 2"]
+    assert len(FleetHistorian(r).samples("diam", now - 86400, now)) > 100
+
+    # el monitor sin iniciar el monitoreo publica el catálogo de la receta (con nombres y unidades)
+    ctx = build(tmp_path / "home", demo=True)
+    ex = ctx.exporter
+    ex.reconfigure(StationSettings(enabled=True, export_dir=str(shared), line_name="Línea 3"))
+    assert ctx.engine.last is None
+    ex.write_once()
+    st = json.loads((shared / "Linea-3" / STATUS_FILE).read_text("utf-8"))
+    assert not st["monitoring"] and "variables" not in st
+    diam = next(v for v in st["catalog"] if v["id"] == "diam")
+    assert diam["name"] and diam["unit"] == "mm"
+    r.scan()
+    assert "Línea 3" in FleetConfig(r).variable("diam").lines
+    ex.stop(closed=True)

@@ -287,6 +287,9 @@ class FleetExporter:
             "machine_name": cfg.machine_name, "area": s.area, "app_version": __version__, "ts": round(now, 3),
             "interval_s": s.interval_s, "closed": closed, "monitoring": bool(eng.running) and not closed,
             "recipe": eng.state.recipe, "auto_recipe": eng.state.auto_recipe,
+            # catálogo de variables de la receta: el análisis del dashboard lo usa aunque no se esté monitoreando
+            "catalog": [{"id": v.id, "name": v.name, "label": cfg.var_label(v), "group": v.group, "unit": v.unit,
+                         "kind": v.kind} for v in cfg.variables if v.numeric],
         }
         if snap is not None:
             counts = {lvl: sum(1 for f in snap.findings if f.level == lvl) for lvl in (Level.WARN, Level.ALARM)}
