@@ -441,7 +441,7 @@ EN: dict[str, str] = {
     "No se pudo enseñar": "Could not teach", "Error": "Error", "pestaña": "tab", "VISIBLE": "VISIBLE",
     "no válido": "invalid", "no numérico": "not numeric", "no reconocido": "not recognized",
     "Selector": "Selector", "Texto": "Text", "Serie": "Series", "texto": "text", "selector": "selector",
-    "carpeta": "folder", "ancla de pestaña": "tab anchor", "consigna": "setpoint", "Sin lectura válida": "No valid reading",
+    "carpeta": "folder", "ancla de pestaña": "tab anchor", "Sin lectura válida": "No valid reading",
     # --- tablero de Inicio configurable ---
     "✎ Personalizar tablero": "✎ Customize dashboard",
     "Elige qué indicadores y variables se muestran y con qué tipo de gráfico":
@@ -557,10 +557,10 @@ EN: dict[str, str] = {
     "(ninguna línea ha escrito en la carpeta todavía)": "(no line has written to the folder yet)",
     "(sin área)": "(no area)", "Falta la carpeta": "Folder missing",
     "Indica la carpeta donde escriben las líneas.": "Enter the folder the lines write to.",
-    "Indicador:": "Indicator:", "Periodo:": "Period:", "Turno actual": "Current shift", "+ Agregar": "+ Add",
+    "Indicador:": "Indicator:",
     "<b>Líneas</b>": "<b>Lines</b>", "Sin datos aún": "No data yet",
     "conforme {g} · paros {s}": "conforming {g} · stops {s}", "No existe en esta línea": "Not available on this line",
-    "Ahora": "Now", "Sin área": "No area", "Alarmas activas": "Active alarms",
+    "Ahora": "Now", "Sin área": "No area",
     "⚙ Configuración": "⚙ Settings", "Carpeta de datos, indicadores, áreas y avisos": "Data folder, indicators, areas and alerts",
     "✔ Reconocer avisos": "✔ Acknowledge alerts", "Detiene el parpadeo de las tarjetas": "Stops the cards from blinking",
     "Detiene el parpadeo de las tarjetas (Ctrl+K)": "Stops the cards from blinking (Ctrl+K)",
@@ -570,8 +570,7 @@ EN: dict[str, str] = {
     "Exportar resumen de líneas": "Export line summary", "entró en alarma": "went into alarm", "se detuvo": "stopped",
     "perdió comunicación": "lost communication", "Página {p} de {n}": "Page {p} of {n}", "{n} líneas": "{n} lines",
     "{n} con alarma": "{n} in alarm", "Área / nave:": "Area / building:", "p. ej. Nave 2": "e.g. Building 2",
-    "Carpeta": "Folder", "&Archivo": "&File", "Variable:": "Variable:", "Rango:": "Range:",
-    "linea": "line", "area": "area", "comunicacion": "communication", "estado": "status", "receta": "recipe",
+    "linea": "line", "area": "area", "comunicacion": "communication", "estado": "status",
     "disponibilidad_%": "availability_%", "rendimiento_%": "performance_%", "calidad_%": "quality_%",
     "producido": "produced", "conforme": "conforming", "unidad": "unit", "paros": "stops", "alarmas": "alarms",
     "avisos": "warnings", "actualizado": "updated",
@@ -582,7 +581,7 @@ EN: dict[str, str] = {
     "Velocidad real promedio / velocidad nominal del turno": "Average actual speed / nominal speed of the shift",
     "Metros conformes / metros producidos en el turno": "Conforming meters / meters produced in the shift",
     "detenido {d}": "stopped {d}", "{v} de {n} promedio": "{v} of {n} average",
-    "{g} de {t} conformes": "{g} of {t} conforming", "Gauge": "Gauge",
+    "{g} de {t} conformes": "{g} of {t} conforming",
     "🌐 Idioma / Language": "🌐 Language / Idioma",
     # --- niveles y reglas ---
     "AJUSTE_RECETA": "RECIPE_SETTING", "CAMBIO_AJUSTE": "SETTING_CHANGE", "CAMBIO_SELECTOR": "SELECTOR_CHANGE",
@@ -596,7 +595,7 @@ EN: dict[str, str] = {
     "los clics automáticos solo están disponibles en Windows": "automatic clicks are only available on Windows",
     "el operador está usando el HMI": "the operator is using the HMI", "Solo disponible en Windows": "Only available on Windows",
     "regreso de emergencia": "emergency return", "regreso": "return", "detenido": "stopped",
-    "carácter dudoso dentro del número": "doubtful character inside the number", "no numérico": "not numeric",
+    "carácter dudoso dentro del número": "doubtful character inside the number",
     "variantes en desacuerdo": "variants disagree", "sin lectura válida": "no valid reading",
     "página no visible": "page not visible", "faltan datos de entrada": "missing input data",
     "resultado no válido (p. ej. división entre 0)": "invalid result (e.g. division by 0)",
@@ -659,10 +658,10 @@ EN: dict[str, str] = {
     "de datos compartida.<br>Solo lee los archivos que publican las líneas: no modifica nada en ellas.":
         "<b>Global line dashboard</b><br>Status, indicators and alarms of every line from the shared data folder."
         "<br>It only reads the files the lines publish: it changes nothing on them.",
-    "coma": "comma", "punto": "point", "real": "actual", "— elegir —": "— choose —", "— ninguno —": "— none —",
+    "coma": "comma", "punto": "point", "real": "actual",
     "calibre=12 AWG; material=PVC; color=negro": "gauge=12 AWG; material=PVC; color=black",
-    "Aceptar": "OK", "Cancelar": "Cancel",
-    "Sin lectura válida": "No valid reading", "Fórmula válida →": "Valid formula →", "Entrenado": "Trained",
+    "Aceptar": "OK",
+    "Fórmula válida →": "Valid formula →", "Entrenado": "Trained",
     "Nombre de la pestaña:": "Tab name:", "Nombre de la variable (p. ej. «Cylinder 1»):": "Variable name (e.g. “Cylinder 1”):",
     "Lectura débil: ajusta la región (solo el número, sin la unidad).":
         "Weak reading: adjust the region (the number only, without the unit).",
@@ -676,7 +675,7 @@ EN: dict[str, str] = {
     "Agregar o ajustar cámaras (USB o IP) para equipos sin pantalla legible":
         "Add or adjust cameras (USB or IP) for machines without a readable screen",
     "🖥 Pantalla del HMI": "🖥 HMI screen", "cámara": "camera", "Cámara": "Camera", "Cámaras": "Cameras",
-    "Lectura": "Reading", "Probar lectura": "Test reading", "Indicadores físicos:": "Physical indicators:",
+    "Probar lectura": "Test reading", "Indicadores físicos:": "Physical indicators:",
     "+ Luz / LED": "+ Light / LED", "+ Torre andon…": "+ Andon tower…", "+ Display 7 seg.": "+ 7-seg display",
     "+ Aguja": "+ Needle", "+ Barra de nivel": "+ Level bar",
     "Luz piloto, LED o una luz de torre andon: se reconoce por su color (y si parpadea)":
@@ -697,7 +696,7 @@ EN: dict[str, str] = {
     "Ventana de parpadeo": "Blink window",
     "Ventana para decidir si parpadea (al menos dos encendidos y apagados)":
         "Window used to decide whether it blinks (at least two on/off changes)",
-    "Display de 7 segmentos": "7-segment display", "Dígitos": "Digits", "automático": "automatic",
+    "Display de 7 segmentos": "7-segment display", "Dígitos": "Digits",
     "automática": "automatic", "Tipo de display": "Display type", "segmentos encendidos (LED)": "lit segments (LED)",
     "segmentos oscuros (LCD)": "dark segments (LCD)", "Inclinación": "Slant",
     "Marca solo los dígitos (sin unidades ni marco). Si el punto decimal no se ve, indica los decimales y activa «Reinsertar punto decimal».":
@@ -721,7 +720,7 @@ EN: dict[str, str] = {
     "② Clic en la marca del valor MÍNIMO de la escala": "② Click the MINIMUM value mark of the scale",
     "③ Clic en la marca del valor MÁXIMO": "③ Click the MAXIMUM value mark",
     "Enseña al menos dos estados: apagado y encendido.": "Teach at least two states: off and on.",
-    "Estado detectado": "Detected state", "distancia de color": "color distance",
+    "distancia de color": "color distance",
     "El parpadeo se detecta durante el monitoreo (varios cuadros por segundo).":
         "Blinking is detected while monitoring (several frames per second).",
     "Display": "Display", "confianza": "confidence", "inclinación": "slant", "segmentos encendidos": "lit segments",
@@ -729,11 +728,11 @@ EN: dict[str, str] = {
     "Ajusta la región para que cubra solo los dígitos, con poco margen.":
         "Adjust the region so it covers only the digits, with a small margin.",
     "Calibra la aguja: centro, marca mínima y marca máxima.": "Calibrate the needle: center, minimum mark and maximum mark.",
-    "Nivel no distinguible": "Level cannot be distinguished", "Nivel": "Level", "Cámara sin imagen": "Camera without image",
+    "Nivel no distinguible": "Level cannot be distinguished", "Cámara sin imagen": "Camera without image",
     "📹 Cámaras (equipos sin pantalla)…": "📹 Cameras (machines without a screen)…",
     "Usa una cámara cuando el equipo no tiene una pantalla que se pueda capturar: displays de 7 segmentos o LCD, luces, torres andon, manómetros o barras de nivel. Colócala fija y de frente, con luz constante y sin reflejos; luego marca las variables sobre su imagen en el configurador.":
         "Use a camera when the machine has no screen that can be captured: 7-segment or LCD displays, lights, andon towers, gauges or level bars. Mount it fixed and facing the panel, with steady light and no glare; then mark the variables on its image in the configurator.",
-    "+ Agregar": "+ Add", "Quitar": "Remove", "🔍 Buscar cámaras USB": "🔍 Find USB cameras", "Resolución": "Resolution",
+    "🔍 Buscar cámaras USB": "🔍 Find USB cameras",
     "Automática": "Automatic", "Rotación": "Rotation", "Exposición manual": "Manual exposure", "Análisis": "Analysis",
     " cuadros/s": " frames/s", "⬚ Corregir perspectiva (4 clics)": "⬚ Correct perspective (4 clicks)",
     "Quitar corrección": "Remove correction", "▶ Vista en vivo": "▶ Live view", "📷 Tomar imagen": "📷 Take image",
@@ -748,7 +747,7 @@ EN: dict[str, str] = {
     "Número de la cámara USB (0, 1…), dirección de una cámara IP (rtsp://usuario:clave@ip:554/…, http://ip/video) o «demo» (tablero simulado)":
         "USB camera number (0, 1…), IP camera address (rtsp://user:password@ip:554/…, http://ip/video) or “demo” (simulated panel)",
     "Buscando cámaras USB…": "Searching for USB cameras…", "Cámaras USB encontradas: ": "USB cameras found: ",
-    "ninguna": "none", "Sin imagen": "No image", "perspectiva corregida": "perspective corrected", "Imagen": "Image",
+    "Sin imagen": "No image", "perspectiva corregida": "perspective corrected", "Imagen": "Image",
     "Haz clic en la esquina": "Click the corner", "superior izquierda": "top left", "superior derecha": "top right",
     "inferior derecha": "bottom right", "inferior izquierda": "bottom left", "Quitar cámara": "Remove camera",
     "Apagado": "Off", "Cámara del tablero": "Panel camera", "Espejo": "Mirror", "sin espejo": "no mirror",
@@ -777,7 +776,7 @@ EN: dict[str, str] = {
     "Sin enviar": "Not sent", "Conectando…": "Connecting…",
     # --- problemas de proceso ---
     "Problemas de proceso": "Process problems", "Últimos 30 días": "Last 30 days", "Últimos 90 días": "Last 90 days",
-    "Últimas 24 h": "Last 24 h", "Últimos 7 días": "Last 7 days", "Problema de calidad": "Quality problem",
+    "Problema de calidad": "Quality problem",
     "Problemas de calidad": "Quality problems", "Categoría:": "Category:", "Causa / defecto:": "Cause / defect:",
     "Causa / defecto": "Cause / defect", "Categoría": "Category", "Causa": "Cause", "Defecto": "Defect",
     "📊 Análisis (Pareto)": "📊 Analysis (Pareto)",
@@ -813,7 +812,7 @@ EN: dict[str, str] = {
     "Problemas de proceso · todas las líneas": "Process problems · all lines",
     "Las capturas las hace el operador en el monitor de cada línea (Problemas de proceso). Aquí solo se analizan y se descargan.":
         "Entries are made by the operator in each line's monitor (Process problems). Here they are only analyzed and downloaded.",
-    "Líneas:": "Lines:", "Todas las líneas": "All lines", "Área": "Area", "Periodo:": "Period:", "⟳ Actualizar": "⟳ Refresh",
+    "Líneas:": "Lines:", "Todas las líneas": "All lines", "Área": "Area",
     "📉 Problemas de proceso": "📉 Process problems", "📉 Problemas de proceso (Pareto y CSV)…": "📉 Process problems (Pareto and CSV)…",
     "Pareto de paros y defectos capturados en las líneas, con descarga CSV":
         "Pareto of stops and defects entered on the lines, with CSV download",
@@ -871,7 +870,7 @@ EN: dict[str, str] = {
     "PID aprendido": "Learned PID", "Aún no hay suficientes observaciones.": "Not enough observations yet.",
     "Esc para cancelar": "Esc to cancel", "campo": "field", "confirmación": "confirmation", "no": "no",
     "Las observaciones no coinciden en la dirección: se necesitan más.": "The observations disagree on the direction: more are needed.",
-    "Modo:": "Mode:", "Medición": "Measurement", "Objetivo": "Target", "Input en el HMI": "Input on the HMI",
+    "Modo:": "Mode:", "Objetivo": "Target", "Input en el HMI": "Input on the HMI",
     "✔ Aplicar": "✔ Apply", "✗ Ignorar": "✗ Ignore", "Input (eje derecho)": "Input (right axis)", "Propuesta": "Proposal",
     "■ Desactivar": "■ Deactivate", "▶ Activar": "▶ Activate",
     "El control ajusta inputs del HMI con límites y paros de seguridad. Al abrir el programa queda desactivado. Configura los lazos en Receta → Configurar receta → Control.":
@@ -879,7 +878,7 @@ EN: dict[str, str] = {
     "■ Detener todo el control": "■ Stop all control", "No hay lazos de control configurados.": "No control loops configured.",
     "Control: ajuste propuesto": "Control: proposed adjustment", "Activar control automático": "Activate automatic control",
     "Comportamiento aprendido: aún sin cambios del operador observados.": "Learned behavior: no operator changes observed yet.",
-    "Simulación": "Simulation", "Asistido": "Assisted", "Automático": "Automatic", "Activo": "Active",
+    "Simulación": "Simulation", "Asistido": "Assisted", "Automático": "Automatic",
     "Desactivado": "Deactivated", "En espera": "Waiting", "Detenido por falla": "Stopped by fault",
     "Detenido por error": "Stopped by error", "Control detenido en todos los lazos": "Control stopped on all loops",
     "falta configurar la medición o el input": "the measurement or the input is not configured",
@@ -888,7 +887,7 @@ EN: dict[str, str] = {
     "la medición no está actualizada": "the measurement is not up to date", "el valor del input no está actualizado": "the input value is not up to date",
     "la línea está detenida": "the line is stopped", "hay una alarma activa": "there is an active alarm",
     "el comportamiento del proceso no es normal": "the process behavior is not normal",
-    "el operador está usando el HMI": "the operator is using the HMI", "en el objetivo": "on target",
+    "en el objetivo": "on target",
     "sin ajuste necesario": "no adjustment needed", "pantalla no disponible": "screen not available",
     "clics automáticos en pausa": "automatic clicks paused",
     "Aprendido ({n} cambios): la medición cambia {k} por unidad de input, retardo {th} s, constante {tau} s.":
@@ -900,7 +899,7 @@ EN: dict[str, str] = {
         "The program will change “{i}” on the HMI within the configured limits ({lo} – {hi}).\n\nActivate?",
     "«{n}» propone cambiar el input<br><b>{a} → {b}</b>": "“{n}” proposes changing the input<br><b>{a} → {b}</b>",
     # --- mejoras de interfaz ---
-    "⏳ Paros por identificar": "⏳ Stops to identify", "📋 Capturas": "📋 Entries", "Calidad": "Quality",
+    "⏳ Paros por identificar": "⏳ Stops to identify", "📋 Capturas": "📋 Entries",
     "Borra la captura seleccionada (por ejemplo, si se capturó mal)": "Deletes the selected entry (e.g. if it was entered wrong)",
     "Escribe la hora (hh:mm:ss) o usa las flechas": "Type the time (hh:mm:ss) or use the arrows",
     "Variables para SPC": "Variables for SPC",
@@ -909,7 +908,7 @@ EN: dict[str, str] = {
     "Límites de control y Cpk / Ppk": "Control limits and Cpk / Ppk",
     "LCS / LCI = media ± 3σ de corto plazo de los datos visibles (carta de individuos). Cpk y Ppk contra los límites de alarma de la receta.":
         "UCL / LCL = mean ± 3σ short-term of the visible data (individuals chart). Cpk and Ppk against the recipe's alarm limits.",
-    "LCS": "UCL", "LCI": "LCL", "🖥 Variables del HMI": "🖥 HMI variables",
+    "🖥 Variables del HMI": "🖥 HMI variables",
     "📹 Indicadores físicos (cámaras)": "📹 Physical indicators (cameras)", "Agregar o ajustar cámaras (USB o IP)": "Add or adjust cameras (USB or IP)",
     "+ Número (OCR)": "+ Number (OCR)", "+ Texto (OCR)": "+ Text (OCR)", "+ Selector por imagen": "+ Selector by image",
     "Display o pantalla con números legibles por OCR": "Display or screen with numbers readable by OCR",
@@ -922,7 +921,7 @@ EN: dict[str, str] = {
     "Logo, texto y número de línea: Configuración → Identidad de la estación": "Logo, text and line number: Settings → Station identity",
     "Logo de la empresa, un texto propio (p. ej. la planta o el área) y el número de línea. Se muestran arriba a la izquierda del programa. Son de este equipo, no de la receta.":
         "Company logo, your own text (e.g. the plant or area) and the line number. They are shown at the top left of the program. They belong to this PC, not to the recipe.",
-    "Logo": "Logo", "Elegir imagen…": "Choose image…", "Quitar logo": "Remove logo", "Texto": "Text",
+    "Logo": "Logo", "Elegir imagen…": "Choose image…", "Quitar logo": "Remove logo",
     "Número de línea": "Line number", "p. ej. Planta Monterrey · Extrusión": "e.g. Monterrey plant · Extrusion",
     "p. ej. Línea 3": "e.g. Line 3", "sin logo": "no logo", "Logo de la empresa": "Company logo",
     "Imágenes (*.png *.jpg *.jpeg *.bmp *.svg)": "Images (*.png *.jpg *.jpeg *.bmp *.svg)",
@@ -1908,11 +1907,32 @@ EN: dict[str, str] = {
     "Un mosaico por línea, agrupado por área, con su estado, OEE y producción (ideal para TV)": "One tile per line, grouped by area, with its status, OEE and production (ideal for TV)",
     "Preventivos y correctivos leídos de los paros que se capturan en los monitores: tiempo, desperdicio y hace cuánto fue el último, por línea": "Preventive and corrective maintenance read from the stops captured in the monitors: time, scrap and how long ago the last one was, per line",
     "Tiempo": "Time", "Capturar": "Capture", "opcional": "optional", "Detenida": "Stopped",
-    "(sin verificar)": "(not verified)", "{i}. → {p}   ({n} clics)": "{i}. → {p}   ({n} clicks)",
+    "{i}. → {p}   ({n} clics)": "{i}. → {p}   ({n} clicks)",
     "⌂ Regreso {d}   ({n} clics)": "⌂ Return {d}   ({n} clicks)",
     "✔ Guardado: {r} · {m}": "✔ Saved: {r} · {m}",
     "(planeado)": "(planned)", "eventos": "events",
     "Constante": "Constant",
+    "No se pudo iniciar el programa": "The program could not start",
+    "Ocurrió un error al abrir el programa:\n\n{e}\n\nEl detalle quedó en:\n{p}":
+        "An error occurred while opening the program:\n\n{e}\n\nThe details were saved in:\n{p}",
+    "↺ Restaurar respaldo…": "↺ Restore backup…", "Restaurar respaldo": "Restore backup",
+    "Respaldos (*.zip)": "Backups (*.zip)",
+    "Se restaurará la configuración de «{f}» (variables, recetas, recorridos y ajustes). Lo actual se respalda "
+    "antes.\n\nEl programa se cerrará; al abrirlo de nuevo ya tendrá lo restaurado. ¿Continuar?":
+        "The configuration from “{f}” (variables, recipes, tours and settings) will be restored. The current one is "
+        "backed up first.\n\nThe program will close; when you open it again it will have the restored "
+        "configuration. Continue?",
+    "No se pudo usar ese archivo: {e}": "That file could not be used: {e}",
+    "Configuración recuperada": "Configuration recovered",
+    "La configuración guardada estaba dañada (por ejemplo, por un apagón al guardar) y se recuperó del respaldo "
+    "«{b}». La copia dañada quedó junto a ella como «config.dañado-….json». Revisa los últimos cambios.":
+        "The saved configuration was damaged (for example, by a power cut while saving) and it was recovered from "
+        "the backup “{b}”. The damaged copy was kept next to it as “config.dañado-….json”. Review the latest "
+        "changes.",
+    "No se pudo cifrar la contraseña o el token en este equipo, así que no se guardó ({e}). Revisa que la sesión "
+    "de Windows tenga perfil de usuario.":
+        "The password or token could not be encrypted on this computer, so it was not saved ({e}). Check that the "
+        "Windows session has a user profile.",
 }
 
 # Textos con valores: la clave es la plantilla en español («{}» = valor) y el resultado su traducción.

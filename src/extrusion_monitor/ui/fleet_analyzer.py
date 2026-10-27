@@ -1,7 +1,6 @@
 """Dashboard global → Analizador de planta: conclusiones, OEE y pérdidas, tiempos muertos, fallas e Industria 5.0."""
 from __future__ import annotations
 
-import json
 import time
 from pathlib import Path
 

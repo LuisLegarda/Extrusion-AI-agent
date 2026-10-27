@@ -14,7 +14,6 @@ from PySide6.QtWidgets import (
     QTableWidget, QTableWidgetItem, QVBoxLayout, QWidget,
 )
 
-from ..analysis.oee import STATE_LABELS
 from ..analysis.problems import pareto, summary
 from ..i18n import tr
 from . import theme

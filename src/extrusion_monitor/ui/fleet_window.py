@@ -15,13 +15,13 @@ import pyqtgraph as pg
 from PySide6.QtCore import QSize, Qt, QTimer, QUrl
 from PySide6.QtGui import QActionGroup, QBrush, QColor, QDesktopServices, QKeySequence, QShortcut
 from PySide6.QtWidgets import (
-    QApplication, QComboBox, QFileDialog, QFrame, QGridLayout, QHBoxLayout, QHeaderView, QLabel, QLineEdit,
-    QListWidget, QListWidgetItem, QMainWindow, QMenu, QMessageBox, QPushButton, QScrollArea, QSplitter, QTableWidget,
+    QApplication, QComboBox, QFrame, QGridLayout, QHBoxLayout, QHeaderView, QLabel, QLineEdit,
+    QListWidget, QListWidgetItem, QMainWindow, QMenu, QMessageBox, QScrollArea, QSplitter, QTableWidget,
     QStackedWidget, QTableWidgetItem, QTabWidget, QToolButton, QVBoxLayout, QWidget,
 )
 
 from .. import version_label
-from ..fleet import FleetReader, FleetSettings, LineState, load_fleet_settings, save_fleet_settings
+from ..fleet import FleetReader, FleetSettings, load_fleet_settings, save_fleet_settings
 from ..i18n import LANGS, lang as i18n_lang, tr, translate_text
 from . import icons, theme
 from .home_status import StatusTile
@@ -656,11 +656,6 @@ class FleetWindow(QMainWindow):
             self._rebuild_cards()
             self.refresh()
 
-    def choose_folder(self) -> None:
-        d = QFileDialog.getExistingDirectory(self, tr("Carpeta de datos de las líneas"), self.settings.dir)
-        if d:
-            self.set_folder(d)
-
     def set_folder(self, d: str) -> None:
         self.settings.dir = d
         self.reader = FleetReader(d)
@@ -1094,26 +1089,28 @@ rebuilt_fleet_windows: list = []  # referencia a la ventana nueva tras cambiar i
 
 
 def run_fleet(folder: Optional[str], home: Optional[Path] = None) -> int:
-    import logging
     import sys
 
     from ..config import default_home
     from ..i18n import Translator
+    from ..logsetup import setup_logging, show_startup_error
     from .main_window import apply_ui_prefs
 
     home_dir = Path(home) if home else default_home()
-    home_dir.mkdir(parents=True, exist_ok=True)
-    logging.basicConfig(level=logging.INFO, filename=str(home_dir / "fleet.log"),
-                        format="%(asctime)s %(levelname)s %(name)s: %(message)s")
+    log_path = setup_logging(home_dir, "fleet")
     app = QApplication.instance() or QApplication(sys.argv[:1])
     app.setApplicationName("Dashboard global de líneas")
     try:
         state = json.loads((home_dir / "state.json").read_text(encoding="utf-8"))
     except (OSError, ValueError):
         state = {}
-    apply_ui_prefs(state.get("ui", {}))
-    Translator().install(app)
-    win = FleetWindow(folder, home_dir / "fleet.json", home_dir / "state.json")
+    try:
+        apply_ui_prefs(state.get("ui", {}))
+        Translator().install(app)
+        win = FleetWindow(folder, home_dir / "fleet.json", home_dir / "state.json")
+    except Exception as exc:
+        show_startup_error(exc, log_path)
+        return 1
     win.show()
     if not win.settings.dir:
         QTimer.singleShot(300, win.open_setup)  # primera vez: pedir la carpeta de datos

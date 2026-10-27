@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 import time
-from typing import Callable, Optional
+from typing import Optional
 
 from PySide6.QtCore import QRectF, Qt, QTimer, Signal
 from PySide6.QtGui import QColor, QPainter, QPen

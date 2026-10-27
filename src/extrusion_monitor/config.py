@@ -874,6 +874,10 @@ class Workspace:
 
 
 def _atomic_write(path: Path, text: str) -> None:
+    """Escribe a un temporal, lo fuerza a disco y lo reemplaza: un apagón no deja el archivo vacío o a medias."""
     tmp = path.with_suffix(path.suffix + ".tmp")
-    tmp.write_text(text, encoding="utf-8")
+    with open(tmp, "w", encoding="utf-8") as f:
+        f.write(text)
+        f.flush()
+        os.fsync(f.fileno())
     os.replace(tmp, path)

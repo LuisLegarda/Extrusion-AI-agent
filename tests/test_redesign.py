@@ -197,7 +197,6 @@ def test_shifts_by_time_and_password_hash(tmp_path):
 
 
 def test_shift_change_asks_who_enters_and_confirms_badge(ctx, monkeypatch):
-    import datetime as dt
 
     from PySide6.QtWidgets import QApplication, QDialog
 

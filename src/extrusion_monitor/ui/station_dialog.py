@@ -143,7 +143,7 @@ class StationDialog(QDialog):
             return
         self.ed_token.setText(token)
         self.chk_srv.setChecked(True)
-        self.lbl_srv.setText(f"<span style='color:#0ca30c'><b>OK</b></span> · " +
+        self.lbl_srv.setText("<span style='color:#0ca30c'><b>OK</b></span> · " +
                              tr("Línea registrada como «{p}». Pulsa Aceptar para empezar a enviar.", p=self._line_id()))
 
     def _test_server(self) -> None:
@@ -212,7 +212,7 @@ class StationDialog(QDialog):
         self.exporter.settings = st
         try:
             self.exporter.write_once()
-            self.lbl.setText(f"<span style='color:#0ca30c'><b>OK</b></span> · " +
+            self.lbl.setText("<span style='color:#0ca30c'><b>OK</b></span> · " +
                              tr("Escribiendo en: {p}", p=str(self.exporter.line_dir)))
         except Exception as exc:
             self.lbl.setText(f"<span style='color:#d03b3b'><b>{tr('Error')}</b>: {exc}</span>")

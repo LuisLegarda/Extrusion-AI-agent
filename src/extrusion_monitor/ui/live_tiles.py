@@ -17,7 +17,6 @@ from PySide6.QtWidgets import (
     QStackedWidget, QVBoxLayout, QWidget,
 )
 
-from ..analysis.rules import Level
 from ..config import AppConfig, HomeTile
 from ..engine import Snapshot
 from ..i18n import tr

@@ -85,6 +85,60 @@ def restore_backup(zip_path: Path, home: Path) -> int:
     return n
 
 
+PENDING = "restaurar_al_abrir.json"
+
+
+def schedule_restore(zip_path: Path, home: Path) -> None:
+    """Deja pendiente la restauración: se aplica al volver a abrir el programa, antes de cargar nada.
+
+    Así ningún archivo que el programa guarda al cerrar (estado, estación…) pisa lo restaurado.
+    """
+    with zipfile.ZipFile(zip_path) as z:  # que sea un respaldo válido antes de cerrar el programa
+        if not any(Path(i.filename).parts[:1] == ("datos",) for i in z.infolist()):
+            raise ValueError("el archivo no es un respaldo de la configuración")
+    (Path(home) / PENDING).write_text(json.dumps({"zip": str(zip_path), "ts": time.time()}), encoding="utf-8")
+
+
+def apply_pending_restore(home: Path) -> Optional[int]:
+    """Aplica la restauración pendiente (si la hay) con un respaldo previo de lo actual. Devuelve cuántos archivos."""
+    marker = Path(home) / PENDING
+    if not marker.exists():
+        return None
+    try:
+        zip_path = Path(json.loads(marker.read_text(encoding="utf-8"))["zip"])
+        marker.unlink()
+        create_backup(home, "antes-de-restaurar")
+        return restore_backup(zip_path, home)
+    except (OSError, ValueError, KeyError, zipfile.BadZipFile):
+        try:
+            marker.unlink()
+        except OSError:
+            pass
+        return None
+
+
+def recover_config(home: Path, valid) -> Optional[Path]:
+    """`config.json` no se puede leer: se aparta la copia dañada y se recupera la del respaldo más reciente que
+    sí sea válida (`valid(texto)` dice si lo es). Devuelve el respaldo usado, o None si no hubo ninguno."""
+    home = Path(home)
+    for zp in reversed(list_backups(home)):
+        try:
+            with zipfile.ZipFile(zp) as z:
+                text = z.read("datos/config.json").decode("utf-8")
+        except (OSError, KeyError, zipfile.BadZipFile, UnicodeDecodeError):
+            continue
+        if not valid(text):
+            continue
+        broken = home / "config.json"
+        if broken.exists():
+            broken.replace(home / f"config.dañado-{time.strftime('%Y%m%d-%H%M%S')}.json")
+        tmp = home / "config.json.tmp"
+        tmp.write_text(text, encoding="utf-8")
+        tmp.replace(home / "config.json")
+        return zp
+    return None
+
+
 def auto_backup(home: Path, now: Optional[float] = None) -> Optional[Path]:
     """Respaldo al cambiar de versión o si el último tiene más de EVERY_DAYS. Nunca detiene el programa."""
     home = Path(home)

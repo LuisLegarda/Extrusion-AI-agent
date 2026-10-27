@@ -2,6 +2,8 @@
 from __future__ import annotations
 
 import time
+import zipfile
+from pathlib import Path
 from typing import Optional
 
 import numpy as np
@@ -451,6 +453,7 @@ class MainWindow(QMainWindow):
         m.addSeparator()
         m.addAction("🛟 Crear respaldo de la configuración", self._backup_now)
         m.addAction("📂 Abrir carpeta de respaldos", self._open_backups)
+        m.addAction("↺ Restaurar respaldo…", self._restore_backup)
         m.addSeparator()
         act = m.addAction("Salir", self.close)
         act.setShortcut("Ctrl+Q")
@@ -1040,6 +1043,31 @@ class MainWindow(QMainWindow):
         from ..backup import backups_dir
         self._open_dir(backups_dir(self.ctx.workspace.home))
 
+    def _restore_backup(self, path: Optional[str] = None, confirm: bool = True) -> bool:
+        """Elige un respaldo y lo deja pendiente: se aplica al volver a abrir (con respaldo de lo actual)."""
+        if not self.gate.allow("backups"):
+            return False
+        from ..backup import backups_dir, schedule_restore
+        if path is None:
+            path, _ = QFileDialog.getOpenFileName(self, tr("Restaurar respaldo"),
+                                                  str(backups_dir(self.ctx.workspace.home)), tr("Respaldos (*.zip)"))
+        if not path:
+            return False
+        if confirm and QMessageBox.question(
+                self, tr("Restaurar respaldo"),
+                tr("Se restaurará la configuración de «{f}» (variables, recetas, recorridos y ajustes). Lo actual se "
+                   "respalda antes.\n\nEl programa se cerrará; al abrirlo de nuevo ya tendrá lo restaurado. "
+                   "¿Continuar?", f=Path(path).name)) != QMessageBox.Yes:
+            return False
+        try:
+            schedule_restore(Path(path), self.ctx.workspace.home)
+        except (OSError, ValueError, zipfile.BadZipFile) as e:
+            QMessageBox.warning(self, tr("Restaurar respaldo"), tr("No se pudo usar ese archivo: {e}", e=e))
+            return False
+        self._close_confirmed = True
+        self.close()
+        return True
+
     def _open_url(self, url: str) -> None:
         QDesktopServices.openUrl(QUrl(url))
 
@@ -1628,9 +1656,6 @@ class MainWindow(QMainWindow):
             return  # estadística y correlación se recalculan cada 2 s como máximo
         self._analysis_at = now
         w.refresh(self.engine.last)
-
-    def _update_table(self, snap: Snapshot) -> None:
-        self.table.update_snapshot(snap)
 
     def _replot(self, *_):
         if self.engine.last is not None:

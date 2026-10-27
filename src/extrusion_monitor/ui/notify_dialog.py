@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import time
+from typing import Optional
 
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (
@@ -212,8 +213,20 @@ class NotifyDialog(QDialog):
         s.quiet = self.chk_quiet.isChecked()
         return s
 
+    def _settings_or_warn(self) -> Optional[NotifySettings]:
+        from ..secrets_store import SecretError
+        try:
+            return self.settings()
+        except SecretError as e:  # la contraseña o el token no se pudieron cifrar: no se guardan legibles
+            QMessageBox.warning(self, tr("Notificaciones"),
+                                tr("No se pudo cifrar la contraseña o el token en este equipo, así que no se guardó "
+                                   "({e}). Revisa que la sesión de Windows tenga perfil de usuario.", e=e))
+            return None
+
     def send_test(self) -> None:
-        s = self.settings()
+        s = self._settings_or_warn()
+        if s is None:
+            return
         if not s.channels():
             self.lbl_test.setText(tr("Activa y completa al menos un canal."))
             return
@@ -230,7 +243,9 @@ class NotifyDialog(QDialog):
         self.lbl_test.setStyleSheet(f"color:{theme.c('good_text') if ok else theme.c('critical')};")
 
     def accept(self) -> None:
-        s = self.settings()
+        s = self._settings_or_warn()
+        if s is None:
+            return
         if s.email.enabled and (not s.email.host or not s.email.to):
             QMessageBox.information(self, tr("Notificaciones"), tr("Para el correo falta el servidor o los destinatarios."))
             return

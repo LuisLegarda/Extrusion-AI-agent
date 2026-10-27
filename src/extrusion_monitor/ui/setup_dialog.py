@@ -18,11 +18,11 @@ from PySide6.QtWidgets import (
 
 from ..bootstrap import AppContext
 from ..capture import ImageFileSource, ScreenSource, crop, load_png, save_png
-from ..config import (SCREEN, AppConfig, BarOptions, ColorState, GaugeOptions, OcrOptions, Page, Rect,
+from ..config import (SCREEN, AppConfig, BarOptions, ColorState, OcrOptions, Page, Rect,
                       SevenSegOptions, Variable)
 from ..ocr import OcrUnavailable, TemplateOcr, create_engine, parse_number, preprocess
 from ..pages import PageDetector
-from ..i18n import tr, translate_widget
+from ..i18n import tr
 from .common import to_pixmap
 from .region_view import RegionView
 

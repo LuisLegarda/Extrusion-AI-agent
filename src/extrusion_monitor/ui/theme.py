@@ -5,7 +5,6 @@ contraste en ambos modos (el modo oscuro usa sus propios tonos, no una inversió
 """
 from __future__ import annotations
 
-from dataclasses import dataclass
 
 LIGHT = {
     "dark": False,
@@ -176,15 +175,3 @@ def apply(app) -> None:
     app.setPalette(palette())
     app.setStyleSheet(stylesheet())
     pg.setConfigOptions(antialias=True, background=c("plot_bg"), foreground=c("plot_fg"))
-
-
-@dataclass
-class Pens:
-    """Plumas de uso frecuente en las gráficas."""
-
-    @staticmethod
-    def get(key: str, width: float = 2, dash: bool = False, dot: bool = False):
-        import pyqtgraph as pg
-        from PySide6.QtCore import Qt
-        style = Qt.DashLine if dash else (Qt.DotLine if dot else Qt.SolidLine)
-        return pg.mkPen(c(key), width=width, style=style)

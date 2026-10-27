@@ -1,6 +1,7 @@
 """Construcción de los objetos de la aplicación a partir de la carpeta de datos."""
 from __future__ import annotations
 
+import logging
 from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING, Optional
@@ -16,6 +17,8 @@ from .storage import Historian
 if TYPE_CHECKING:
     from .exporter import FleetExporter
 
+log = logging.getLogger(__name__)
+
 
 @dataclass
 class AppContext:
@@ -27,18 +30,40 @@ class AppContext:
     demo: bool = False
     exporter: Optional["FleetExporter"] = None  # estado de la línea para el dashboard global
     notifier: Optional[object] = None  # avisos por correo / mensajes (lo crea la ventana principal una sola vez)
+    recovered: Optional[str] = None  # respaldo con que se recuperó una configuración dañada (se avisa al abrir)
 
 
 def build(home: Optional[Path] = None, demo: bool = False, source: Optional[FrameSource] = None,
           clock=None, sleep=None) -> AppContext:
     ws = Workspace(home)
     if not demo:
-        from .backup import auto_backup
+        from .backup import apply_pending_restore, auto_backup
+        apply_pending_restore(ws.home)  # «Restaurar respaldo…» pedido antes de cerrar
         auto_backup(ws.home)  # antes de cargar (y migrar) la configuración
     if demo:
         demo_source = setup_demo(ws)
         source = source or demo_source
-    config = ws.load_config()
+    recovered = None
+    try:
+        config = ws.load_config()
+    except ValueError:  # config.json dañado (p. ej. un apagón al guardar): se recupera del último respaldo válido
+        if demo:
+            raise
+        from .backup import recover_config
+
+        def valid(text: str) -> bool:
+            try:
+                AppConfig.model_validate_json(text)
+                return True
+            except ValueError:
+                return False
+
+        used = recover_config(ws.home, valid)
+        if used is None:
+            raise
+        log.warning("config.json dañado: se recuperó de %s", used)
+        recovered = used.name
+        config = ws.load_config()
     recipes = RecipeStore(ws.recipes_dir)
     template = TemplateOcr(ws.glyphs_file)
     ocr = template if config.general.ocr_engine == "template" else create_engine(config.general, ws.glyphs_file)
@@ -52,7 +77,7 @@ def build(home: Optional[Path] = None, demo: bool = False, source: Optional[Fram
     if state.get("recipe") in recipes.names():
         engine.state.recipe = state["recipe"]
     from .exporter import FleetExporter
-    return AppContext(ws, config, recipes, engine, template, demo, FleetExporter(engine, ws))
+    return AppContext(ws, config, recipes, engine, template, demo, FleetExporter(engine, ws), recovered=recovered)
 
 
 def make_clicker(source: FrameSource):

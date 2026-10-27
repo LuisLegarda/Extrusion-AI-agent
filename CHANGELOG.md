@@ -27,6 +27,18 @@ Numeración `MAYOR.MENOR.PARCHE`:
 - El análisis estadístico exporta bien varias líneas con los mismos minutos (antes se mezclaban).
 - La tarjeta de línea del dashboard ya no muestra la ruta de la carpeta compartida en su ayuda.
 
+### Preparación para producción (misma rama; lista en [docs/PRODUCCION.md](docs/PRODUCCION.md))
+- Historial: la purga horaria ya no recorre toda la tabla ni detiene el monitoreo (borra por bloques); exportar
+  el historial usa el índice por variable.
+- «Archivo › Restaurar respaldo…» (con sesión de supervisor): se aplica al volver a abrir, respaldando antes lo
+  actual.
+- Si `config.json` está dañado (p. ej. por un apagón), se recupera solo del último respaldo válido y se avisa;
+  las escrituras de configuración se fuerzan a disco.
+- Registro con rotación (5 MB × 5), errores no atrapados y cierres abruptos registrados, y mensaje visible si el
+  programa no puede abrir.
+- En Windows, si no se puede cifrar una contraseña o token de notificaciones, ya no se guarda legible.
+- Limpieza: imports sin usar, código muerto y traducciones repetidas.
+
 ### Análisis del dashboard sin monitoreo (rama `fix/analisis-dashboard-sin-monitoreo`)
 - El análisis estadístico del dashboard mostraba vacío cuando el monitor de la línea estaba abierto sin
   monitorear: al abrirlo se reescribía `status.json` sin la lista de variables. Ahora el monitor publica

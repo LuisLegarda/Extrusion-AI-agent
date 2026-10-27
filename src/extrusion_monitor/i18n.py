@@ -117,11 +117,6 @@ def _plain(s: str, depth: int = 0, patterns: bool = True) -> Optional[str]:
     return None
 
 
-def translate_message(s: str) -> str:
-    """Mensaje del motor (hallazgos, eventos, recorridos) o texto con valores, en el idioma activo."""
-    return translate_text(s)
-
-
 def _lines(part: str) -> Optional[str]:
     """Traduce un fragmento; si tiene varios renglones, cada uno por separado."""
     if "\n" not in part:
