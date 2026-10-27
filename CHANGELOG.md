@@ -10,6 +10,23 @@ Numeración `MAYOR.MENOR.PARCHE`:
 
 ## [Sin publicar]
 
+### Exportar y traducciones (rama `feature/exportar-produccion`)
+- «Exportar» en lugar de «Exportar CSV» en el monitor (historial: 24 h, 7 o 30 días), el dashboard (resumen de
+  las líneas o sus datos por minuto de 24 h / 7 días), los problemas de proceso y el análisis estadístico (sus
+  datos o su tabla de resultados). Al exportar se elige el formato:
+  - **CSV** (como antes, para Excel en español);
+  - **Excel** (.xlsx con números y fechas reales, encabezado fijo y filtros; sin dependencias nuevas);
+  - **CSV para software estadístico (Minitab)**: separado por tabulaciones, punto decimal, «*» en los
+    faltantes y nombres de columna válidos; opcionalmente se copia al portapapeles para pegarlo con Ctrl+V.
+- Revisión completa de las traducciones al inglés (barrido del código y de cada ventana, diálogo y análisis):
+  - el reporte PDF, las notificaciones y las conclusiones del analizador de planta ahora salen en inglés;
+  - ~150 textos nuevos (exportar, Personal, Problemas de proceso, cámaras, validaciones, grupos del análisis);
+  - las listas desplegables que se llenan después de abrir la ventana y los textos especiales de los campos
+    numéricos («automático») también se traducen;
+  - pruebas nuevas: todo `tr("…")` tiene traducción, sin claves repetidas y con los mismos campos `{…}`.
+- El análisis estadístico exporta bien varias líneas con los mismos minutos (antes se mezclaban).
+- La tarjeta de línea del dashboard ya no muestra la ruta de la carpeta compartida en su ayuda.
+
 ### Análisis del dashboard sin monitoreo (rama `fix/analisis-dashboard-sin-monitoreo`)
 - El análisis estadístico del dashboard mostraba vacío cuando el monitor de la línea estaba abierto sin
   monitorear: al abrirlo se reescribía `status.json` sin la lista de variables. Ahora el monitor publica

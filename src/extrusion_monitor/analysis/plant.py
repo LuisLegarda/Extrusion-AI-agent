@@ -14,6 +14,8 @@ from typing import Optional
 
 import numpy as np
 
+from ..i18n import tr
+
 KPI_KEYS = ("oee", "availability", "performance", "quality", "stability", "i5", "cpk", "conform")
 RUN_STATES = ("running", "slow", "assumed")
 DEFAULT_SHIFTS = ["06:00", "14:00", "22:00"]
@@ -181,7 +183,7 @@ def line_metrics(name: str, kpi_rows: list, problems: list[dict], events: list[t
             continue
         m.stop_min += mins
         m.n_stops += 1
-        cause = r.get("reason") or r.get("category") or "(sin causa)"
+        cause = r.get("reason") or r.get("category") or tr("(sin causa)")
         m.causes[cause] = m.causes.get(cause, 0.0) + mins
         f = m.failures.setdefault(cause, {"n": 0, "min": 0.0})
         f["n"] += 1
@@ -269,7 +271,7 @@ def insights(s: PlantSummary) -> list[Insight]:
         loss = worst.main_loss
         sev = 3 if worst.kpis["oee"] < 60 else (2 if worst.kpis["oee"] < 75 else 1)
         out.append(Insight(sev, f"{worst.name} tiene el OEE más bajo ({worst.kpis['oee']:.0f} %)"
-                                + (f"; su mayor pérdida es la {LOSS_NAMES[loss[0]]} ({loss[1]:.0f} %)." if loss else "."),
+                                + (f"; su mayor pérdida es la {LOSS_NAMES[loss[0]]}, con {loss[1]:.0f} %." if loss else "."),
                            worst.name))
         if best is not worst:
             out.append(Insight(0, f"{best.name} es la mejor línea del periodo (OEE {best.kpis['oee']:.0f} %): "

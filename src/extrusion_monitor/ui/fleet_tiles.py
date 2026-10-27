@@ -407,7 +407,7 @@ class LineCard(QFrame):
         for w in self.tiles:
             w.update_line(line, now)
         self.lbl_foot.setText(tr("Actualizado {a}", a=fmt_age(line.age(now))) + (f" · {area}" if area else ""))
-        self.setToolTip(f"{line.line_id}\n{line.path}")
+        self.setToolTip(line.line_id)  # sin la ruta de la carpeta compartida
         self._sev = severity(line, now, offline_s)
         self._paint_border()
 

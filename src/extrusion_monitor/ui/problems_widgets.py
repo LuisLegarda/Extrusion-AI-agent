@@ -10,12 +10,12 @@ from typing import Optional
 from PySide6.QtCore import QPointF, QRectF, Qt, Signal
 from PySide6.QtGui import QBrush, QColor, QFont, QPainter, QPainterPath, QPen
 from PySide6.QtWidgets import (
-    QCheckBox, QComboBox, QFileDialog, QHBoxLayout, QHeaderView, QLabel, QPushButton, QSizePolicy, QSplitter,
+    QCheckBox, QComboBox, QHBoxLayout, QHeaderView, QLabel, QPushButton, QSizePolicy, QSplitter,
     QTableWidget, QTableWidgetItem, QVBoxLayout, QWidget,
 )
 
 from ..analysis.oee import STATE_LABELS
-from ..analysis.problems import export_csv, pareto, summary
+from ..analysis.problems import pareto, summary
 from ..i18n import tr
 from . import theme
 from .kpi_dashboard import STATE_COLORS
@@ -274,7 +274,7 @@ class ProblemsAnalysis(QWidget):
         self.chk_planned.toggled.connect(self.refresh)
         bar.addWidget(self.chk_planned)
         bar.addStretch(1)
-        self.btn_csv = QPushButton("⤓ Exportar CSV…")
+        self.btn_csv = QPushButton("⤓ Exportar…")
         self.btn_csv.clicked.connect(self.export)
         bar.addWidget(self.btn_csv)
         if can_delete:
@@ -350,12 +350,12 @@ class ProblemsAnalysis(QWidget):
         if it is not None and it.data(Qt.UserRole) is not None:
             self.deleteRequested.emit(int(it.data(Qt.UserRole)))
 
-    def export(self, path: Optional[str] = None) -> Optional[str]:
-        if not path:
-            path, _ = QFileDialog.getSaveFileName(self, tr("Exportar problemas de proceso"),
-                                                  f"problemas_{time.strftime('%Y%m%d_%H%M')}.csv", "CSV (*.csv)")
-        if not path:
-            return None
-        from ..analysis.problems import CSV_COLUMNS
-        export_csv(path, self.records, headers=[tr(c) for c in CSV_COLUMNS])
-        return path
+    def export(self, path: Optional[str] = None, fmt: Optional[str] = None) -> Optional[str]:
+        from ..analysis.problems import CSV_COLUMNS, table_row
+        from .export_dialog import export_table
+
+        def build(_content):
+            recs = sorted(self.records, key=lambda r: r.get("start") or 0)
+            return [tr(c) for c in CSV_COLUMNS], [table_row(r) for r in recs]
+
+        return export_table(self, "Exportar problemas de proceso", "problemas", build, path=path, fmt=fmt)

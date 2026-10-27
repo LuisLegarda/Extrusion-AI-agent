@@ -200,6 +200,8 @@ def translate_widget(root, children: bool = True) -> None:
         elif isinstance(w, (QSpinBox, QDoubleSpinBox)):
             w.setSuffix(translate_text(w.suffix()))
             w.setPrefix(translate_text(w.prefix()))
+            if w.specialValueText():
+                w.setSpecialValueText(translate_text(w.specialValueText()))
         elif isinstance(w, QTabWidget):
             for i in range(w.count()):
                 w.setTabText(i, translate_text(w.tabText(i)))
@@ -288,3 +290,27 @@ def install_live_translation() -> None:
     for cls, name in ((QLabel, "setText"), (QAbstractButton, "setText"), (QWidget, "setToolTip"),
                       (QWidget, "setWindowTitle"), (QListWidgetItem, "setText"), (QTableWidgetItem, "setText")):
         wrap(cls, name)
+
+    # listas desplegables que se llenan o cambian después de mostrarse la ventana
+    from PySide6.QtWidgets import QComboBox
+
+    def wrap_items(name: str, pos: int) -> None:
+        orig = getattr(QComboBox, name)
+
+        def setter(self, *args, _orig=orig):
+            if _lang == "en":
+                args = list(args)
+                for i in range(pos, min(pos + 2, len(args))):  # el texto va después del índice o del icono
+                    if isinstance(args[i], str):
+                        args[i] = translate_text(args[i])
+                        break
+            return _orig(self, *args)
+
+        try:
+            setattr(QComboBox, name, setter)
+        except TypeError:
+            pass
+
+    wrap_items("addItem", 0)
+    wrap_items("insertItem", 1)
+    wrap_items("setItemText", 1)

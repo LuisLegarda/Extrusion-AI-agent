@@ -92,15 +92,16 @@ class Historian:
                 "SELECT * FROM events WHERE ts>=? ORDER BY ts DESC LIMIT ?", (since, limit))
             return cur.fetchall()
 
-    def export_csv(self, path: Path | str, since: float, until: float | None = None,
-                   variables: Optional[list[str]] = None, headers: Optional[dict[str, str]] = None) -> int:
-        """Exporta muestras en formato ancho: una columna por variable."""
+    def history_table(self, since: float, until: float | None = None, variables: Optional[list[str]] = None,
+                      headers: Optional[dict[str, str]] = None) -> tuple[list[str], list[list]]:
+        """Muestras en formato ancho (una columna por variable): encabezados y filas [fecha, valores…]."""
+        import datetime as dt
         until = until or time.time()
         sql = "SELECT ts, var, COALESCE(value, text) FROM samples WHERE ts BETWEEN ? AND ?"
         args: list = [since, until]
         if variables is not None:
             if not variables:
-                return 0
+                return ["fecha_hora"], []
             sql += f" AND var IN ({','.join('?' * len(variables))})"
             args += list(variables)
         with self._lock:
@@ -110,13 +111,23 @@ class Historian:
         by_ts: dict[float, dict[str, object]] = {}
         for ts, var, val in rows:
             by_ts.setdefault(ts, {})[var] = val
+        header = ["fecha_hora", *[(headers or {}).get(v, v) for v in variables]]
+        out = [[dt.datetime.fromtimestamp(ts).replace(microsecond=0), *[by_ts[ts].get(v) for v in variables]]
+               for ts in sorted(by_ts)]
+        return header, out
+
+    def export_csv(self, path: Path | str, since: float, until: float | None = None,
+                   variables: Optional[list[str]] = None, headers: Optional[dict[str, str]] = None) -> int:
+        """Exporta muestras en formato ancho: una columna por variable."""
+        header, rows = self.history_table(since, until, variables, headers)
+        if variables is not None and not variables:
+            return 0
         with open(path, "w", newline="", encoding="utf-8-sig") as f:
             w = csv.writer(f, delimiter=";")
-            w.writerow(["fecha_hora", *[(headers or {}).get(v, v) for v in variables]])
-            for ts in sorted(by_ts):
-                stamp = time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(ts))
-                w.writerow([stamp, *[by_ts[ts].get(v, "") for v in variables]])
-        return len(by_ts)
+            w.writerow(header)
+            for r in rows:
+                w.writerow([r[0].strftime("%Y-%m-%d %H:%M:%S"), *["" if v is None else v for v in r[1:]]])
+        return len(rows)
 
     def _maybe_purge(self) -> None:
         now = time.time()

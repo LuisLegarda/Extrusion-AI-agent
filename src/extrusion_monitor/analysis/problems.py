@@ -179,6 +179,18 @@ def csv_row(r: dict, line: str = "") -> list:
             r.get("comment") or "", r.get("recipe") or "", _stamp(r.get("captured_at"))]
 
 
+def table_row(r: dict, line: str = "") -> list:
+    """Como `csv_row`, con valores nativos (números y fechas) para Excel y software estadístico."""
+    from ..i18n import tr
+    from ..tabular import epoch
+    return [line or r.get("line", ""), tr("paro" if r.get("kind") == "downtime" else "calidad"),
+            epoch(r.get("start")), epoch(r.get("end")), round((r.get("duration_s") or 0) / 60, 2),
+            r.get("category") or "", r.get("reason") or "", tr("sí" if r.get("planned") else "no"),
+            float(r.get("scrap") or 0),
+            r.get("unit") or "", r.get("operator") or "", r.get("comment") or "", r.get("recipe") or "",
+            epoch(r.get("captured_at"))]
+
+
 def export_csv(path, records: Iterable[dict], line: str = "", headers: Optional[list[str]] = None) -> int:
     n = 0
     with open(path, "w", newline="", encoding="utf-8-sig") as f:  # Excel abre bien los acentos

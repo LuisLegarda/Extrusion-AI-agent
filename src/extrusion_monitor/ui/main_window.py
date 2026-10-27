@@ -444,7 +444,7 @@ class MainWindow(QMainWindow):
         m = mb.addMenu("&Archivo")
         m.addAction(self.act_run)
         m.addSeparator()
-        act = m.addAction("⤓ Exportar historial a CSV…", self.export_csv)
+        act = m.addAction("⤓ Exportar historial…", self.export_csv)
         act.setShortcut("Ctrl+E")
         m.addAction("📂 Abrir carpeta de reportes", self._open_reports_dir)
         m.addAction("📂 Abrir carpeta de datos", self._open_data_dir)
@@ -1377,13 +1377,21 @@ class MainWindow(QMainWindow):
             self.refresh_recipes()
             self._save_state()
 
-    def export_csv(self) -> None:
-        path, _ = QFileDialog.getSaveFileName(self, "Exportar historial (últimas 24 h)",
-                                              f"historial_{time.strftime('%Y%m%d_%H%M')}.csv", "CSV (*.csv)")
-        if not path:
-            return
-        n = self.engine.historian.export_csv(path, time.time() - 86400)
-        QMessageBox.information(self, tr("Exportado"), tr("Se exportaron {n} registros.", n=n))
+    def export_csv(self, path: Optional[str] = None, fmt: Optional[str] = None, days: str = "1") -> Optional[str]:
+        """Exporta el historial de lecturas (una columna por variable) en CSV, Excel o para Minitab."""
+        from .export_dialog import export_table
+        cfg = self.engine.config
+        headers = {v.id: cfg.var_label(v) + (f" ({v.unit})" if v.unit else "") for v in cfg.variables}
+
+        def build(content: str):
+            return self.engine.historian.history_table(time.time() - 86400 * float(content or 1), headers=headers)
+
+        out = export_table(self, "Exportar historial", "historial", build,
+                           [("1", "Últimas 24 h"), ("7", "Últimos 7 días"), ("30", "Últimos 30 días")],
+                           path=path, fmt=fmt, content=days if fmt else None)
+        if out and fmt is None:
+            QMessageBox.information(self, tr("Exportado"), tr("Archivo guardado:\n{p}", p=out))
+        return out
 
     def _tour_pause(self, on: bool) -> None:
         self.engine.tour_paused = on

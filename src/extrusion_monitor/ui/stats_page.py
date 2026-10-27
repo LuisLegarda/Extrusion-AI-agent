@@ -6,7 +6,6 @@ pueden cambiar.
 """
 from __future__ import annotations
 
-import csv
 import json
 import time
 import uuid
@@ -635,7 +634,9 @@ class StatsPage(QWidget):
                                 (tr("⟳ Recalcular"), lambda: self.show_record(self.lst.currentRow(), force=True),
                                  tr("Vuelve a leer el historial")),
                                 (tr("⤓ Imagen"), self.export_png, tr("Guardar el análisis como imagen PNG")),
-                                (tr("⤓ CSV"), self.export_csv, tr("Guardar la tabla de resultados"))):
+                                (tr("⤓ Exportar"), self.export_csv,
+                                 tr("Guardar los datos del análisis o la tabla de resultados en CSV, Excel o para "
+                                    "software estadístico (Minitab)"))):
             b = QPushButton(text)
             b.setToolTip(tip)
             b.clicked.connect(slot)
@@ -865,14 +866,23 @@ class StatsPage(QWidget):
             self.current.grab().save(path)
         return path or None
 
-    def export_csv(self, path: Optional[str] = None) -> Optional[str]:
-        if self.current is None or not self.current.csv_rows:
+    def export_csv(self, path: Optional[str] = None, fmt: Optional[str] = None,
+                   content: str = "data") -> Optional[str]:
+        """Exporta los datos del análisis (para Minitab) o su tabla de resultados."""
+        R = self.current
+        if R is None:
             return None
-        if path is None:
-            path, _ = QFileDialog.getSaveFileName(self, tr("Guardar tabla"), "analisis.csv", "CSV (*.csv)")
-        if path:
-            with open(path, "w", newline="", encoding="utf-8-sig") as fh:
-                w = csv.writer(fh)
-                w.writerow(self.current.csv_header)
-                w.writerows(self.current.csv_rows)
-        return path or None
+        contents = [(k, lb) for k, lb, ok in (
+            ("data", "Datos del análisis (una columna por variable)", bool(R.data_table()[1])),
+            ("results", "Tabla de resultados", bool(R.csv_rows))) if ok]
+        if not contents:
+            return None
+        if fmt is not None and content not in [k for k, _ in contents]:
+            return None
+        from .export_dialog import export_table
+
+        def build(c: str):
+            return (R.csv_header, R.csv_rows) if c == "results" else R.data_table()
+
+        return export_table(self, "Exportar análisis", "analisis", build, contents, path=path, fmt=fmt,
+                            content=content if fmt else None)

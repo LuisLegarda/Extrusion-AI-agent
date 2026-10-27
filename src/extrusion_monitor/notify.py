@@ -22,6 +22,7 @@ from email.message import EmailMessage
 from pathlib import Path
 from typing import Callable, Optional
 
+from .i18n import tr, translate_text
 from .secrets_store import protect, unprotect
 
 log = logging.getLogger(__name__)
@@ -294,15 +295,18 @@ class Notifier:
         self._last[k] = now
         where = self.where()
         who = self.who()
+        # en el idioma de la interfaz (los mensajes del motor se traducen por plantilla)
+        subject, body = translate_text(subject), translate_text(body)
         lines = [body, "", time.strftime("%d/%m/%Y %H:%M:%S", time.localtime(now))]
         if where:
             lines.append(where)
         if who:
-            lines.append(f"Usuario en turno: {who}")
+            lines.append(tr("Usuario en turno: {u}", u=who))
         recipe = getattr(getattr(self.engine, "state", None), "recipe", None)
         if recipe:
-            lines.append(f"Receta: {recipe}")
-        msg = Message(rule, f"[{where or 'Monitor'}] {level}: {subject}", "\n".join(lines), level, attachment, now)
+            lines.append(tr("Receta: {r}", r=recipe))
+        msg = Message(rule, f"[{where or tr('Monitor')}] {tr(level)}: {subject}", "\n".join(lines), level,
+                      attachment, now)
         self._queue.put(msg)
         self._ensure_thread()
         return True
@@ -348,8 +352,8 @@ class Notifier:
 
     def test(self) -> dict[str, str]:
         """Envía un mensaje de prueba por cada canal ahora mismo (sin cola) y devuelve el resultado."""
-        msg = Message("test", f"[{self.where() or 'Monitor'}] Prueba de notificaciones",
-                      "Si recibes este mensaje, las notificaciones de esta estación funcionan.", "INFO")
+        msg = Message("test", translate_text(f"[{self.where() or 'Monitor'}] Prueba de notificaciones"),
+                      tr("Si recibes este mensaje, las notificaciones de esta estación funcionan."), "INFO")
         out = {}
         for ch in self.settings.channels():
             try:
