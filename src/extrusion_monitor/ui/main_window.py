@@ -488,6 +488,7 @@ class MainWindow(QMainWindow):
         # --- Configuración: ajustes de este equipo (no cambian con la receta) ---
         m = mb.addMenu("C&onfiguración")
         m.addAction("🌐 Dashboard global (exportación)…", self.open_station)
+        m.addAction("💾 Guardado de datos…", self.open_storage)
         m.addAction("🏷 Identidad de la estación (logo, texto, línea)…", self.open_branding)
         m.addAction("👷 Personal (operadores y supervisores)…", self.open_personnel)
         m.addAction("📨 Notificaciones (correo y mensajes)…", self.open_notifications)
@@ -1298,6 +1299,13 @@ class MainWindow(QMainWindow):
                                 err + "\n\n" + tr("La configuración quedó guardada, pero si cambias de receta y vuelves "
                                                    "se cargará la versión anterior. Cierra programas que tengan abierta "
                                                    "la carpeta de datos y vuelve a guardar."))
+
+    def open_storage(self) -> None:
+        """Cuánto se conserva el historial de esta PC y lo publicado para el dashboard (borrar datos: protegido)."""
+        if not self.gate.allow("backups") or self.ctx.exporter is None:
+            return
+        from .storage_dialog import StorageDialog
+        StorageDialog(self.ctx.exporter, self.engine.historian, self).exec()
 
     def open_station(self) -> None:
         if not self.gate.allow("station"):

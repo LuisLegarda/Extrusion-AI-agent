@@ -30,7 +30,7 @@ PROBLEM_FIELDS = ("id", "uid", "kind", "captured_at", "start", "end", "duration_
 
 
 class Historian:
-    def __init__(self, path: Path | str, retention_days: float = 90):
+    def __init__(self, path: Path | str, retention_days: float = 182):  # 0 = indefinido
         self.path = str(path)
         self.retention_days = retention_days
         self._lock = threading.Lock()
@@ -137,6 +137,18 @@ class Historian:
                 w.writerow([r[0].strftime("%Y-%m-%d %H:%M:%S"), *["" if v is None else v for v in r[1:]]])
         return len(rows)
 
+    def stats(self) -> tuple[int, Optional[float]]:
+        """Tamaño en disco (bytes, con el diario WAL) y fecha de la lectura más antigua."""
+        size = 0
+        for suffix in ("", "-wal"):
+            try:
+                size += Path(self.path + suffix).stat().st_size
+            except OSError:
+                pass
+        with self._lock:  # lo más antiguo está al inicio (rowid bajo): no recorre la tabla
+            row = self._conn.execute("SELECT ts FROM samples ORDER BY rowid LIMIT 1").fetchone()
+        return size, (row[0] if row else None)
+
     PURGE_CHUNK = 20000  # filas por bloque: el candado se suelta entre bloques y el monitoreo no se detiene
 
     def _maybe_purge(self) -> None:
@@ -144,7 +156,8 @@ class Historian:
         if now - self._last_purge < 3600:
             return
         self._last_purge = now
-        self.purge(now - self.retention_days * 86400)
+        if self.retention_days:  # 0 = indefinido
+            self.purge(now - self.retention_days * 86400)
 
     def purge(self, cutoff: float) -> int:
         """Borra lo anterior a `cutoff`. Devuelve cuántas muestras borró.

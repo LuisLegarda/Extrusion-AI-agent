@@ -69,7 +69,9 @@ def build(home: Optional[Path] = None, demo: bool = False, source: Optional[Fram
     ocr = template if config.general.ocr_engine == "template" else create_engine(config.general, ws.glyphs_file)
     source = source or ScreenSource(config.general.monitor)
     extra = {k: v for k, v in (("clock", clock), ("sleep", sleep)) if v is not None}
-    engine = MonitorEngine(ws, config, recipes, source, ocr, Historian(ws.history_db),
+    from .exporter import load_station
+    history = Historian(ws.history_db, retention_days=load_station(ws).history_days)
+    engine = MonitorEngine(ws, config, recipes, source, ocr, history,
                            clicker=make_clicker(source), **extra)
     ensure_profiles(ws, recipes)
     state = ws.load_state()

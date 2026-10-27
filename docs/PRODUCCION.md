@@ -12,6 +12,10 @@ el código; lo demás necesita una decisión o una prueba en la planta.
       bloques. Antes, con 90 días de datos, detenía el monitoreo unos segundos cada hora.
 - [x] Exportar el historial completo consulta variable por variable con el índice: el tiempo depende del
       periodo pedido, no del tamaño de la base.
+- [x] Plazo configurable («Configuración › Guardado de datos»): 3 meses, 6 meses (por defecto), 1 año o
+      indefinido. Con lectura cada 2 s y ~50 variables el historial crece ~100 MB por día (≈18 GB en 6 meses):
+      la ventana muestra lo que ocupa y cuánto crece en esa PC.
+- [x] Versión 0.3.0.
 
 ### Archivos y respaldos
 - [x] Escritura atómica con `fsync` de la configuración y el estado: un apagón no deja el archivo vacío.
@@ -38,15 +42,10 @@ el código; lo demás necesita una decisión o una prueba en la planta.
 
 ## Pendiente (decidir o probar en planta)
 
-1. **Tamaño del historial.** Con lectura cada 2 s y ~50 variables, el historial crece ~100 MB por día; con la
-   retención fija de 90 días llega a ~9 GB. Opciones: hacer configurable la retención, o compactar lo antiguo
-   (p. ej. promedios por minuto después de 7 días, ~30 veces menos espacio).
-2. **Versión.** `__version__` sigue en 0.2.0; con todo lo de `[Sin publicar]` corresponde **0.3.0** (funciones
-   nuevas, configuración anterior compatible). Flujo: PR `develop → main`, etiqueta `v0.3.0`.
-3. **Ejecutable de Windows.** Agregar icono y datos de versión (Propiedades › Detalles) en el `.spec`, y
+1. **Ejecutable de Windows.** Agregar icono y datos de versión (Propiedades › Detalles) en el `.spec`, y
    firmar el ejecutable con un certificado de código para evitar avisos de SmartScreen / antivirus.
-4. **CI.** Agregar `ruff check --select F,E9` al flujo de GitHub Actions para que no regresen referencias rotas.
-5. **Prueba de resistencia en la PC del HMI** (24–72 h): memoria estable, tamaño del registro y del historial,
+2. **CI.** Agregar `ruff check --select F,E9` al flujo de GitHub Actions para que no regresen referencias rotas.
+3. **Prueba de resistencia en la PC del HMI** (24–72 h): memoria estable, tamaño del registro y del historial,
    OCR de Windows, DPAPI, carpeta compartida en red y reconexión tras cortes de red o de energía.
-6. **Minitab.** Confirmar con la versión y la configuración regional de la planta que las fechas
+4. **Minitab.** Confirmar con la versión y la configuración regional de la planta que las fechas
    `AAAA-MM-DD hh:mm:ss` se reconocen como fecha al pegar.

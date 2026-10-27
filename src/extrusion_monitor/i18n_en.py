@@ -1576,7 +1576,6 @@ EN: dict[str, str] = {
     "SSL/TLS (puerto 465)": "SSL/TLS (port 465)",
     "Sin cifrado": "No encryption",
     # --- protecciones del monitor ---
-    "Respaldos y carpeta de datos (ver, crear o exportar)": "Backups and data folder (view, create or export)",
     "Selección de variables (SPC, correlación, Variables en vivo) y modelo de estabilidad mostrado":
         "Variable selection (SPC, correlation, Live variables) and the stability model shown",
     "Modo de los lazos de control y activar el control automático":
@@ -1933,6 +1932,24 @@ EN: dict[str, str] = {
     "de Windows tenga perfil de usuario.":
         "The password or token could not be encrypted on this computer, so it was not saved ({e}). Check that the "
         "Windows session has a user profile.",
+    "Respaldos, guardado y carpeta de datos (ver, crear, restaurar o exportar)":
+        "Backups, data retention and data folder (view, create, restore or export)",
+    "💾 Guardado de datos…": "💾 Data retention…", "Guardado de datos": "Data retention",
+    "3 meses": "3 months", "6 meses": "6 months", "1 año": "1 year", "Indefinido": "Indefinitely",
+    "{n} días": "{n} days", "Historial de esta PC": "History on this PC",
+    "Conservar lecturas, eventos y OEE:": "Keep readings, events and OEE:",
+    "Dashboard global (carpeta compartida)": "Global dashboard (shared folder)",
+    "Lo más antiguo se borra solo, una vez por hora, sin detener el monitoreo. Las capturas de paros y defectos, las "
+    "recetas y la configuración no se borran.":
+        "The oldest data is deleted automatically once an hour, without stopping monitoring. Stop and defect "
+        "captures, recipes and settings are never deleted.",
+    "Ocupa {s} en disco.": "It takes {s} on disk.", "Crece unos {d} por día": "It grows about {d} per day",
+    "(≈ {t} con lo elegido).": "(≈ {t} with the chosen period).",
+    "(sin límite: revisa el espacio libre del disco).": "(no limit: keep an eye on free disk space).",
+    "Con el nuevo plazo se borrarán los datos más antiguos (en la próxima limpieza, dentro de una hora como máximo). "
+    "¿Continuar?":
+        "With the new period the oldest data will be deleted (at the next cleanup, within an hour at most). Continue?",
+    "{r} (se cambia en Configuración › Guardado de datos)": "{r} (changed in Settings › Data retention)",
 }
 
 # Textos con valores: la clave es la plantilla en español («{}» = valor) y el resultado su traducción.

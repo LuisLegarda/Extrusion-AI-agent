@@ -10,6 +10,8 @@ Numeración `MAYOR.MENOR.PARCHE`:
 
 ## [Sin publicar]
 
+## [0.3.0] - 2026-10-27
+
 ### Exportar y traducciones (rama `feature/exportar-produccion`)
 - «Exportar» en lugar de «Exportar CSV» en el monitor (historial: 24 h, 7 o 30 días), el dashboard (resumen de
   las líneas o sus datos por minuto de 24 h / 7 días), los problemas de proceso y el análisis estadístico (sus
@@ -38,6 +40,9 @@ Numeración `MAYOR.MENOR.PARCHE`:
   programa no puede abrir.
 - En Windows, si no se puede cifrar una contraseña o token de notificaciones, ya no se guarda legible.
 - Limpieza: imports sin usar, código muerto y traducciones repetidas.
+- «Configuración › Guardado de datos…»: cuánto se conservan el historial de esta PC y lo publicado para el
+  dashboard global (3 meses, **6 meses por defecto**, 1 año o indefinido), con el espacio que ocupa y cuánto
+  crece por día. Antes el historial se guardaba 90 días fijos y la carpeta del dashboard 30 días.
 
 ### Análisis del dashboard sin monitoreo (rama `fix/analisis-dashboard-sin-monitoreo`)
 - El análisis estadístico del dashboard mostraba vacío cuando el monitor de la línea estaba abierto sin

@@ -177,3 +177,40 @@ def test_secrets_never_fall_back_to_readable_text_on_windows(monkeypatch):
     monkeypatch.setattr(ss, "_dpapi", lambda data, protect: data[::-1])
     enc = ss.protect("clave")
     assert enc.startswith("dpapi:") and "clave" not in enc and ss.unprotect(enc) == "clave"
+
+
+def test_data_retention_choices_default_six_months_and_apply_live(tmp_path, monkeypatch):
+    from PySide6.QtWidgets import QApplication
+    QApplication.instance() or QApplication([])
+    from extrusion_monitor.bootstrap import build
+    from extrusion_monitor.exporter import load_station
+    from extrusion_monitor.ui.storage_dialog import StorageDialog, retention_text
+    home, ws = _make_home(tmp_path, monkeypatch)
+    ctx = build(home)
+    h = ctx.engine.historian
+    assert h.retention_days == 182 and ctx.exporter.settings.retention_days == 182  # 6 meses por defecto
+    now = time.time()
+    h.write_samples([(now - 400 * 86400, "v", 1.0, None), (now - 100 * 86400, "v", 2.0, None)])
+    assert h._conn.execute("SELECT COUNT(*) FROM samples").fetchone()[0] == 1  # 6 meses: lo de hace 400 días no
+    dlg = StorageDialog(ctx.exporter, h)
+    assert [dlg.cmb_history.itemText(i) for i in range(dlg.cmb_history.count())] == \
+        ["3 meses", "6 meses", "1 año", "Indefinido"]
+    assert dlg.cmb_history.currentText() == "6 meses" and "Ocupa" in dlg.lbl_usage.text()
+    dlg.cmb_history.setCurrentIndex(dlg.cmb_history.findData(0))  # indefinido
+    dlg.cmb_export.setCurrentIndex(dlg.cmb_export.findData(365))
+    dlg.accept(confirm=False)
+    st = load_station(ws)
+    assert st.history_days == 0 and st.retention_days == 365 and h.retention_days == 0
+    h.write_samples([(now - 400 * 86400, "v", 1.0, None)])
+    assert h._conn.execute("SELECT COUNT(*) FROM samples").fetchone()[0] == 2  # indefinido: no borra nada
+    dlg = StorageDialog(ctx.exporter, h)
+    dlg.cmb_history.setCurrentIndex(dlg.cmb_history.findData(91))
+    dlg.accept(confirm=False)
+    h._maybe_purge()
+    assert h._conn.execute("SELECT COUNT(*) FROM samples").fetchone()[0] == 0  # 3 meses: se borró lo anterior
+    assert retention_text(30) == "30 días" and retention_text(0) == "Indefinido"
+    # la ventana del dashboard global no pisa el plazo del historial al guardar
+    from extrusion_monitor.ui.station_dialog import StationDialog
+    sd = StationDialog(ctx.exporter)
+    assert sd.settings().history_days == 91
+    h.close()
