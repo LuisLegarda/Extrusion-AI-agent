@@ -38,7 +38,8 @@ class StationSettings(BaseModel):
     export_dir: str = ""  # p. ej. \\SERVIDOR\lineas
     interval_s: float = Field(5.0, ge=1, le=60)
     trend_interval_s: float = Field(60.0, ge=10, le=600)
-    retention_days: int = Field(30, ge=1, le=3650)
+    retention_days: int = Field(182, ge=0, le=36500)  # carpeta del dashboard global (0 = indefinido)
+    history_days: int = Field(182, ge=0, le=36500)  # historial de esta PC: lecturas, eventos y OEE (0 = indefinido)
     # --- servidor propio (nube o servidor de planta) ---
     server_enabled: bool = False
     server_url: str = ""  # p. ej. https://monitor.miempresa.com

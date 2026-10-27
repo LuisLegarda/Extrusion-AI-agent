@@ -1,0 +1,149 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="940" height="610" viewBox="0 0 940 610" font-family="Segoe UI, Helvetica, Arial, sans-serif">
+<rect width="940" height="610" fill="#f4f6f9"/>
+<text x="20" y="44" font-size="24" font-weight="700" fill="#1f3b57">Monitor de extrusión · propuestas de icono</text>
+<text x="20" y="72" font-size="14" fill="#52514e">Cada propuesta a 128, 32 y 16 px (como se ve en la barra de tareas). Colores del tema del programa.</text>
+<rect x="20" y="100" width="280" height="230" rx="12" fill="#fff" stroke="#d5dbe3"/>
+<g transform="translate(40,120)">
+      <rect x="4" y="4" width="120" height="120" rx="26" fill="#1f4e79"/>
+      <circle cx="40" cy="64" r="24" fill="none" stroke="#fff" stroke-width="8"/>
+      <circle cx="40" cy="64" r="8" fill="#fff"/>
+      <rect x="58" y="58" width="56" height="12" rx="6" fill="#eef1f5"/>
+      <polyline points="62,40 74,32 86,38 98,26 110,30" fill="none" stroke="#0ca30c" stroke-width="7"
+        stroke-linecap="round" stroke-linejoin="round"/></g>
+<g transform="translate(190,150) scale(0.25)">
+      <rect x="4" y="4" width="120" height="120" rx="26" fill="#1f4e79"/>
+      <circle cx="40" cy="64" r="24" fill="none" stroke="#fff" stroke-width="8"/>
+      <circle cx="40" cy="64" r="8" fill="#fff"/>
+      <rect x="58" y="58" width="56" height="12" rx="6" fill="#eef1f5"/>
+      <polyline points="62,40 74,32 86,38 98,26 110,30" fill="none" stroke="#0ca30c" stroke-width="7"
+        stroke-linecap="round" stroke-linejoin="round"/></g>
+<g transform="translate(242,158) scale(0.125)">
+      <rect x="4" y="4" width="120" height="120" rx="26" fill="#1f4e79"/>
+      <circle cx="40" cy="64" r="24" fill="none" stroke="#fff" stroke-width="8"/>
+      <circle cx="40" cy="64" r="8" fill="#fff"/>
+      <rect x="58" y="58" width="56" height="12" rx="6" fill="#eef1f5"/>
+      <polyline points="62,40 74,32 86,38 98,26 110,30" fill="none" stroke="#0ca30c" stroke-width="7"
+        stroke-linecap="round" stroke-linejoin="round"/></g>
+<text x="40" y="280" font-size="15" font-weight="600" fill="#1b2430">A · Dado y perfil extruido</text>
+<rect x="320" y="100" width="280" height="230" rx="12" fill="#fff" stroke="#d5dbe3"/>
+<g transform="translate(340,120)">
+      <rect x="4" y="4" width="120" height="120" rx="26" fill="#ffffff" stroke="#1f4e79" stroke-width="6"/>
+      <path d="M26 82 A40 40 0 0 1 102 82" fill="none" stroke="#eef1f5" stroke-width="14" stroke-linecap="round"/>
+      <path d="M26 82 A40 40 0 0 1 82 46" fill="none" stroke="#0ca30c" stroke-width="14" stroke-linecap="round"/>
+      <line x1="64" y1="82" x2="86" y2="52" stroke="#1f4e79" stroke-width="8" stroke-linecap="round"/>
+      <circle cx="64" cy="82" r="9" fill="#1f4e79"/>
+      <polyline points="44,104 58,114 86,96" fill="none" stroke="#0ca30c" stroke-width="8" stroke-linecap="round"
+        stroke-linejoin="round"/></g>
+<g transform="translate(490,150) scale(0.25)">
+      <rect x="4" y="4" width="120" height="120" rx="26" fill="#ffffff" stroke="#1f4e79" stroke-width="6"/>
+      <path d="M26 82 A40 40 0 0 1 102 82" fill="none" stroke="#eef1f5" stroke-width="14" stroke-linecap="round"/>
+      <path d="M26 82 A40 40 0 0 1 82 46" fill="none" stroke="#0ca30c" stroke-width="14" stroke-linecap="round"/>
+      <line x1="64" y1="82" x2="86" y2="52" stroke="#1f4e79" stroke-width="8" stroke-linecap="round"/>
+      <circle cx="64" cy="82" r="9" fill="#1f4e79"/>
+      <polyline points="44,104 58,114 86,96" fill="none" stroke="#0ca30c" stroke-width="8" stroke-linecap="round"
+        stroke-linejoin="round"/></g>
+<g transform="translate(542,158) scale(0.125)">
+      <rect x="4" y="4" width="120" height="120" rx="26" fill="#ffffff" stroke="#1f4e79" stroke-width="6"/>
+      <path d="M26 82 A40 40 0 0 1 102 82" fill="none" stroke="#eef1f5" stroke-width="14" stroke-linecap="round"/>
+      <path d="M26 82 A40 40 0 0 1 82 46" fill="none" stroke="#0ca30c" stroke-width="14" stroke-linecap="round"/>
+      <line x1="64" y1="82" x2="86" y2="52" stroke="#1f4e79" stroke-width="8" stroke-linecap="round"/>
+      <circle cx="64" cy="82" r="9" fill="#1f4e79"/>
+      <polyline points="44,104 58,114 86,96" fill="none" stroke="#0ca30c" stroke-width="8" stroke-linecap="round"
+        stroke-linejoin="round"/></g>
+<text x="340" y="280" font-size="15" font-weight="600" fill="#1b2430">B · Manómetro con verificación</text>
+<rect x="620" y="100" width="280" height="230" rx="12" fill="#fff" stroke="#d5dbe3"/>
+<g transform="translate(640,120)">
+      <rect x="4" y="4" width="120" height="120" rx="26" fill="#1f4e79"/>
+      <circle cx="64" cy="64" r="42" fill="#2a78d6"/>
+      <circle cx="64" cy="64" r="28" fill="#eef1f5"/>
+      <circle cx="64" cy="64" r="14" fill="#fab219"/>
+      <polyline points="14,64 40,64 48,48 58,82 66,56 72,64 114,64" fill="none" stroke="#fff" stroke-width="6"
+        stroke-linecap="round" stroke-linejoin="round"/></g>
+<g transform="translate(790,150) scale(0.25)">
+      <rect x="4" y="4" width="120" height="120" rx="26" fill="#1f4e79"/>
+      <circle cx="64" cy="64" r="42" fill="#2a78d6"/>
+      <circle cx="64" cy="64" r="28" fill="#eef1f5"/>
+      <circle cx="64" cy="64" r="14" fill="#fab219"/>
+      <polyline points="14,64 40,64 48,48 58,82 66,56 72,64 114,64" fill="none" stroke="#fff" stroke-width="6"
+        stroke-linecap="round" stroke-linejoin="round"/></g>
+<g transform="translate(842,158) scale(0.125)">
+      <rect x="4" y="4" width="120" height="120" rx="26" fill="#1f4e79"/>
+      <circle cx="64" cy="64" r="42" fill="#2a78d6"/>
+      <circle cx="64" cy="64" r="28" fill="#eef1f5"/>
+      <circle cx="64" cy="64" r="14" fill="#fab219"/>
+      <polyline points="14,64 40,64 48,48 58,82 66,56 72,64 114,64" fill="none" stroke="#fff" stroke-width="6"
+        stroke-linecap="round" stroke-linejoin="round"/></g>
+<text x="640" y="280" font-size="15" font-weight="600" fill="#1b2430">C · Corte de cable con pulso</text>
+<rect x="20" y="350" width="280" height="230" rx="12" fill="#fff" stroke="#d5dbe3"/>
+<g transform="translate(40,370)">
+      <rect x="4" y="4" width="120" height="120" rx="26" fill="#eef1f5"/>
+      <rect x="16" y="24" width="96" height="66" rx="8" fill="#1f4e79"/>
+      <rect x="54" y="92" width="20" height="10" fill="#1f4e79"/>
+      <rect x="40" y="102" width="48" height="8" rx="4" fill="#1f4e79"/>
+      <polyline points="26,74 44,60 58,66 74,44 90,52 102,36" fill="none" stroke="#0ca30c" stroke-width="7"
+        stroke-linecap="round" stroke-linejoin="round"/>
+      <circle cx="102" cy="36" r="7" fill="#fab219"/></g>
+<g transform="translate(190,400) scale(0.25)">
+      <rect x="4" y="4" width="120" height="120" rx="26" fill="#eef1f5"/>
+      <rect x="16" y="24" width="96" height="66" rx="8" fill="#1f4e79"/>
+      <rect x="54" y="92" width="20" height="10" fill="#1f4e79"/>
+      <rect x="40" y="102" width="48" height="8" rx="4" fill="#1f4e79"/>
+      <polyline points="26,74 44,60 58,66 74,44 90,52 102,36" fill="none" stroke="#0ca30c" stroke-width="7"
+        stroke-linecap="round" stroke-linejoin="round"/>
+      <circle cx="102" cy="36" r="7" fill="#fab219"/></g>
+<g transform="translate(242,408) scale(0.125)">
+      <rect x="4" y="4" width="120" height="120" rx="26" fill="#eef1f5"/>
+      <rect x="16" y="24" width="96" height="66" rx="8" fill="#1f4e79"/>
+      <rect x="54" y="92" width="20" height="10" fill="#1f4e79"/>
+      <rect x="40" y="102" width="48" height="8" rx="4" fill="#1f4e79"/>
+      <polyline points="26,74 44,60 58,66 74,44 90,52 102,36" fill="none" stroke="#0ca30c" stroke-width="7"
+        stroke-linecap="round" stroke-linejoin="round"/>
+      <circle cx="102" cy="36" r="7" fill="#fab219"/></g>
+<text x="40" y="530" font-size="15" font-weight="600" fill="#1b2430">D · Pantalla del HMI vigilada</text>
+<rect x="320" y="350" width="280" height="230" rx="12" fill="#fff" stroke="#d5dbe3"/>
+<g transform="translate(340,370)">
+      <rect x="4" y="4" width="120" height="120" rx="26" fill="#1f4e79"/>
+      <path d="M36 30 h52 v14 h-36 v13 h30 v14 h-30 v13 h36 v14 h-52 z" fill="#fff"/>
+      <rect x="92" y="30" width="18" height="14" rx="3" fill="#0ca30c"/>
+      <rect x="86" y="57" width="24" height="14" rx="3" fill="#fab219"/>
+      <rect x="92" y="84" width="18" height="14" rx="3" fill="#2a78d6"/></g>
+<g transform="translate(490,400) scale(0.25)">
+      <rect x="4" y="4" width="120" height="120" rx="26" fill="#1f4e79"/>
+      <path d="M36 30 h52 v14 h-36 v13 h30 v14 h-30 v13 h36 v14 h-52 z" fill="#fff"/>
+      <rect x="92" y="30" width="18" height="14" rx="3" fill="#0ca30c"/>
+      <rect x="86" y="57" width="24" height="14" rx="3" fill="#fab219"/>
+      <rect x="92" y="84" width="18" height="14" rx="3" fill="#2a78d6"/></g>
+<g transform="translate(542,408) scale(0.125)">
+      <rect x="4" y="4" width="120" height="120" rx="26" fill="#1f4e79"/>
+      <path d="M36 30 h52 v14 h-36 v13 h30 v14 h-30 v13 h36 v14 h-52 z" fill="#fff"/>
+      <rect x="92" y="30" width="18" height="14" rx="3" fill="#0ca30c"/>
+      <rect x="86" y="57" width="24" height="14" rx="3" fill="#fab219"/>
+      <rect x="92" y="84" width="18" height="14" rx="3" fill="#2a78d6"/></g>
+<text x="340" y="530" font-size="15" font-weight="600" fill="#1b2430">E · Monograma «E» extruida</text>
+<rect x="620" y="350" width="280" height="230" rx="12" fill="#fff" stroke="#d5dbe3"/>
+<g transform="translate(640,370)">
+      <rect x="4" y="4" width="120" height="120" rx="26" fill="#1f4e79"/>
+      <rect x="20" y="20" width="40" height="40" rx="8" fill="#0ca30c"/>
+      <rect x="68" y="20" width="40" height="40" rx="8" fill="#0ca30c"/>
+      <rect x="20" y="68" width="40" height="40" rx="8" fill="#fab219"/>
+      <rect x="68" y="68" width="40" height="40" rx="8" fill="#d03b3b"/>
+      <polyline points="26,48 36,38 44,44 54,30" fill="none" stroke="#fff" stroke-width="5" stroke-linecap="round"
+        stroke-linejoin="round"/></g>
+<g transform="translate(790,400) scale(0.25)">
+      <rect x="4" y="4" width="120" height="120" rx="26" fill="#1f4e79"/>
+      <rect x="20" y="20" width="40" height="40" rx="8" fill="#0ca30c"/>
+      <rect x="68" y="20" width="40" height="40" rx="8" fill="#0ca30c"/>
+      <rect x="20" y="68" width="40" height="40" rx="8" fill="#fab219"/>
+      <rect x="68" y="68" width="40" height="40" rx="8" fill="#d03b3b"/>
+      <polyline points="26,48 36,38 44,44 54,30" fill="none" stroke="#fff" stroke-width="5" stroke-linecap="round"
+        stroke-linejoin="round"/></g>
+<g transform="translate(842,408) scale(0.125)">
+      <rect x="4" y="4" width="120" height="120" rx="26" fill="#1f4e79"/>
+      <rect x="20" y="20" width="40" height="40" rx="8" fill="#0ca30c"/>
+      <rect x="68" y="20" width="40" height="40" rx="8" fill="#0ca30c"/>
+      <rect x="20" y="68" width="40" height="40" rx="8" fill="#fab219"/>
+      <rect x="68" y="68" width="40" height="40" rx="8" fill="#d03b3b"/>
+      <polyline points="26,48 36,38 44,44 54,30" fill="none" stroke="#fff" stroke-width="5" stroke-linecap="round"
+        stroke-linejoin="round"/></g>
+<text x="640" y="530" font-size="15" font-weight="600" fill="#1b2430">F · Dashboard global (pareja)</text>
+</svg>

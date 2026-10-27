@@ -13,6 +13,8 @@ from typing import Optional
 
 import numpy as np
 
+from ..i18n import tr
+
 GROUPS = {"": "Sin agrupar", "shift": "Turno", "day": "Día", "week": "Semana", "month": "Mes", "hour": "Hora del día",
           "operator": "Operador", "recipe": "Receta", "line": "Línea"}  # «Línea»: solo en el dashboard global
 MAX_POINTS = 60000
@@ -92,10 +94,10 @@ class Timeline:
         return out
 
     def operators(self, t: np.ndarray) -> np.ndarray:
-        return self._at(self.ops, t, "(sin usuario)")
+        return self._at(self.ops, t, tr("(sin usuario)"))
 
     def recipes_at(self, t: np.ndarray) -> np.ndarray:
-        return self._at(self.recipes, t, "(sin receta)")
+        return self._at(self.recipes, t, tr("(sin receta)"))
 
 
 def shift_names(t: np.ndarray, shifts, starts: list[str]) -> np.ndarray:
@@ -104,7 +106,7 @@ def shift_names(t: np.ndarray, shifts, starts: list[str]) -> np.ndarray:
     if shifts:
         for i, ts in enumerate(t):
             d = dt.datetime.fromtimestamp(float(ts))
-            out[i] = next((s.name for s in shifts if s.contains(d)), "(fuera de turno)")
+            out[i] = next((s.name for s in shifts if s.contains(d)), tr("(fuera de turno)"))
         return out
     mins = sorted(int(h) * 60 + int(m) for h, m in (s.split(":") for s in starts if ":" in s)) or [0]
     for i, ts in enumerate(t):
@@ -121,9 +123,9 @@ def labels(t: np.ndarray, by: str, timeline: Optional[Timeline], shifts, starts:
     if by == "shift":
         return shift_names(t, shifts, starts)
     if by == "operator":
-        return timeline.operators(t) if timeline else np.full(len(t), "(sin usuario)", dtype=object)
+        return timeline.operators(t) if timeline else np.full(len(t), tr("(sin usuario)"), dtype=object)
     if by == "recipe":
-        return timeline.recipes_at(t) if timeline else np.full(len(t), "(sin receta)", dtype=object)
+        return timeline.recipes_at(t) if timeline else np.full(len(t), tr("(sin receta)"), dtype=object)
     fmt = {"day": "%Y-%m-%d", "week": "%Y-S%V", "month": "%Y-%m", "hour": "%H:00"}[by]
     return np.array([time.strftime(fmt, time.localtime(float(x))) for x in t], dtype=object)
 

@@ -1,5 +1,4 @@
 """Análisis estadístico: cálculos (contra valores de referencia) y cada tipo de análisis con datos del historial."""
-import math
 import os
 import time
 

@@ -8,7 +8,7 @@ import pytest
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 from extrusion_monitor import simulator as sm  # noqa: E402
-from extrusion_monitor.camera import CameraFeed, CameraManager, CameraUnavailable, process  # noqa: E402
+from extrusion_monitor.camera import CameraFeed, CameraUnavailable, process  # noqa: E402
 from extrusion_monitor.config import (AppConfig, BarOptions, CameraSettings, ColorState, GaugeOptions,  # noqa: E402
                                       Rect, Variable)
 from extrusion_monitor.vision import indicators, sevenseg  # noqa: E402

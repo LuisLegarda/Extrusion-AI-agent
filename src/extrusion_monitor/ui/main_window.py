@@ -2,6 +2,8 @@
 from __future__ import annotations
 
 import time
+import zipfile
+from pathlib import Path
 from typing import Optional
 
 import numpy as np
@@ -444,13 +446,14 @@ class MainWindow(QMainWindow):
         m = mb.addMenu("&Archivo")
         m.addAction(self.act_run)
         m.addSeparator()
-        act = m.addAction("⤓ Exportar historial a CSV…", self.export_csv)
+        act = m.addAction("⤓ Exportar historial…", self.export_csv)
         act.setShortcut("Ctrl+E")
         m.addAction("📂 Abrir carpeta de reportes", self._open_reports_dir)
         m.addAction("📂 Abrir carpeta de datos", self._open_data_dir)
         m.addSeparator()
         m.addAction("🛟 Crear respaldo de la configuración", self._backup_now)
         m.addAction("📂 Abrir carpeta de respaldos", self._open_backups)
+        m.addAction("↺ Restaurar respaldo…", self._restore_backup)
         m.addSeparator()
         act = m.addAction("Salir", self.close)
         act.setShortcut("Ctrl+Q")
@@ -485,6 +488,7 @@ class MainWindow(QMainWindow):
         # --- Configuración: ajustes de este equipo (no cambian con la receta) ---
         m = mb.addMenu("C&onfiguración")
         m.addAction("🌐 Dashboard global (exportación)…", self.open_station)
+        m.addAction("💾 Guardado de datos…", self.open_storage)
         m.addAction("🏷 Identidad de la estación (logo, texto, línea)…", self.open_branding)
         m.addAction("👷 Personal (operadores y supervisores)…", self.open_personnel)
         m.addAction("📨 Notificaciones (correo y mensajes)…", self.open_notifications)
@@ -1040,6 +1044,31 @@ class MainWindow(QMainWindow):
         from ..backup import backups_dir
         self._open_dir(backups_dir(self.ctx.workspace.home))
 
+    def _restore_backup(self, path: Optional[str] = None, confirm: bool = True) -> bool:
+        """Elige un respaldo y lo deja pendiente: se aplica al volver a abrir (con respaldo de lo actual)."""
+        if not self.gate.allow("backups"):
+            return False
+        from ..backup import backups_dir, schedule_restore
+        if path is None:
+            path, _ = QFileDialog.getOpenFileName(self, tr("Restaurar respaldo"),
+                                                  str(backups_dir(self.ctx.workspace.home)), tr("Respaldos (*.zip)"))
+        if not path:
+            return False
+        if confirm and QMessageBox.question(
+                self, tr("Restaurar respaldo"),
+                tr("Se restaurará la configuración de «{f}» (variables, recetas, recorridos y ajustes). Lo actual se "
+                   "respalda antes.\n\nEl programa se cerrará; al abrirlo de nuevo ya tendrá lo restaurado. "
+                   "¿Continuar?", f=Path(path).name)) != QMessageBox.Yes:
+            return False
+        try:
+            schedule_restore(Path(path), self.ctx.workspace.home)
+        except (OSError, ValueError, zipfile.BadZipFile) as e:
+            QMessageBox.warning(self, tr("Restaurar respaldo"), tr("No se pudo usar ese archivo: {e}", e=e))
+            return False
+        self._close_confirmed = True
+        self.close()
+        return True
+
     def _open_url(self, url: str) -> None:
         QDesktopServices.openUrl(QUrl(url))
 
@@ -1271,6 +1300,13 @@ class MainWindow(QMainWindow):
                                                    "se cargará la versión anterior. Cierra programas que tengan abierta "
                                                    "la carpeta de datos y vuelve a guardar."))
 
+    def open_storage(self) -> None:
+        """Cuánto se conserva el historial de esta PC y lo publicado para el dashboard (borrar datos: protegido)."""
+        if not self.gate.allow("backups") or self.ctx.exporter is None:
+            return
+        from .storage_dialog import StorageDialog
+        StorageDialog(self.ctx.exporter, self.engine.historian, self).exec()
+
     def open_station(self) -> None:
         if not self.gate.allow("station"):
             return
@@ -1377,13 +1413,21 @@ class MainWindow(QMainWindow):
             self.refresh_recipes()
             self._save_state()
 
-    def export_csv(self) -> None:
-        path, _ = QFileDialog.getSaveFileName(self, "Exportar historial (últimas 24 h)",
-                                              f"historial_{time.strftime('%Y%m%d_%H%M')}.csv", "CSV (*.csv)")
-        if not path:
-            return
-        n = self.engine.historian.export_csv(path, time.time() - 86400)
-        QMessageBox.information(self, tr("Exportado"), tr("Se exportaron {n} registros.", n=n))
+    def export_csv(self, path: Optional[str] = None, fmt: Optional[str] = None, days: str = "1") -> Optional[str]:
+        """Exporta el historial de lecturas (una columna por variable) en CSV, Excel o para Minitab."""
+        from .export_dialog import export_table
+        cfg = self.engine.config
+        headers = {v.id: cfg.var_label(v) + (f" ({v.unit})" if v.unit else "") for v in cfg.variables}
+
+        def build(content: str):
+            return self.engine.historian.history_table(time.time() - 86400 * float(content or 1), headers=headers)
+
+        out = export_table(self, "Exportar historial", "historial", build,
+                           [("1", "Últimas 24 h"), ("7", "Últimos 7 días"), ("30", "Últimos 30 días")],
+                           path=path, fmt=fmt, content=days if fmt else None)
+        if out and fmt is None:
+            QMessageBox.information(self, tr("Exportado"), tr("Archivo guardado:\n{p}", p=out))
+        return out
 
     def _tour_pause(self, on: bool) -> None:
         self.engine.tour_paused = on
@@ -1620,9 +1664,6 @@ class MainWindow(QMainWindow):
             return  # estadística y correlación se recalculan cada 2 s como máximo
         self._analysis_at = now
         w.refresh(self.engine.last)
-
-    def _update_table(self, snap: Snapshot) -> None:
-        self.table.update_snapshot(snap)
 
     def _replot(self, *_):
         if self.engine.last is not None:

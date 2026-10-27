@@ -6,7 +6,6 @@ pierde comunicación. Tiene modo TV (pantalla completa con páginas que rotan) y
 """
 from __future__ import annotations
 
-import csv
 import json
 import time
 from pathlib import Path
@@ -16,13 +15,13 @@ import pyqtgraph as pg
 from PySide6.QtCore import QSize, Qt, QTimer, QUrl
 from PySide6.QtGui import QActionGroup, QBrush, QColor, QDesktopServices, QKeySequence, QShortcut
 from PySide6.QtWidgets import (
-    QApplication, QComboBox, QFileDialog, QFrame, QGridLayout, QHBoxLayout, QHeaderView, QLabel, QLineEdit,
-    QListWidget, QListWidgetItem, QMainWindow, QMenu, QMessageBox, QPushButton, QScrollArea, QSplitter, QTableWidget,
+    QApplication, QComboBox, QFrame, QGridLayout, QHBoxLayout, QHeaderView, QLabel, QLineEdit,
+    QListWidget, QListWidgetItem, QMainWindow, QMenu, QMessageBox, QScrollArea, QSplitter, QTableWidget,
     QStackedWidget, QTableWidgetItem, QTabWidget, QToolButton, QVBoxLayout, QWidget,
 )
 
 from .. import version_label
-from ..fleet import FleetReader, FleetSettings, LineState, load_fleet_settings, save_fleet_settings
+from ..fleet import FleetReader, FleetSettings, load_fleet_settings, save_fleet_settings
 from ..i18n import LANGS, lang as i18n_lang, tr, translate_text
 from . import icons, theme
 from .home_status import StatusTile
@@ -409,7 +408,7 @@ class FleetWindow(QMainWindow):
                  ("analysis", "Análisis estadístico", "analysis", None),
                  ("maintenance", "Mantenimiento", "setup", None),
                  ("ack", "Silenciar avisos", "check", self.acknowledge_all),
-                 ("csv", "Exportar CSV", "reports", self.export_csv), ("tv", "Modo TV", "page", self.toggle_tv),
+                 ("csv", "Exportar", "reports", self.export_csv), ("tv", "Modo TV", "page", self.toggle_tv),
                  ("setup", "Configuración", "setup", self.open_setup)]
         tips = {"ack": "Detiene el parpadeo y el sonido de las tarjetas de las líneas que entraron en alarma, se "
                        "detuvieron o perdieron comunicación. Las alarmas siguen a la vista; si vuelve a pasar, "
@@ -417,8 +416,9 @@ class FleetWindow(QMainWindow):
                 "analyzer": "Problemas, fallas, tiempos muertos, estabilidad y tendencia de todas las líneas, con "
                             "conclusiones automáticas",
                 "analysis": "Análisis estadístico con los datos que publican los monitores (por línea, turno, día…)",
-                "map": "Las líneas en su ubicación física con el color de su estado (ideal para TV)",
-                "maintenance": "Plan preventivo por horas de operación y fallas por causa (MTBF / MTTR)"}
+                "map": "Un mosaico por línea, agrupado por área, con su estado, OEE y producción (ideal para TV)",
+                "maintenance": "Preventivos y correctivos leídos de los paros que se capturan en los monitores: tiempo, "
+                               "desperdicio y hace cuánto fue el último, por línea"}
         self._nav_actions = {}
         for key, label, ic, slot in items:
             it = QListWidgetItem(tr(label))
@@ -505,9 +505,9 @@ class FleetWindow(QMainWindow):
         """
         mb = self.menuBar()
         m = mb.addMenu("&Archivo")
-        act = m.addAction("⤓ Exportar resumen a CSV…", self.export_csv)
+        act = m.addAction("⤓ Exportar…", self.export_csv)
         act.setShortcut("Ctrl+E")
-        m.addAction("📉 Problemas de proceso (Pareto y CSV)…", self.open_problems)
+        m.addAction("📉 Problemas de proceso (Pareto y exportar)…", self.open_problems)
         m.addSeparator()
         act = m.addAction("Salir", self.close)
         act.setShortcut("Ctrl+Q")
@@ -655,11 +655,6 @@ class FleetWindow(QMainWindow):
         else:
             self._rebuild_cards()
             self.refresh()
-
-    def choose_folder(self) -> None:
-        d = QFileDialog.getExistingDirectory(self, tr("Carpeta de datos de las líneas"), self.settings.dir)
-        if d:
-            self.set_folder(d)
 
     def set_folder(self, d: str) -> None:
         self.settings.dir = d
@@ -1015,36 +1010,73 @@ class FleetWindow(QMainWindow):
                            "INFO", attachment=path, force=True)
         return path
 
-    def export_csv(self, path: Optional[str] = None) -> Optional[str]:
-        if not path:
-            path, _ = QFileDialog.getSaveFileName(self, tr("Exportar resumen de líneas"),
-                                                  f"lineas_{time.strftime('%Y%m%d_%H%M')}.csv", "CSV (*.csv)")
-        if not path:
-            return None
+    EXPORT_CONTENTS = [("summary", "Resumen actual de las líneas"),
+                       ("trend1", "Datos por minuto de las líneas (últimas 24 h)"),
+                       ("trend7", "Datos por minuto de las líneas (últimos 7 días)")]
+
+    def export_csv(self, path: Optional[str] = None, fmt: Optional[str] = None,
+                   content: str = "summary") -> Optional[str]:
+        """Exportar: resumen de las líneas o sus datos por minuto, en CSV, Excel o para software estadístico."""
+        from .export_dialog import export_table
+        return export_table(self, "Exportar resumen de líneas", "lineas", self._export_rows, self.EXPORT_CONTENTS,
+                            path=path, fmt=fmt, content=content if fmt else None)
+
+    def _export_rows(self, content: str) -> tuple[list[str], list[list]]:
+        from ..tabular import epoch
+        lines = sorted(self.reader.lines.values(), key=lambda ln: natural(ln.name))
+        if content.startswith("trend"):
+            return self._export_trend(lines, 86400 * (7 if content == "trend7" else 1))
         now = time.time()
         s = self.settings
         cols = ["linea", "id", "area", "comunicacion", "estado", "receta", "oee_%", "disponibilidad_%",
                 "rendimiento_%", "calidad_%", "producido", "conforme", "unidad", "paros", "alarmas", "avisos",
                 "actualizado"]
-        with open(path, "w", newline="", encoding="utf-8-sig") as f:
-            w = csv.writer(f, delimiter=";")
-            w.writerow([tr(c) for c in cols])
-            for lid in sorted(self.reader.lines, key=lambda k: natural(self.reader.lines[k].name)):
-                ln = self.reader.lines[lid]
-                st = ln.status
-                k = st.get("kpis") or {}
-                o = st.get("oee") or {}
+        rows = []
+        for ln in lines:
+            st = ln.status
+            k = st.get("kpis") or {}
+            o = st.get("oee") or {}
 
-                def num(v, d=1):
-                    return "" if v is None else f"{v:.{d}f}".replace(".", ",")
+            def num(v, d=1):
+                return None if v is None else round(float(v), d)
 
-                w.writerow([ln.name, lid, s.area_of(ln), tr(CONN_TEXT[ln.connection(now, s.offline_s)]),
-                            (st.get("machine") or {}).get("label", ""), st.get("recipe") or "",
-                            num(k.get("oee")), num(k.get("availability")), num(k.get("performance")),
-                            num(k.get("quality")), num(o.get("length_total"), 0), num(o.get("length_good"), 0),
-                            o.get("unit", ""), o.get("n_stops", ""), st.get("n_alarms", 0), st.get("n_warnings", 0),
-                            time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(st["ts"])) if st.get("ts") else ""])
-        return path
+            rows.append([ln.name, ln.line_id, s.area_of(ln), tr(CONN_TEXT[ln.connection(now, s.offline_s)]),
+                         (st.get("machine") or {}).get("label", ""), st.get("recipe") or "",
+                         num(k.get("oee")), num(k.get("availability")), num(k.get("performance")),
+                         num(k.get("quality")), num(o.get("length_total"), 0), num(o.get("length_good"), 0),
+                         o.get("unit", ""), o.get("n_stops"), st.get("n_alarms", 0), st.get("n_warnings", 0),
+                         epoch(st.get("ts"))])
+        return [tr(c) for c in cols], rows
+
+    def _export_trend(self, lines: list, span: float) -> tuple[list[str], list[list]]:
+        """Formato largo para análisis: una fila por línea y minuto, una columna por variable e indicador."""
+        from ..analysis.oee import STATE_LABELS
+        from ..fleet_data import FleetHistorian, line_variables
+        from ..tabular import epoch
+        now = time.time()
+        names: dict[str, str] = {}
+        for ln in lines:
+            for v in line_variables(ln):
+                if v.get("kind") not in ("text", "selector"):
+                    unit = f" ({v['unit']})" if v.get("unit") else ""
+                    names.setdefault(v["id"], (v.get("name") or v["id"]) + unit)
+        kpis = [("oee", "OEE %"), ("availability", "Disponibilidad %"), ("performance", "Rendimiento %"),
+                ("quality", "Calidad %"), ("stability", "Estabilidad %"), ("i5", "Índice 5.0")]
+        rows_by = FleetHistorian(self.reader).rows_by_line(now - span, now)
+        used_v = [vid for vid in names if any(vid in (r.get("v") or {}) for rs in rows_by.values() for r in rs)]
+        used_k = [(k, lb) for k, lb in kpis if any(k in (r.get("k") or {}) for rs in rows_by.values() for r in rs)]
+        header = [tr("fecha_hora"), tr("linea"), tr("estado"), tr("usuario")] + [names[v] for v in used_v] + \
+            [tr(lb) for _k, lb in used_k]
+        out = []
+        for ln in lines:
+            for r in rows_by.get(ln.name, []):
+                v, k = r.get("v") or {}, r.get("k") or {}
+                out.append([epoch(r.get("ts")), ln.name, tr(STATE_LABELS.get(r.get("s"), r.get("s") or "")),
+                            r.get("u") or ""] +
+                           [(v[vid][0] if isinstance(v[vid], list) else v[vid]) if vid in v else None
+                            for vid in used_v] + [k.get(key) for key, _lb in used_k])
+        out.sort(key=lambda row: (row[0] is None, row[0] or 0, row[1]))
+        return header, out
 
     def resizeEvent(self, event) -> None:
         super().resizeEvent(event)
@@ -1057,26 +1089,28 @@ rebuilt_fleet_windows: list = []  # referencia a la ventana nueva tras cambiar i
 
 
 def run_fleet(folder: Optional[str], home: Optional[Path] = None) -> int:
-    import logging
     import sys
 
     from ..config import default_home
     from ..i18n import Translator
+    from ..logsetup import setup_logging, show_startup_error
     from .main_window import apply_ui_prefs
 
     home_dir = Path(home) if home else default_home()
-    home_dir.mkdir(parents=True, exist_ok=True)
-    logging.basicConfig(level=logging.INFO, filename=str(home_dir / "fleet.log"),
-                        format="%(asctime)s %(levelname)s %(name)s: %(message)s")
+    log_path = setup_logging(home_dir, "fleet")
     app = QApplication.instance() or QApplication(sys.argv[:1])
     app.setApplicationName("Dashboard global de líneas")
     try:
         state = json.loads((home_dir / "state.json").read_text(encoding="utf-8"))
     except (OSError, ValueError):
         state = {}
-    apply_ui_prefs(state.get("ui", {}))
-    Translator().install(app)
-    win = FleetWindow(folder, home_dir / "fleet.json", home_dir / "state.json")
+    try:
+        apply_ui_prefs(state.get("ui", {}))
+        Translator().install(app)
+        win = FleetWindow(folder, home_dir / "fleet.json", home_dir / "state.json")
+    except Exception as exc:
+        show_startup_error(exc, log_path)
+        return 1
     win.show()
     if not win.settings.dir:
         QTimer.singleShot(300, win.open_setup)  # primera vez: pedir la carpeta de datos

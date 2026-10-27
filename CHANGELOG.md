@@ -10,6 +10,40 @@ Numeración `MAYOR.MENOR.PARCHE`:
 
 ## [Sin publicar]
 
+## [0.3.0] - 2026-10-27
+
+### Exportar y traducciones (rama `feature/exportar-produccion`)
+- «Exportar» en lugar de «Exportar CSV» en el monitor (historial: 24 h, 7 o 30 días), el dashboard (resumen de
+  las líneas o sus datos por minuto de 24 h / 7 días), los problemas de proceso y el análisis estadístico (sus
+  datos o su tabla de resultados). Al exportar se elige el formato:
+  - **CSV** (como antes, para Excel en español);
+  - **Excel** (.xlsx con números y fechas reales, encabezado fijo y filtros; sin dependencias nuevas);
+  - **CSV para software estadístico (Minitab)**: separado por tabulaciones, punto decimal, «*» en los
+    faltantes y nombres de columna válidos; opcionalmente se copia al portapapeles para pegarlo con Ctrl+V.
+- Revisión completa de las traducciones al inglés (barrido del código y de cada ventana, diálogo y análisis):
+  - el reporte PDF, las notificaciones y las conclusiones del analizador de planta ahora salen en inglés;
+  - ~150 textos nuevos (exportar, Personal, Problemas de proceso, cámaras, validaciones, grupos del análisis);
+  - las listas desplegables que se llenan después de abrir la ventana y los textos especiales de los campos
+    numéricos («automático») también se traducen;
+  - pruebas nuevas: todo `tr("…")` tiene traducción, sin claves repetidas y con los mismos campos `{…}`.
+- El análisis estadístico exporta bien varias líneas con los mismos minutos (antes se mezclaban).
+- La tarjeta de línea del dashboard ya no muestra la ruta de la carpeta compartida en su ayuda.
+
+### Preparación para producción (misma rama; lista en [docs/PRODUCCION.md](docs/PRODUCCION.md))
+- Historial: la purga horaria ya no recorre toda la tabla ni detiene el monitoreo (borra por bloques); exportar
+  el historial usa el índice por variable.
+- «Archivo › Restaurar respaldo…» (con sesión de supervisor): se aplica al volver a abrir, respaldando antes lo
+  actual.
+- Si `config.json` está dañado (p. ej. por un apagón), se recupera solo del último respaldo válido y se avisa;
+  las escrituras de configuración se fuerzan a disco.
+- Registro con rotación (5 MB × 5), errores no atrapados y cierres abruptos registrados, y mensaje visible si el
+  programa no puede abrir.
+- En Windows, si no se puede cifrar una contraseña o token de notificaciones, ya no se guarda legible.
+- Limpieza: imports sin usar, código muerto y traducciones repetidas.
+- «Configuración › Guardado de datos…»: cuánto se conservan el historial de esta PC y lo publicado para el
+  dashboard global (3 meses, **6 meses por defecto**, 1 año o indefinido), con el espacio que ocupa y cuánto
+  crece por día. Antes el historial se guardaba 90 días fijos y la carpeta del dashboard 30 días.
+
 ### Análisis del dashboard sin monitoreo (rama `fix/analisis-dashboard-sin-monitoreo`)
 - El análisis estadístico del dashboard mostraba vacío cuando el monitor de la línea estaba abierto sin
   monitorear: al abrirlo se reescribía `status.json` sin la lista de variables. Ahora el monitor publica

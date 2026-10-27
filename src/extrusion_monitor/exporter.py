@@ -253,6 +253,8 @@ class FleetExporter:
         return out
 
     def _purge(self, d: Path, now: float) -> None:
+        if not self.settings.retention_days:  # indefinido
+            return
         keep = self.settings.retention_days * 86400
         for sub in (EVENTS_DIR, TREND_DIR):
             for f in (d / sub).glob("*.jsonl"):

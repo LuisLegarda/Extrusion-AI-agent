@@ -26,6 +26,7 @@ from typing import Callable, Optional
 import numpy as np
 
 from .config import AppConfig, ReportDef, ReportTrigger, Workspace
+from .i18n import translate_text as _t
 
 log = logging.getLogger(__name__)
 
@@ -473,18 +474,20 @@ def _write_pdf(path: Path, job: ReportJob, results: list[VarResult], overall: Op
                             topMargin=12 * mm, bottomMargin=12 * mm, title=rep.name, author="Extrusion Monitor")
     width = page[0] - 24 * mm
     story = [Paragraph(_esc(f"{rep.name} — {cfg.machine_name}"), styles["Title"])]
-    info = [["Periodo", f"{_ts(job.since)}  a  {_ts(job.until)}  ({(job.until - job.since) / 3600:.2f} h)"],
-            ["Receta", _latin(job.recipe or "—")], ["Motivo", _latin(job.reason)], ["Generado", _ts(time.time())]]
+    info = [[_t("Periodo"), f"{_ts(job.since)}  {_t('a')}  {_ts(job.until)}  ({(job.until - job.since) / 3600:.2f} h)"],
+            [_t("Receta"), _latin(job.recipe or "—")], [_t("Motivo"), _latin(_t(job.reason))],
+            [_t("Generado"), _ts(time.time())]]
     t = Table(info, colWidths=[30 * mm, width - 30 * mm])
     t.setStyle(TableStyle([("FONTSIZE", (0, 0), (-1, -1), 8), ("TEXTCOLOR", (0, 0), (0, -1), colors.grey)]))
     story += [t, Spacer(1, 4 * mm)]
     color = {True: "#2e7d32", False: "#c62828", None: "#757575"}[overall]
-    text = {True: "CONFORME", False: "NO CONFORME", None: "SIN EVALUACIÓN"}[overall]
-    story.append(Paragraph(f"<font color='{color}' size=16><b>Resultado: {text}</b></font>", styles["BodyText"]))
+    text = _t({True: "CONFORME", False: "NO CONFORME", None: "SIN EVALUACIÓN"}[overall])
+    story.append(Paragraph(f"<font color='{color}' size=16><b>{_esc(_t('Resultado'))}: {_esc(text)}</b></font>",
+                           styles["BodyText"]))
     story.append(Spacer(1, 4 * mm))
 
-    head = ["Variable", "Unidad", "n", "Media", "Mín", "Máx", "Desv.", "LIE", "LSE", "% en spec", "Cpk", "Criterio",
-            "Resultado"]
+    head = [_latin(_t(h)) for h in ("Variable", "Unidad", "n", "Media", "Mín", "Máx", "Desv.", "LIE", "LSE",
+                                    "% en spec", "Cpk", "Criterio", "Resultado")]
     rows = [head]
     for r in results:
         crit = {"cpk": "Cpk", "both": "Spec + Cpk"}.get(r.criterion, "Spec")
@@ -492,7 +495,7 @@ def _write_pdf(path: Path, job: ReportJob, results: list[VarResult], overall: Op
         rows.append([Paragraph(_esc(r.label), small), _latin(r.unit), str(r.n), _fmt(r.mean), _fmt(r.minimum), _fmt(r.maximum),
                      _fmt(r.std), _fmt(r.limits.lsl), _fmt(r.limits.usl),
                      "—" if r.pct_in is None else f"{r.pct_in:.1f}", _fmt(r.cpk, 2),
-                     Paragraph(_esc(f"{crit}: {r.note}"), small), verdict])
+                     Paragraph(_esc(f"{crit}: {_t(r.note)}"), small), verdict])
     col_w = [60 * mm, 14 * mm, 12 * mm] + [17 * mm] * 6 + [16 * mm, 13 * mm]
     col_w += [width - sum(col_w) - 17 * mm, 17 * mm]
     t = Table(rows, colWidths=col_w, repeatRows=1)
@@ -508,7 +511,7 @@ def _write_pdf(path: Path, job: ReportJob, results: list[VarResult], overall: Op
     chart_vars = {rv.var_id for rv in rep.variables if rv.chart}
     charts = [r for r in results if r.var_id in chart_vars and len(r.t) >= 2]
     if charts:
-        story.append(Paragraph("Tendencias", styles["Heading2"]))
+        story.append(Paragraph(_esc(_t("Tendencias")), styles["Heading2"]))
         cells = []
         cw, ch = width / 2 - 2 * mm, 55 * mm
         for r in charts:
@@ -525,17 +528,18 @@ def _write_pdf(path: Path, job: ReportJob, results: list[VarResult], overall: Op
         story += [Table(grid, colWidths=[cw + 2 * mm] * 2), Spacer(1, 4 * mm)]
 
     if job.behavior_models:
-        story.append(Paragraph("Comportamiento (D2 / umbral; mayor que 1 = fuera de lo normal)", styles["Heading2"]))
+        story.append(Paragraph(_esc(_t("Comportamiento (D2 / umbral; mayor que 1 = fuera de lo normal)")),
+                               styles["Heading2"]))
         cells = []
         cw, ch = width / 2 - 2 * mm, 55 * mm
         for m in job.behavior_models:
             bt, br = behavior_series(m, historian, job.since, job.until)
             if len(bt) < 2:
-                story.append(Paragraph(_esc(f"«{m.name}»: sin datos suficientes en el periodo."), small))
+                story.append(Paragraph(_esc(_t(f"«{m.name}»: sin datos suficientes en el periodo.")), small))
                 continue
             out = float((br > 1).mean() * 100)
             cells.append(_chart(bt, br, cw, ch, [(1.0, colors.HexColor("#c62828"))], job.since, job.until,
-                                f"{m.name}: {out:.1f} % del tiempo fuera de lo normal"))
+                                _t(f"{m.name}: {out:.1f} % del tiempo fuera de lo normal")))
         if cells:
             grid = [cells[i:i + 2] + [""] * (2 - len(cells[i:i + 2])) for i in range(0, len(cells), 2)]
             story += [Table(grid, colWidths=[cw + 2 * mm] * 2), Spacer(1, 4 * mm)]
@@ -544,23 +548,23 @@ def _write_pdf(path: Path, job: ReportJob, results: list[VarResult], overall: Op
     if ev_vars or rep.include_general_events:
         evs = [e for e in historian.events_between(job.since, job.until)
                if (e[4] in ev_vars) or (rep.include_general_events and not e[4])]
-        story.append(Paragraph(f"Eventos ({len(evs)})", styles["Heading2"]))
+        story.append(Paragraph(_esc(f"{_t('Eventos')} ({len(evs)})"), styles["Heading2"]))
         if evs:
-            rows = [["Fecha y hora", "Nivel", "Variable", "Mensaje"]]
+            rows = [[_latin(_t(h)) for h in ("Fecha y hora", "Nivel", "Variable", "Mensaje")]]
             for e in evs[-MAX_EVENTS:]:
                 var = cfg.variable(e[4]) if e[4] else None
-                rows.append([_ts(e[0]), LEVEL_NAMES.get(e[2], str(e[2])),
+                rows.append([_ts(e[0]), _latin(_t(LEVEL_NAMES.get(e[2], str(e[2])))),
                              Paragraph(_esc(cfg.var_label(var) if var else (e[4] or "")), small),
-                             Paragraph(_esc(e[5] or ""), small)])
+                             Paragraph(_esc(_t(e[5] or "")), small)])
             t = Table(rows, colWidths=[32 * mm, 16 * mm, 60 * mm, width - 108 * mm], repeatRows=1)
             t.setStyle(TableStyle([("FONTSIZE", (0, 0), (-1, -1), 7), ("GRID", (0, 0), (-1, -1), 0.25, colors.grey),
                                    ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#263238")),
                                    ("TEXTCOLOR", (0, 0), (-1, 0), colors.white), ("VALIGN", (0, 0), (-1, -1), "TOP")]))
             story.append(t)
             if len(evs) > MAX_EVENTS:
-                story.append(Paragraph(f"Se muestran los últimos {MAX_EVENTS} eventos.", small))
+                story.append(Paragraph(_esc(_t(f"Se muestran los últimos {MAX_EVENTS} eventos.")), small))
         else:
-            story.append(Paragraph("Sin eventos en el periodo.", small))
+            story.append(Paragraph(_esc(_t("Sin eventos en el periodo.")), small))
     try:
         doc.build(story)
         # Se escribe completo en un temporal y luego se renombra: nunca queda un PDF a medias.

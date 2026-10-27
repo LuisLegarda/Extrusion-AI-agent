@@ -12,6 +12,8 @@ from typing import Optional, Sequence
 
 import numpy as np
 
+from ..i18n import tr
+
 # --- distribuciones ----------------------------------------------------------------------------------
 
 
@@ -472,7 +474,7 @@ def design_row(x: np.ndarray, quadratic: bool, interactions: bool) -> np.ndarray
 
 
 def term_names(names: list[str], quadratic: bool, interactions: bool) -> list[str]:
-    terms = ["Constante", *names]
+    terms = [tr("Constante"), *names]
     if quadratic:
         terms += [f"{n}²" for n in names]
     if interactions:

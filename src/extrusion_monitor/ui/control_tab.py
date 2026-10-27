@@ -6,11 +6,11 @@ from typing import TYPE_CHECKING, Optional
 
 from PySide6.QtWidgets import (
     QCheckBox, QComboBox, QDoubleSpinBox, QFormLayout, QGroupBox, QHBoxLayout, QLabel, QLineEdit, QListWidget,
-    QListWidgetItem, QMessageBox, QPushButton, QScrollArea, QSpinBox, QVBoxLayout, QWidget,
+    QListWidgetItem, QMessageBox, QPushButton, QScrollArea, QVBoxLayout, QWidget,
 )
 
 from ..capture import crop
-from ..config import SCREEN, Click, ControlLoop, ControlWrite
+from ..config import SCREEN, Click, ControlLoop
 from ..i18n import tr
 from ..navigation import click_rect
 

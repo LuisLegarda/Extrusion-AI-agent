@@ -145,3 +145,75 @@ def test_both_programs_share_the_menu_structure(tmp_path):
     fleet.close()
     mon._rebuilding = True
     mon.close()
+
+
+def _dict_literals():
+    import ast
+    from pathlib import Path
+    src = (Path(i18n.__file__).parent / "i18n_en.py").read_text("utf-8")
+    for node in ast.parse(src).body:
+        if isinstance(node, ast.AnnAssign) and isinstance(node.value, ast.Dict):
+            yield node.target.id, [(ast.literal_eval(k), ast.literal_eval(v))
+                                   for k, v in zip(node.value.keys, node.value.values)]
+
+
+def test_dictionary_has_no_conflicting_duplicates_and_fields_match():
+    """Una clave repetida con otra traducción se pierde en silencio; los campos {…} deben coincidir."""
+    import re
+    fields = re.compile(r"\{(\w*)\}")
+    for name, pairs in _dict_literals():
+        seen = {}
+        for k, v in pairs:
+            assert seen.get(k, v) == v, f"{name}: «{k}» repetida con otra traducción"
+            seen[k] = v
+            assert sorted(fields.findall(k)) == sorted(fields.findall(v)), f"{name}: campos distintos en «{k}»"
+
+
+def test_every_tr_literal_has_a_translation():
+    """Todo `tr("texto")` del programa tiene su traducción (directa o por plantilla)."""
+    import ast
+    import re
+    from pathlib import Path
+    from extrusion_monitor.i18n_en import EN
+    i18n.set_lang("en")
+    try:
+        missing = []
+        for f in sorted(Path(i18n.__file__).parent.rglob("*.py")):
+            for n in ast.walk(ast.parse(f.read_text("utf-8"))):
+                if (isinstance(n, ast.Call) and isinstance(n.func, ast.Name) and n.func.id == "tr" and n.args
+                        and isinstance(n.args[0], ast.Constant) and isinstance(n.args[0].value, str)):
+                    s = n.args[0].value
+                    if (s not in EN and not re.fullmatch(r"[\W\d_]*(\{\w*\}[\W\d_]*)*", s)
+                            and i18n.translate_text(s) == s):
+                        missing.append(f"{f.name}:{n.lineno} {s!r}")
+        assert not missing, "Sin traducción:\n" + "\n".join(missing)
+    finally:
+        i18n.set_lang("es")
+
+
+def test_exports_reports_and_notifications_follow_the_language(tmp_path, en):
+    """Lo que sale del programa (conclusiones, PDF, notificaciones, exportaciones) también va en inglés."""
+    from extrusion_monitor.analysis.problems import CSV_COLUMNS, table_row
+    t = i18n.translate_text
+    assert t("Línea 2 tiene el OEE más bajo (65 %); su mayor pérdida es la disponibilidad (paros), con 80 %.") == \
+        "Línea 2 has the lowest OEE (65 %); its biggest loss is availability (stops), at 80 %."
+    assert t("«Cambio de dado» causa el 50 % del tiempo muerto de la planta (60 min): es la primera causa a "
+             "atacar.") == "“Cambio de dado” causes 50 % of the plant's downtime (60 min): it is the first cause to tackle."
+    assert t("Costo de paros y desperdicio: $1,200 en el periodo (paros $1,000 · desperdicio $200).") == \
+        "Cost of stops and scrap: $1,200 in the period (stops $1,000 · scrap $200)."
+    assert t("en spec y Cpk mín. 1.33 (lecturas fuera de spec, Cpk < 1.33)") == \
+        "in spec and min Cpk 1.33 (readings out of spec, Cpk < 1.33)"
+    assert [i18n.tr(c) for c in CSV_COLUMNS][:3] == ["line", "type", "start"]
+    row = table_row({"kind": "downtime", "start": time.time(), "end": time.time(), "planned": 1})
+    assert row[1] == "stop" and row[7] == "yes"
+
+    from extrusion_monitor.notify import Notifier, NotifySettings
+    n = Notifier(tmp_path, where=lambda: "L1", who=lambda: "Ana")
+    n.settings = NotifySettings()
+    n.settings.webhook.enabled, n.settings.webhook.url = True, "http://localhost:1/x"
+    n._ensure_thread = lambda: None
+    assert n.emit("stop", "k", "Máquina detenida desde hace 12 min", "La línea está detenida desde las 10:00 (12 min).",
+                  force=True)
+    msg = n._queue.get_nowait()
+    assert msg.subject == "[L1] ALARM: Machine stopped for 12 min"
+    assert msg.body.startswith("The line has been stopped since 10:00 (12 min).") and "User on shift: Ana" in msg.body

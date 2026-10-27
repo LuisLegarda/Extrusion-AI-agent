@@ -231,7 +231,7 @@ def test_fleet_cards_notify_and_export(tmp_path, monkeypatch):
     assert w.cards["L1"].blinking and beeps and "entró en alarma" in w.lst_plant.item(0).text()
     w.select("L1")
     assert not w.cards["L1"].blinking  # clic = reconocido
-    out = w.export_csv(str(tmp_path / "x.csv"))
+    out = w.export_csv(str(tmp_path / "x.csv"), fmt="csv")
     rows = open(out, encoding="utf-8-sig").read().splitlines()
     assert len(rows) == 3 and rows[1].startswith("Línea 1;L1;Nave A")
     w.toggle_tv()

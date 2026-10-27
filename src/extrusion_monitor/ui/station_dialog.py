@@ -4,7 +4,7 @@ from __future__ import annotations
 from PySide6.QtCore import QTimer
 from PySide6.QtWidgets import (
     QCheckBox, QDialog, QDialogButtonBox, QDoubleSpinBox, QFileDialog, QFormLayout, QGroupBox, QHBoxLayout,
-    QInputDialog, QLabel, QLineEdit, QPushButton, QSpinBox, QVBoxLayout,
+    QInputDialog, QLabel, QLineEdit, QPushButton, QVBoxLayout,
 )
 
 from ..fleet import StationSettings, line_slug
@@ -17,7 +17,7 @@ class StationDialog(QDialog):
         self.setWindowTitle("Dashboard global (exportación)")
         self.resize(680, 640)
         self.exporter = exporter
-        s = exporter.settings
+        s = self._orig = exporter.settings
         machine = exporter.engine.config.machine_name
         root = QVBoxLayout(self)
         intro = QLabel(
@@ -60,11 +60,10 @@ class StationDialog(QDialog):
         self.sp_trend.setSuffix(" s")
         self.sp_trend.setValue(s.trend_interval_s)
         form.addRow("Un punto de tendencia cada:", self.sp_trend)
-        self.sp_ret = QSpinBox()
-        self.sp_ret.setRange(1, 3650)
-        self.sp_ret.setSuffix(" días")
-        self.sp_ret.setValue(s.retention_days)
-        form.addRow("Conservar eventos y tendencias:", self.sp_ret)
+        from .storage_dialog import retention_text
+        ret = QLabel(tr("{r} (se cambia en Configuración › Guardado de datos)", r=retention_text(s.retention_days)))
+        ret.setObjectName("muted")
+        form.addRow("Conservar eventos y tendencias:", ret)
         root.addLayout(form)
         root.addWidget(self._server_box(s))
         self.lbl = QLabel()
@@ -143,7 +142,7 @@ class StationDialog(QDialog):
             return
         self.ed_token.setText(token)
         self.chk_srv.setChecked(True)
-        self.lbl_srv.setText(f"<span style='color:#0ca30c'><b>OK</b></span> · " +
+        self.lbl_srv.setText("<span style='color:#0ca30c'><b>OK</b></span> · " +
                              tr("Línea registrada como «{p}». Pulsa Aceptar para empezar a enviar.", p=self._line_id()))
 
     def _test_server(self) -> None:
@@ -179,14 +178,14 @@ class StationDialog(QDialog):
         self.lbl_srv.setText(txt)
 
     def settings(self) -> StationSettings:
-        return StationSettings(enabled=self.chk.isChecked(), export_dir=self.ed_dir.text().strip(),
-                               line_name=self.ed_name.text().strip(), line_id=self.ed_id.text().strip(),
-                               area=self.ed_area.text().strip(),
-                               interval_s=self.sp_int.value(), trend_interval_s=self.sp_trend.value(),
-                               retention_days=self.sp_ret.value(), server_enabled=self.chk_srv.isChecked(),
-                               server_url=self.ed_url.text().strip().rstrip("/"),
-                               server_token=self.ed_token.text().strip(),
-                               server_verify_tls=self.chk_tls.isChecked(), server_interval_s=self.sp_srv.value())
+        # parte de lo guardado: lo que no está en esta ventana (guardado de datos, latido…) se conserva
+        return self._orig.model_copy(update=dict(
+            enabled=self.chk.isChecked(), export_dir=self.ed_dir.text().strip(),
+            line_name=self.ed_name.text().strip(), line_id=self.ed_id.text().strip(), area=self.ed_area.text().strip(),
+            interval_s=self.sp_int.value(), trend_interval_s=self.sp_trend.value(),
+            server_enabled=self.chk_srv.isChecked(), server_url=self.ed_url.text().strip().rstrip("/"),
+            server_token=self.ed_token.text().strip(), server_verify_tls=self.chk_tls.isChecked(),
+            server_interval_s=self.sp_srv.value()))
 
     def _browse(self) -> None:
         d = QFileDialog.getExistingDirectory(self, tr("Carpeta compartida"), self.ed_dir.text())
@@ -212,7 +211,7 @@ class StationDialog(QDialog):
         self.exporter.settings = st
         try:
             self.exporter.write_once()
-            self.lbl.setText(f"<span style='color:#0ca30c'><b>OK</b></span> · " +
+            self.lbl.setText("<span style='color:#0ca30c'><b>OK</b></span> · " +
                              tr("Escribiendo en: {p}", p=str(self.exporter.line_dir)))
         except Exception as exc:
             self.lbl.setText(f"<span style='color:#d03b3b'><b>{tr('Error')}</b>: {exc}</span>")

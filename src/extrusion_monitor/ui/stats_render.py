@@ -68,6 +68,29 @@ class Render(QWidget):
         self.lay.setSpacing(10)
         self._row = 0
 
+    def data_table(self) -> tuple[list[str], list[list]]:
+        """Los datos con que se calculó el análisis: fecha, grupo y una columna por variable (para Minitab)."""
+        from ..tabular import epoch
+        if self.extra.get("problems") is not None:
+            from ..analysis.problems import CSV_COLUMNS, table_row
+            return [tr(c) for c in CSV_COLUMNS], [table_row(r) for r in self.extra["problems"]]
+        series = [v for v in self.data if len(v.y)]
+        if not series:
+            return [], []
+        grouped = any(len(v.groups) and v.groups.any() for v in series)
+        by_key: dict[tuple, dict] = {}  # (instante, grupo): varias líneas comparten los mismos minutos
+        for i, v in enumerate(series):
+            for k in range(len(v.y)):
+                g = str(v.groups[k]) if grouped and len(v.groups) else ""
+                by_key.setdefault((round(float(v.t[k]), 3), g), {})[i] = float(v.y[k])
+        names = [v.label + (f" ({v.unit})" if v.unit else "") for v in series]
+        header = [tr("fecha_hora")] + ([tr("Grupo")] if grouped else []) + names
+        rows = []
+        for (t, g) in sorted(by_key):
+            r = by_key[(t, g)]
+            rows.append([epoch(t)] + ([g] if grouped else []) + [r.get(i) for i in range(len(series))])
+        return header, rows
+
     # --- utilidades -----------------------------------------------------------------------------------
     @property
     def params(self) -> dict:
@@ -125,8 +148,7 @@ class Render(QWidget):
         bl.addWidget(t)
         self.lay.addWidget(box, row, col, 1, colspan)
         if not self.csv_rows:
-            self.csv_header, self.csv_rows = list(headers), [[v if isinstance(v, str) else f(v) for v in r]
-                                                             for r in rows]
+            self.csv_header, self.csv_rows = list(headers), [list(r) for r in rows]  # valores sin formato
         return t
 
     def text(self, html: str, row: int, col: int = 0, colspan: int = 2) -> QLabel:
@@ -479,7 +501,7 @@ def render_normality(R: Render) -> None:
 
 def _cap_tables(R: Render, cap: st.CapabilityReport, row: int) -> None:
     R.table([tr("Datos del proceso"), ""],
-            [["LIE", cap.lsl], [tr("Objetivo"), cap.target], ["LSE", cap.usl], [tr("Media"), cap.mean], ["N", cap.n],
+            [[tr("LIE"), cap.lsl], [tr("Objetivo"), cap.target], [tr("LSE"), cap.usl], [tr("Media"), cap.mean], ["N", cap.n],
              [tr("Desv. est. (dentro)"), cap.sd_within], [tr("Desv. est. (general)"), cap.sd_overall]], row, 0)
     R.table([tr("Índice"), tr("Dentro (corto plazo)"), tr("General (largo plazo)")],
             [["Cp / Pp", cap.cp, cap.pp], ["CPL / PPL", cap.cpl, cap.ppl], ["CPU / PPU", cap.cpu, cap.ppu],
@@ -518,7 +540,7 @@ def _cap_hist(R: Render, w, y, cap: st.CapabilityReport, color: QColor) -> None:
                  name=tr("General"))
     normal_curve(w, cap.mean, cap.sd_within, edges[0], edges[-1], scale, QColor(theme.c("text2")), dash=True,
                  name=tr("Dentro"))
-    for val, lab in ((cap.lsl, "LIE"), (cap.target, tr("Objetivo")), (cap.usl, "LSE")):
+    for val, lab in ((cap.lsl, tr("LIE")), (cap.target, tr("Objetivo")), (cap.usl, tr("LSE"))):
         if val is not None:
             vline(w, val, theme.c("critical") if lab != tr("Objetivo") else theme.c("good_text"), f"{lab} {f(val)}")
 

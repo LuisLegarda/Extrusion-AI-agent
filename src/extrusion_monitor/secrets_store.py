@@ -30,6 +30,10 @@ def _dpapi(data: bytes, protect: bool) -> bytes:
         ctypes.windll.kernel32.LocalFree(out.pbData)
 
 
+class SecretError(OSError):
+    """No se pudo cifrar: el secreto no se guarda (nunca se deja legible en disco)."""
+
+
 def protect(text: str) -> str:
     if not text:
         return ""
@@ -37,9 +41,9 @@ def protect(text: str) -> str:
     if sys.platform == "win32":
         try:
             return "dpapi:" + base64.b64encode(_dpapi(raw, True)).decode("ascii")
-        except Exception:
-            pass
-    return "b64:" + base64.b64encode(raw).decode("ascii")
+        except Exception as exc:  # en Windows nunca se cae a base64: se avisa y no se guarda
+            raise SecretError(f"no se pudo cifrar con DPAPI ({exc})") from exc
+    return "b64:" + base64.b64encode(raw).decode("ascii")  # solo fuera de Windows (desarrollo)
 
 
 def unprotect(stored: str) -> str:

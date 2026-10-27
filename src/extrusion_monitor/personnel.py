@@ -28,7 +28,7 @@ PROTECTABLE = {
     "charts": "Tablero de Inicio y dock (indicadores y gráficos)",
     "analysis": "Selección de variables (SPC, correlación, Variables en vivo) y modelo de estabilidad mostrado",
     "notify": "Notificaciones por correo y mensajes",
-    "backups": "Respaldos y carpeta de datos (ver, crear o exportar)",
+    "backups": "Respaldos, guardado y carpeta de datos (ver, crear, restaurar o exportar)",
     "control": "Modo de los lazos de control y activar el control automático",
     "catalogs": "Causas de paro y defectos, y entrenar el comportamiento normal",
     "delete": "Eliminar capturas de paros y defectos",
