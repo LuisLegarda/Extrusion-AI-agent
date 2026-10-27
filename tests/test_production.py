@@ -214,3 +214,19 @@ def test_data_retention_choices_default_six_months_and_apply_live(tmp_path, monk
     sd = StationDialog(ctx.exporter)
     assert sd.settings().history_days == 91
     h.close()
+
+
+def test_app_icons_have_every_windows_size():
+    from PySide6.QtWidgets import QApplication
+    QApplication.instance() or QApplication([])
+    from pathlib import Path
+
+    from PIL import Image
+
+    import extrusion_monitor
+    from extrusion_monitor.ui.theme import app_icon
+    res = Path(extrusion_monitor.__file__).parent / "resources"
+    for kind in ("monitor", "dashboard"):
+        assert not app_icon(kind).isNull()
+        sizes = set(Image.open(res / f"{kind}.ico").info["sizes"])
+        assert {(s, s) for s in (16, 24, 32, 48, 256)} <= sizes

@@ -34,6 +34,8 @@ def main(argv: list[str] | None = None) -> int:
 
     app = QApplication(sys.argv[:1])
     app.setApplicationName("Monitor de extrusión")
+    from .ui.theme import app_icon
+    app.setWindowIcon(app_icon("monitor"))
     try:
         ctx = build(home_dir, demo=args.demo)
         apply_ui_prefs(ctx.workspace.load_state().get("ui", {}))  # idioma y tema guardados

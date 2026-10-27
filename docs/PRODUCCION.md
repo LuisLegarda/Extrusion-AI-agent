@@ -42,8 +42,8 @@ el código; lo demás necesita una decisión o una prueba en la planta.
 
 ## Pendiente (decidir o probar en planta)
 
-1. **Ejecutable de Windows.** Agregar icono y datos de versión (Propiedades › Detalles) en el `.spec`, y
-   firmar el ejecutable con un certificado de código para evitar avisos de SmartScreen / antivirus.
+1. **Ejecutable de Windows.** El icono ya está; faltan los datos de versión (Propiedades › Detalles) en el
+   `.spec` y firmar el ejecutable con un certificado de código para evitar avisos de SmartScreen / antivirus.
 2. **CI.** Agregar `ruff check --select F,E9` al flujo de GitHub Actions para que no regresen referencias rotas.
 3. **Prueba de resistencia en la PC del HMI** (24–72 h): memoria estable, tamaño del registro y del historial,
    OCR de Windows, DPAPI, carpeta compartida en red y reconexión tras cortes de red o de energía.
