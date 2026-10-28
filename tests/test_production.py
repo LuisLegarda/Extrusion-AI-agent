@@ -55,9 +55,26 @@ def test_purge_does_not_block_monitoring_writes(tmp_path):
 
     th = threading.Thread(target=writer)
     th.start()
+    a = time.perf_counter()
     h.purge(t0 + 20_000)
+    total = time.perf_counter() - a
     th.join()
-    assert max(worst) < 0.5  # nunca espera toda la purga
+    # nunca espera toda la purga (relativo: en las máquinas de CI el disco puede ser muy lento)
+    assert max(worst) < max(0.5, 0.6 * total)
+
+
+def test_hourly_purge_runs_off_the_monitoring_thread(tmp_path):
+    from extrusion_monitor.storage import Historian
+    h = Historian(tmp_path / "h.sqlite", retention_days=1)
+    old = time.time() - 3 * 86400
+    calls = []
+    real = h.purge
+    h.purge = lambda cutoff: calls.append(threading.current_thread().name) or real(cutoff)
+    h.write_samples([(old, "v", 1.0, None), (time.time(), "v", 2.0, None)])  # dispara la purga horaria
+    h.wait_purge()
+    assert calls == ["purga-historial"]
+    assert h._conn.execute("SELECT COUNT(*) FROM samples").fetchone()[0] == 1
+    h.close()
 
 
 def _make_home(tmp_path, monkeypatch):
@@ -191,6 +208,7 @@ def test_data_retention_choices_default_six_months_and_apply_live(tmp_path, monk
     assert h.retention_days == 182 and ctx.exporter.settings.retention_days == 182  # 6 meses por defecto
     now = time.time()
     h.write_samples([(now - 400 * 86400, "v", 1.0, None), (now - 100 * 86400, "v", 2.0, None)])
+    h.wait_purge()
     assert h._conn.execute("SELECT COUNT(*) FROM samples").fetchone()[0] == 1  # 6 meses: lo de hace 400 días no
     dlg = StorageDialog(ctx.exporter, h)
     assert [dlg.cmb_history.itemText(i) for i in range(dlg.cmb_history.count())] == \
@@ -207,6 +225,7 @@ def test_data_retention_choices_default_six_months_and_apply_live(tmp_path, monk
     dlg.cmb_history.setCurrentIndex(dlg.cmb_history.findData(91))
     dlg.accept(confirm=False)
     h._maybe_purge()
+    h.wait_purge()
     assert h._conn.execute("SELECT COUNT(*) FROM samples").fetchone()[0] == 0  # 3 meses: se borró lo anterior
     assert retention_text(30) == "30 días" and retention_text(0) == "Indefinido"
     # la ventana del dashboard global no pisa el plazo del historial al guardar

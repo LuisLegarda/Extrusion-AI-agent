@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import csv
+import logging
 import sqlite3
 import threading
 import time
@@ -25,6 +26,8 @@ CREATE TABLE IF NOT EXISTS problems (
 CREATE INDEX IF NOT EXISTS ix_problems_start ON problems(start);
 """
 
+log = logging.getLogger(__name__)
+
 PROBLEM_FIELDS = ("id", "uid", "kind", "captured_at", "start", "end", "duration_s", "category_id", "category",
                   "reason_id", "reason", "planned", "scrap", "unit", "operator", "comment", "recipe")
 
@@ -39,6 +42,7 @@ class Historian:
         self._conn.execute("PRAGMA synchronous=NORMAL")  # seguro con WAL y mucho más rápido
         self._conn.executescript(SCHEMA)
         self._last_purge = 0.0
+        self._purge_thread: Optional[threading.Thread] = None
 
     def write_samples(self, rows: Iterable[tuple[float, str, Optional[float], Optional[str]]]) -> None:
         rows = list(rows)
@@ -152,12 +156,32 @@ class Historian:
     PURGE_CHUNK = 20000  # filas por bloque: el candado se suelta entre bloques y el monitoreo no se detiene
 
     def _maybe_purge(self) -> None:
+        """Una vez por hora, en un hilo aparte: el monitoreo (que llama a esto al escribir) no espera la purga."""
         now = time.time()
-        if now - self._last_purge < 3600:
+        if now - self._last_purge < 3600 or not self.retention_days:  # 0 = indefinido
             return
         self._last_purge = now
-        if self.retention_days:  # 0 = indefinido
-            self.purge(now - self.retention_days * 86400)
+        if self._purge_thread is not None and self._purge_thread.is_alive():
+            return
+        self._purge_thread = threading.Thread(target=self._purge_background,
+                                              args=(now - self.retention_days * 86400,),
+                                              name="purga-historial", daemon=True)
+        self._purge_thread.start()
+
+    def _purge_background(self, cutoff: float) -> None:
+        try:
+            self.purge(cutoff)
+            with self._lock:  # el traspaso del diario (WAL) lo paga este hilo, no una escritura del monitoreo
+                self._conn.execute("PRAGMA wal_checkpoint(PASSIVE)")
+        except sqlite3.ProgrammingError:  # se cerró el historial mientras purgaba
+            pass
+        except Exception:
+            log.exception("purga del historial")
+
+    def wait_purge(self, timeout: float = 30.0) -> None:
+        t = self._purge_thread
+        if t is not None:
+            t.join(timeout)
 
     def purge(self, cutoff: float) -> int:
         """Borra lo anterior a `cutoff`. Devuelve cuántas muestras borró.
@@ -231,5 +255,6 @@ class Historian:
         return [(r["start"], r["end"]) for r in self.problems(since, until, kind="downtime") if r["planned"]]
 
     def close(self) -> None:
+        self.wait_purge(10.0)
         with self._lock:
             self._conn.close()

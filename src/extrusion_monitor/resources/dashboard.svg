@@ -1,17 +1,17 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" width="256" height="256">
 <defs>
-  <linearGradient id="ring" x1="0.15" y1="0.1" x2="0.85" y2="0.9">
-    <stop offset="0" stop-color="#53c9f2"/><stop offset="0.55" stop-color="#2f8fdc"/>
-    <stop offset="1" stop-color="#1857c4"/></linearGradient>
-  <linearGradient id="line" x1="0" y1="1" x2="1" y2="0">
-    <stop offset="0" stop-color="#27d3b4"/><stop offset="1" stop-color="#43f1ef"/></linearGradient>
+  <linearGradient id="ring" x1="0.12" y1="0.08" x2="0.88" y2="0.92">
+    <stop offset="0" stop-color="#4fcff0"/><stop offset="0.5" stop-color="#2f97dc"/>
+    <stop offset="0.8" stop-color="#1663c8"/><stop offset="1" stop-color="#145dc4"/></linearGradient>
+  <linearGradient id="line" x1="0" y1="1" x2="0.55" y2="0">
+    <stop offset="0" stop-color="#32cdb2"/><stop offset="1" stop-color="#3ef2f6"/></linearGradient>
 </defs>
-<rect width="256" height="256" rx="46" fill="#071c2e"/>
-<circle cx="128" cy="140" r="90" fill="none" stroke="url(#ring)" stroke-width="30"/>
-<rect x="88" y="100" width="30" height="30" rx="8" fill="url(#line)"/>
-<rect x="126" y="100" width="30" height="30" rx="8" fill="url(#line)"/>
-<rect x="88" y="138" width="30" height="30" rx="8" fill="url(#line)"/>
-<rect x="126" y="138" width="30" height="30" rx="8" fill="#f0b429"/>
-<circle cx="200" cy="64" r="38" fill="#0c2a3a"/>
-<circle cx="200" cy="64" r="25" fill="#34e36f"/>
+<rect width="256" height="256" rx="34" fill="#061c2f"/>
+<circle cx="126.8" cy="128.4" r="92.75" fill="none" stroke="url(#ring)" stroke-width="28.5"/>
+<rect x="90.8" y="96.4" width="32" height="32" rx="7" fill="url(#line)"/>
+<rect x="130.8" y="96.4" width="32" height="32" rx="7" fill="url(#line)"/>
+<rect x="90.8" y="136.4" width="32" height="32" rx="7" fill="url(#line)"/>
+<rect x="130.8" y="136.4" width="32" height="32" rx="7" fill="#f0b429"/>
+<circle cx="194.4" cy="64.0" r="36.8" fill="#03202f"/>
+<circle cx="194.4" cy="64.0" r="23.7" fill="#36e86e"/>
 </svg>

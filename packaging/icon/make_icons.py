@@ -18,40 +18,47 @@ OUT = ROOT / "src" / "extrusion_monitor" / "resources"
 ICO_SIZES = [16, 20, 24, 32, 40, 48, 64, 96, 128, 256]
 SMALL = 32  # hasta este tamaño: dibujo simplificado
 
-BG, HALO, GREEN = "#071c2e", "#0c2a3a", "#34e36f"
+BG, HALO, GREEN = "#061c2f", "#03202f", "#36e86e"
+
+# Medidas tomadas del diseño original (lienzo de 256): anillo centrado, punto verde con halo arriba a la
+# derecha (encima del anillo) y la tendencia: tramos a 45° con dos «jorobas», que empieza en el borde interior
+# del anillo y termina debajo del halo.
+CX, CY, R_OUT, R_IN = 126.8, 128.4, 107.0, 78.5
+DOT = (194.4, 64.0)
+TREND = ("M44 186 L81.5 148 C84 145.4 86.4 143.2 89 143.3 C93.4 143.5 96 148.7 100.2 148.7 "
+         "C102.6 148.7 104.6 147.6 106.2 146 L124.8 126.4 C127 124.1 129.2 122.3 131.6 122.4 "
+         "C136.2 122.6 139.2 125.8 143.4 125.7 C146 125.6 148 124.6 149.6 123.4 L190 82")
 
 DEFS = """<defs>
-  <linearGradient id="ring" x1="0.15" y1="0.1" x2="0.85" y2="0.9">
-    <stop offset="0" stop-color="#53c9f2"/><stop offset="0.55" stop-color="#2f8fdc"/>
-    <stop offset="1" stop-color="#1857c4"/></linearGradient>
-  <linearGradient id="line" x1="0" y1="1" x2="1" y2="0">
-    <stop offset="0" stop-color="#27d3b4"/><stop offset="1" stop-color="#43f1ef"/></linearGradient>
+  <linearGradient id="ring" x1="0.12" y1="0.08" x2="0.88" y2="0.92">
+    <stop offset="0" stop-color="#4fcff0"/><stop offset="0.5" stop-color="#2f97dc"/>
+    <stop offset="0.8" stop-color="#1663c8"/><stop offset="1" stop-color="#145dc4"/></linearGradient>
+  <linearGradient id="line" x1="0" y1="1" x2="0.55" y2="0">
+    <stop offset="0" stop-color="#32cdb2"/><stop offset="1" stop-color="#3ef2f6"/></linearGradient>
 </defs>"""
 
 
 def svg(kind: str = "monitor", small: bool = False) -> str:
-    ring_w = 34 if small else 30
-    parts = [f'<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" width="256" height="256">', DEFS,
-             f'<rect width="256" height="256" rx="46" fill="{BG}"/>',
-             f'<circle cx="128" cy="140" r="{92 if small else 90}" fill="none" stroke="url(#ring)" '
-             f'stroke-width="{ring_w}"/>']
+    width = R_OUT - R_IN + (4 if small else 0)  # en tamaños chicos el anillo y la línea engrosan un poco
+    mid = (R_OUT + R_IN) / 2
+    parts = ['<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" width="256" height="256">', DEFS,
+             f'<rect width="256" height="256" rx="34" fill="{BG}"/>']
+    ring = f'<circle cx="{CX}" cy="{CY}" r="{mid}" fill="none" stroke="url(#ring)" stroke-width="{width}"/>'
     if kind == "monitor":
-        if small:  # una sola onda, trazo grueso
-            d = "M70 176 C90 150 102 138 116 142 C130 146 138 124 156 112 L188 80"
-            w = 26
-        else:
-            d = ("M66 178 C78 162 88 146 100 142 C112 138 114 154 127 150 C140 146 146 126 158 122 "
-                 "C170 118 172 130 182 122 L196 84")
-            w = 22
-        parts.append(f'<path d="{d}" fill="none" stroke="url(#line)" stroke-width="{w}" '
+        # la tendencia va debajo del anillo: el anillo corta su inicio justo en el borde interior y el halo
+        # tapa su final (QtSvg no aplica clipPath)
+        parts.append(f'<path d="{TREND}" fill="none" stroke="url(#line)" stroke-width="{24 if small else 20.5}" '
                      'stroke-linecap="butt" stroke-linejoin="round"/>')
-    else:  # dashboard global: tablero de líneas dentro del anillo (pareja del monitor)
-        g = 34 if small else 30
-        for i, (x, y) in enumerate(((88, 100), (88 + g + 8, 100), (88, 100 + g + 8), (88 + g + 8, 100 + g + 8))):
+    parts.append(ring)
+    if kind != "monitor":  # dashboard global: tablero de líneas dentro del anillo (pareja del monitor)
+        g, gap = (36, 8) if small else (32, 8)
+        x0, y0 = CX - g - gap / 2, CY - g - gap / 2 + 4
+        for i, (dx, dy) in enumerate(((0, 0), (1, 0), (0, 1), (1, 1))):
             fill = "url(#line)" if i < 3 else "#f0b429"
-            parts.append(f'<rect x="{x}" y="{y}" width="{g}" height="{g}" rx="8" fill="{fill}"/>')
-    parts.append(f'<circle cx="200" cy="64" r="{40 if small else 38}" fill="{HALO}"/>')
-    parts.append(f'<circle cx="200" cy="64" r="{28 if small else 25}" fill="{GREEN}"/>')
+            parts.append(f'<rect x="{x0 + dx * (g + gap)}" y="{y0 + dy * (g + gap)}" width="{g}" height="{g}" '
+                         f'rx="7" fill="{fill}"/>')
+    parts.append(f'<circle cx="{DOT[0]}" cy="{DOT[1]}" r="{38 if small else 36.8}" fill="{HALO}"/>')
+    parts.append(f'<circle cx="{DOT[0]}" cy="{DOT[1]}" r="{26 if small else 23.7}" fill="{GREEN}"/>')
     parts.append("</svg>")
     return "\n".join(parts)
 
