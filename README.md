@@ -14,6 +14,9 @@ Por eso sirve para cualquier línea de extrusión.
 | Función | Detalle |
 |---|---|
 | Lectura en vivo | Captura la pantalla del HMI y lee con OCR las regiones configuradas. Se puede usar el OCR integrado de Windows, plantillas enseñadas o Tesseract. |
+| Problemas de proceso | El operador clasifica cada paro desde la línea de tiempo del estado de la máquina (rango propuesto y ajustable, dividible en tramos) con causa, scrap y operador, y captura defectos de calidad. Catálogos de dos niveles en la receta; los paros planeados no cuentan contra el OEE. Aviso al reanudar la línea, Pareto por causa, categoría u operador, y CSV. El dashboard global analiza todas las líneas. |
+| Control PID | Ajusta un input del HMI (p. ej. velocidad del capstan) para llevar una medición (diámetro) al nominal de la receta. Escribe el valor o usa botones + / −, y verifica que el HMI lo aceptó. Modos simulación, asistido (el operador aplica la propuesta) y automático. El PID se ajusta a mano por receta o se aprende de los cambios del operador (modelo de primer orden con retardo, regla SIMC). Seguridad: desactivado al abrir, límites, cambio máximo por ajuste y por minuto, banda muerta, paro por alarma, línea detenida, operador usando el HMI, dato viejo o comportamiento anormal, y *Detener todo el control* (Ctrl+Shift+X). |
+| Cámaras (equipos sin HMI) | Para equipos antiguos o sin pantalla que se pueda capturar, una cámara USB o IP (RTSP / HTTP) mira el tablero. Lee **displays de 7 segmentos** (LED o LCD, con dígitos inclinados, punto decimal y signo), **luces y torres andon** por color (incluido *«Ámbar parpadeando»*), **agujas** de manómetros y carátulas (calibración con 3 clics: centro, mínimo y máximo), **barras de nivel** y, con OCR, cualquier texto. Admite rotación, corrección de perspectiva (4 clics sobre las esquinas) y exposición manual. Se combinan pantalla y cámaras en la misma línea, y todo lo leído funciona igual que lo del HMI: recetas, alarmas, tendencias, OEE, reportes y dashboard. Si la cámara se desconecta avisa una vez, conserva los últimos datos y se reconecta sola. *Receta → 📹 Cámaras*. |
 | Pestañas del HMI | Árbol libre de componente → pestaña → sub-pestaña. Una imagen ancla (forma y color) identifica cada pestaña, y sus variables se leen cuando está visible. |
 | Recorridos | Macros de uno o varios pasos grabadas en vivo, con clics verificados. Pueden leer cada pantalla y regresar. Se disparan cada X tiempo, si el HMI queda X tiempo fuera de una pantalla, si un selector cambia de estado o si un valor baja a cero. Opcionalmente muestran un aviso con cuenta regresiva: el operador puede posponer (vuelve a avisar tras X tiempo), y si lo ignora o acepta, se ejecuta. |
 | Variables con fórmula | Variables calculadas a partir de otras: `vel / rpm`, `{zona_1} - {zona_1_sp}`, `max(z1, z2, z3) - min(z1, z2, z3)`, `si(rpm > 0, vel / rpm, 0)`. Se tratan como una medición más: receta, tolerancias, tendencias, reportes. |
@@ -60,6 +63,13 @@ Cada línea puede publicar su estado en una **carpeta compartida de red** (p. ej
 | `trend/AAAA-MM-DD.jsonl` | Un renglón por minuto: media, mínimo, máximo y último valor de cada variable | Se agregan renglones |
 
 **Consumo de recursos:** la escritura corre en un hilo aparte; si la red está lenta o caída el monitoreo no se detiene y los eventos y tendencias esperan en memoria hasta que vuelva. `status.json` pesa unos 10 KB. El dashboard global solo vuelve a leer un `status.json` cuando cambia y lee los eventos de forma incremental: con 100 líneas cada ciclo tarda unos milisegundos. Una línea sin actualizar en más de 30 s aparece como «Sin comunicación»; al cerrar el programa queda como «Programa cerrado». Los eventos y tendencias se borran después de 30 días (configurable).
+
+### Servidor propio (nube o planta)
+
+Además de la carpeta compartida, o en su lugar, cada línea puede enviar sus datos a un servidor propio por HTTPS.
+Se configura en *Configuración → Dashboard global (exportación) → Servidor propio*: dirección y *Registrar esta
+línea…*. Los datos se guardan primero en disco y se envían en segundo plano, así que un corte de red no pierde
+nada. El servidor (API + PostgreSQL + HTTPS, en Docker) y la guía para montarlo están en [server/README.md](server/README.md).
 
 ## Uso
 
@@ -110,6 +120,16 @@ Configuración inicial en el HMI:
 8. **▶ Iniciar.**
 
 Los datos se guardan en `%LOCALAPPDATA%\ExtrusionMonitor`. Para usar el modo portátil, crea una carpeta `data` junto al `.exe`.
+
+### Cámaras: consejos de instalación
+
+- **Montaje:** la cámara debe quedar fija y lo más de frente posible. Si queda inclinada, usa *Corregir perspectiva*.
+- **Luz:** constante y sin reflejos sobre el vidrio del tablero.
+- **Displays LED:** con exposición manual se ven más nítidos. Con la automática se «queman».
+- **Resolución:** cada dígito debe medir al menos ~20 px de alto en la imagen.
+- **Luces:** enseña el estado apagado y el encendido (*Capturar estado actual como…*).
+- **Torres andon:** marca toda la torre con *+ Torre andon…* y se crea una luz por color.
+- **Modo demo:** incluye la cámara simulada «Cámara del tablero», con andon, display LED, LCD, manómetro y barra.
 
 ## Construir el .exe
 

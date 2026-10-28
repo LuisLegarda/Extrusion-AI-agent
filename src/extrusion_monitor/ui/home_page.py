@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 import time
-from typing import Callable, Optional
+from typing import Optional
 
 from PySide6.QtCore import QRectF, Qt, QTimer, Signal
 from PySide6.QtGui import QColor, QPainter, QPen
@@ -19,6 +19,7 @@ from ..engine import MonitorEngine, Snapshot
 from ..i18n import tr, translate_text
 from . import theme
 from .common import SeriesCache, level_color
+from .home_status import Donut, StatusBar, downtime_rows, fmt_hm, fmt_pct
 from .home_tiles import KpiTrendTile, KpiValueTile, make_var_tile
 from .kpi_dashboard import STATE_COLORS, Gauge, OeeSample, fmt_duration, shift_start
 
@@ -152,7 +153,8 @@ class BarList(QWidget):
 
 BUILTIN_TILES = {**{k: v[0] for k, v in KPIS.items()},
                  "machine": "Estado de la máquina", "alarms": "Alarmas y avisos activos",
-                 "cpk_bars": "Cpk por variable (las 6 más bajas)", "shift": "Estado del turno"}
+                 "cpk_bars": "Cpk por variable (las 6 más bajas)", "shift": "Estado del turno",
+                 "downtime": "Causas de paro del turno"}
 KPI_INFO = {  # clave -> (vista detallada, descripción)
     "oee": ("kpi", "Disponibilidad × Rendimiento × Calidad del turno en curso"),
     "availability": ("kpi", "Tiempo en marcha / tiempo planificado del turno"),
@@ -207,6 +209,9 @@ class HomePage(QWidget):
         self.btn_custom.clicked.connect(self.customize.emit)
         bar.addWidget(self.btn_custom)
         root.addLayout(bar)
+        self.status = StatusBar()  # tarjetas de estado compactas (se ocultan desde «Personalizar tablero»)
+        self.status.navigate.connect(self.navigate.emit)
+        root.addWidget(self.status)
         self.scroll = QScrollArea()
         self.scroll.setWidgetResizable(True)
         self.scroll.setFrameShape(QFrame.NoFrame)
@@ -224,7 +229,8 @@ class HomePage(QWidget):
         self.cards: dict[str, GaugeCard] = {}
         self.kpi_widgets: dict[str, list] = {}  # clave -> gauges, valores y gráficas de ese indicador
         self.var_tiles: list = []
-        self.lbl_state = self.lst_alarms = self.bars = self.strip = None
+        self.lbl_state = self.lst_alarms = self.bars = self.strip = self.donut = None
+        self.status.setVisible(home.status_bar)
         content = QWidget()
         content.setObjectName("content")
         grid = QGridLayout(content)
@@ -294,6 +300,11 @@ class HomePage(QWidget):
             self.lst_alarms.setStyleSheet("QListWidget { border: none; }")
             self.lst_alarms.itemDoubleClicked.connect(lambda _: self.navigate.emit("events"))
             lay.addWidget(self.lst_alarms, 1)
+        elif k == "downtime":
+            self.donut = Donut()
+            self.donut.setToolTip(tr("Minutos de paro por causa en el turno (doble clic: Problemas de proceso)"))
+            self.donut.mouseDoubleClickEvent = lambda _e: self.navigate.emit("problems")
+            lay.addWidget(self.donut, 1)
         elif k == "cpk_bars":
             self.bars = BarList(1.0, 1.33, 2.0)
             lay.addWidget(self.bars, 1)
@@ -350,6 +361,11 @@ class HomePage(QWidget):
             self._set("read", None, snap.error or "Sin variables visibles")
         self._stability(snap.ts)
         self._alarms(snap)
+        n_alarm = sum(f.level >= Level.ALARM for f in snap.findings)
+        n_warn = sum(f.level == Level.WARN for f in snap.findings)
+        self.status["alarms"].set(str(n_alarm), tr("{n} avisos", n=n_warn),
+                                  theme.c("critical") if n_alarm else
+                                  (theme.c("warning_text") if n_warn else theme.c("good_text")))
         for tile in self.var_tiles:
             tile.update_snapshot(snap)
 
@@ -397,13 +413,15 @@ class HomePage(QWidget):
                 self._set(k, None, "Configura el OEE (Configuración → KPI / OEE)")
             if self.lbl_state is not None:
                 self.lbl_state.setText(self._state_text(None))
+            self._status(None)
             return
         now = eng.clock()
         a = shift_start(now, o.shift_starts)
         rows = eng.historian.oee_samples(a, now)
         samples = [OeeSample(r[0], r[1], r[2], r[3], r[4], None if r[5] is None else bool(r[5]), r[6] or 0)
                    for r in rows]
-        res = compute(samples, a, now, o.microstop_s, o.length_factor)
+        res = compute(samples, a, now, o.microstop_s, o.length_factor,
+                      planned=eng.historian.planned_intervals(a, now))
         self.oee = res
 
         def pc(v):
@@ -424,8 +442,42 @@ class HomePage(QWidget):
                                      p="—" if res.normal_pct is None else f"{res.normal_pct:.0f} %"))
         if self.strip is not None:
             self.strip.set_data(res.intervals, a, now)
+        self._status(res)
+        if self.donut is not None:
+            rows, total = downtime_rows(eng.historian.problems(a, now, kind="downtime"), res.stop_s)
+            self.donut.set_data(rows, fmt_hm(total), tr("de paro"))
         if self.lbl_state is not None:
             self.lbl_state.setText(self._state_text(res))
+
+    def _status(self, res: Optional[OeeResult]) -> None:
+        """Tarjetas de estado: marcha o paro (desde cuándo), paros, calidad y OEE del turno."""
+        st = self.status
+        cur = res.intervals[-1] if res is not None and res.intervals else None
+        if cur is not None:
+            running = cur.state in ("running", "assumed", "slow")
+            st["state"].set(tr(STATE_LABELS[cur.state]), tr("desde hace {d}", d=fmt_duration(cur.duration)),
+                            STATE_COLORS[cur.state], icon="play" if running else "pause")
+        elif self.engine.running:
+            st["state"].set(tr("Monitoreando"), tr("sin datos de OEE"), theme.c("info"), icon="play")
+        else:
+            st["state"].set(tr("Detenido"), tr("monitoreo detenido"), theme.c("neutral"), icon="stop")
+        if res is None:
+            for k in ("stops", "quality", "oee"):
+                st[k].set("—", tr("configura el OEE"))
+            return
+        st["stops"].set(str(res.n_stops), tr("{d} detenido · {m} microparos", d=fmt_hm(res.stop_s),
+                                             m=res.n_microstops))
+        q = res.quality
+        st["quality"].set(fmt_pct(q), "", theme.c("good_text") if q is None or q >= 0.95 else
+                          (theme.c("warning_text") if q >= 0.85 else theme.c("critical")))
+        o = res.oee
+        st["oee"].set(fmt_pct(o), f"D {fmt_pct(res.availability)} · R {fmt_pct(res.performance)}",
+                      theme.c("accent") if o is None or o >= 0.65 else theme.c("warning_text"))
+
+    def set_pending(self, n: int) -> None:
+        """Paros sin causa (los cuenta la página de Problemas de proceso)."""
+        self.status["pending"].set(str(n), tr("toca para clasificarlos") if n else tr("todos clasificados"),
+                                   theme.c("warning_text") if n else theme.c("good_text"))
 
     def _state_text(self, res: Optional[OeeResult]) -> str:
         eng = self.engine

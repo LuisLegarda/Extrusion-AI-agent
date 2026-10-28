@@ -11,7 +11,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from ..i18n import translate_widget
+from ..i18n import tr, translate_widget
 from ..capture import crop, load_png
 from ..config import Click, TourDef, TourStep
 from ..navigation import TourAborted, TourRunner, click_rect
@@ -274,7 +274,7 @@ class TourTab(QWidget):
         self._loading = True
         self.cmb_state.clear()
         self.cmb_state.addItem("cualquier estado", None)
-        for st in (var.states if var else []):
+        for st in (var.state_names if var else []):
             self.cmb_state.addItem(st, st)
         self.cmb_state.setCurrentIndex(max(0, self.cmb_state.findData(cur)))
         self._loading = was
@@ -312,7 +312,8 @@ class TourTab(QWidget):
         self.lst.clear()
         if t is not None:
             for i, st in enumerate(t.steps, 1):
-                it = QListWidgetItem(f"{i}. → {cfg.page_label(st.page) or st.page}   ({len(st.clicks)} clics)")
+                it = QListWidgetItem(tr("{i}. → {p}   ({n} clics)", i=i, p=cfg.page_label(st.page) or st.page,
+                                        n=len(st.clicks)))
                 it.setData(Qt.UserRole, st.id)
                 self.lst.addItem(it)
             it = QListWidgetItem(self._return_text())
@@ -334,8 +335,8 @@ class TourTab(QWidget):
 
     def _return_text(self) -> str:
         t = self.tour
-        dest = self.dlg.config.page_label(t.return_page) if t.return_page else "(sin verificar)"
-        return f"⌂ Regreso {dest}   ({len(t.return_clicks)} clics)"
+        dest = self.dlg.config.page_label(t.return_page) if t.return_page else tr("(sin verificar)")
+        return tr("⌂ Regreso {d}   ({n} clics)", d=dest, n=len(t.return_clicks))
 
     def _current_key(self) -> Optional[str]:
         it = self.lst.currentItem()

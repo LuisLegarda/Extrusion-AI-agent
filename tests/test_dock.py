@@ -173,6 +173,7 @@ def test_thin_dock_switches_to_value_with_color(ctx):
     assert dock.height() == 40  # mide exactamente el grosor configurado (el largo depende del texto)
     assert all(isinstance(w, CompactTile) for w in dock.var_tiles + dock.kpi_widgets["oee"])
     snap = ctx.engine.step()
+    snap.statuses["diam"].level = Level.OK  # el simulador es aleatorio: la primera lectura puede salir de rango
     dock.update_snapshot(snap, force=True)
     diam, sel = dock.var_tiles
     assert "3.2" in diam.lbl.text() and theme.c("good") in diam.lbl.text()  # dentro de límites: verde

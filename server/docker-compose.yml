@@ -1,0 +1,64 @@
+# Servidor del monitor de extrusión: base de datos + API + HTTPS automático.
+#   1) cp .env.example .env   y edita los valores
+#   2) docker compose up -d
+#   3) docker compose exec api python -m extrusion_server.cli crear-clave "Administrador" --rol admin
+services:
+  db:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: extrusion
+      POSTGRES_USER: extrusion
+      POSTGRES_PASSWORD: ${DB_PASSWORD:?Falta DB_PASSWORD en .env}
+    volumes:
+      - db-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U extrusion -d extrusion"]
+      interval: 10s
+      retries: 10
+
+  api:
+    build: .
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      EXTRUSION_DATABASE_URL: postgresql+psycopg://extrusion:${DB_PASSWORD}@db:5432/extrusion
+      EXTRUSION_ENROLL_KEY: ${ENROLL_KEY:-}
+      EXTRUSION_RETENTION_DAYS: ${RETENTION_DAYS:-365}
+
+  # HTTPS con certificado gratuito y automático (Let's Encrypt). Requiere que el dominio apunte a este
+  # servidor y los puertos 80 y 443 abiertos. En una red interna sin dominio, usa SITE_ADDRESS=:80
+  # o un certificado interno (ver README).
+  caddy:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    depends_on: [api]
+    ports:
+      - "80:80"
+      - "443:443"
+    environment:
+      SITE_ADDRESS: ${SITE_ADDRESS:?Falta SITE_ADDRESS en .env}
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data
+      - caddy-config:/config
+
+  # Respaldo diario de la base de datos en ./respaldos (se conservan 14 días).
+  backup:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      PGPASSWORD: ${DB_PASSWORD}
+    volumes:
+      - ./respaldos:/respaldos
+    entrypoint: ["/bin/sh", "-c", "while true; do pg_dump -h db -U extrusion -Fc extrusion > /respaldos/extrusion-$$(date +%Y%m%d-%H%M).dump && find /respaldos -name '*.dump' -mtime +14 -delete; sleep 86400; done"]
+
+volumes:
+  db-data:
+  caddy-data:
+  caddy-config:

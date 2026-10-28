@@ -1,0 +1,17 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" width="256" height="256">
+<defs>
+  <linearGradient id="ring" x1="0.12" y1="0.08" x2="0.88" y2="0.92">
+    <stop offset="0" stop-color="#4fcff0"/><stop offset="0.5" stop-color="#2f97dc"/>
+    <stop offset="0.8" stop-color="#1663c8"/><stop offset="1" stop-color="#145dc4"/></linearGradient>
+  <linearGradient id="line" x1="0" y1="1" x2="0.55" y2="0">
+    <stop offset="0" stop-color="#32cdb2"/><stop offset="1" stop-color="#3ef2f6"/></linearGradient>
+</defs>
+<rect width="256" height="256" rx="34" fill="#061c2f"/>
+<circle cx="126.8" cy="128.4" r="92.75" fill="none" stroke="url(#ring)" stroke-width="28.5"/>
+<rect x="90.8" y="96.4" width="32" height="32" rx="7" fill="url(#line)"/>
+<rect x="130.8" y="96.4" width="32" height="32" rx="7" fill="url(#line)"/>
+<rect x="90.8" y="136.4" width="32" height="32" rx="7" fill="url(#line)"/>
+<rect x="130.8" y="136.4" width="32" height="32" rx="7" fill="#f0b429"/>
+<circle cx="194.4" cy="64.0" r="36.8" fill="#03202f"/>
+<circle cx="194.4" cy="64.0" r="23.7" fill="#36e86e"/>
+</svg>

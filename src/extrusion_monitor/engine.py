@@ -10,6 +10,8 @@ from typing import Callable, Optional
 from .acquisition import Acquirer
 from .analysis.rules import Event, Finding, Level, RuleEngine, VarStatus
 from .analysis.trends import TrendTracker
+from .camera import CameraManager
+from .control import ControlManager, ControlWriter, ModelStore
 from .capture import FrameSource
 from .config import AppConfig, Workspace
 from .ocr import OcrEngine
@@ -45,6 +47,7 @@ class Snapshot:
     tour: Optional[TourResult] = None  # recorrido ejecutado en este ciclo
     # Recorridos anunciados con cuenta regresiva: id -> (hora límite, motivo)
     prompts: dict = field(default_factory=dict)
+    control: dict = field(default_factory=dict)  # estado de cada lazo de control (ControlManager.snapshot)
 
 
 @dataclass
@@ -95,6 +98,9 @@ class MonitorEngine:
         self.reports = ReportManager(workspace, clock)
         self._report_events: list[Event] = []
         self._manual_reports: list[str] = []
+        self.cameras = CameraManager(clock=clock)
+        self.control = ControlManager(ModelStore(workspace.home / "control_models.json"), clock)
+        self._cam_problems: dict[str, Optional[str]] = {}
         self._build()
 
     def _build(self) -> None:
@@ -121,6 +127,9 @@ class MonitorEngine:
         self.tour_runner = TourRunner(self.config, self.workspace, self.source, self.clicker, self.pages,
                                       clock=self.clock, sleep=self.sleep)
         self.scheduler.reconfigure(self.config)
+        # Solo se abren las cámaras que tienen variables (una cámara sin uso no ocupa el dispositivo).
+        used = {v.source for v in self.config.variables if v.on_camera}
+        self.cameras.configure([c for c in self.config.cameras if c.id in used], camera_probes(self.config))
 
     def _selector_images(self) -> dict:
         out = {}
@@ -278,6 +287,70 @@ class MonitorEngine:
                                               "Pantalla disponible de nuevo: se reanuda la lectura"))
         self._screen_problem = problem
 
+    def _run_control(self, now: float, readings, statuses) -> list[Event]:
+        """Lazos de control: calcula, aplica las compuertas de seguridad y escribe en el HMI si toca."""
+        if not self.config.controls:
+            return []
+        cfg = self.config
+        o = cfg.oee
+        sp = readings.get(o.speed_var) if o.speed_var else None
+        line_stopped = bool(sp is not None and sp.value is not None and sp.value <= o.stop_threshold)
+
+        def behavior_ok(model_id: str):
+            h = self.behaviors.history.get(model_id)
+            if not h:
+                return None
+            ts, d2, thr = h[-1]
+            return None if now - ts > 120 else d2 <= thr
+
+        try:
+            idle = self.clicker.idle_seconds()
+        except Exception:
+            idle = 0.0
+        with self._data_lock:
+            findings = self.rules.active_findings()
+        events, writes = self.control.evaluate(cfg, now, readings, statuses, findings, self.state.recipe,
+                                               self.recipe, line_stopped, idle, behavior_ok)
+        for req in writes:
+            lp = cfg.control(req.loop_id)
+            if lp is None:
+                continue
+            if self._screen_problem is not None or self.tour_paused:
+                why = "pantalla no disponible" if self._screen_problem else "clics automáticos en pausa"
+                self.control.state(lp.id).detail = why
+                continue
+            in_var = cfg.variable(lp.input_var or "")
+            rd = readings.get(lp.input_var)
+            dec = in_var.decimals if in_var and in_var.decimals is not None else (rd.decimals if rd else 2) or 0
+            sep = "," if in_var is not None and in_var.decimal_separator == "," else "."
+            writer = ControlWriter(self.tour_runner, lambda f: self.acquirer.read(f, self.clock())[1],
+                                   clock=self.clock, sleep=self.sleep)
+            ok, msg = writer.write(cfg, lp, req.u_to, req.u_from, dec, sep)
+            self.control.wrote(lp, req, ok, msg, self.clock(), events)
+        return events
+
+    def _camera_events(self, cams) -> None:
+        """Registra una sola vez cuándo una cámara se queda sin imagen y cuándo vuelve."""
+        for cid, view in (cams or {}).items():
+            problem = None if view.ok else (view.error or "sin imagen")
+            if problem == "conectando…":
+                continue
+            old = self._cam_problems.get(cid)
+            if (problem is None) == (old is None):
+                continue
+            cam = self.config.camera(cid)
+            name = cam.name if cam else cid
+            now = self.clock()
+            if problem is not None:
+                log.warning("Cámara %s sin imagen: %s", cid, problem)
+                self._pending_events.append(Event(now, "camera", Level.WARN, "CÁMARA", "",
+                                                  f"Cámara «{name}» sin imagen: {problem}. "
+                                                  "Se conservan los últimos datos."))
+            elif cid in self._cam_problems:
+                self._pending_events.append(Event(now, "camera", Level.INFO, "CÁMARA", "",
+                                                  f"Cámara «{name}» con imagen de nuevo: se reanuda la lectura"))
+            self._cam_problems[cid] = problem
+
     def _run_job(self, job: TourJob, pages: set[str]) -> Optional[TourResult]:
         tour = self.config.get_tour(job.tour_id)
         if tour is None or not tour.steps:
@@ -320,13 +393,27 @@ class MonitorEngine:
                 if job is not None:
                     tour_result = self._run_job(job, pages)
                 if tour_result is not None and not tour_result.skipped:
-                    readings = self.acquirer.readings
                     now = self.clock()
+                    if self.config.cameras:  # el recorrido solo cambia la pantalla: las cámaras se leen igual
+                        cams = self.cameras.views()
+                        self.acquirer.read(None, now, cams)
+                        self._camera_events(cams)
+                    readings = self.acquirer.readings
                 else:
-                    frame = self._check_screen(self.source.grab())
-                    pages, readings = self.acquirer.read(frame, now)
-                    if pages and any(p.anchor is not None for p in self.config.pages if p.id in pages):
+                    cams = self.cameras.views() if self.config.cameras else None
+                    frame, screen_exc = None, None
+                    if self.config.needs_screen:  # con solo cámaras no se captura la pantalla
+                        try:
+                            frame = self._check_screen(self.source.grab())
+                        except ScreenUnavailable as exc:
+                            screen_exc = exc  # las cámaras se siguen leyendo
+                    pages, readings = self.acquirer.read(frame, now, cams)
+                    self._camera_events(cams)
+                    if frame is not None and pages and \
+                            any(p.anchor is not None for p in self.config.pages if p.id in pages):
                         self._good_size = (frame.shape[1], frame.shape[0])
+                    if screen_exc is not None:
+                        raise screen_exc
                 self._last_pages = set(pages)
                 self._screen_state(None)
             except ScreenUnavailable as exc:
@@ -338,9 +425,10 @@ class MonitorEngine:
             self._auto_select_recipe(readings)
             with self._data_lock:
                 extra = self.behaviors.evaluate(
-                    now, self.rules.fresh_values(now, readings), self.state.recipe,
+                    now, self.rules.fresh_values(now, readings, strict=True), self.state.recipe,
                     lambda vid: self.config.var_label(self.config.variable(vid)) if self.config.variable(vid) else vid)
                 statuses, events = self.rules.evaluate(now, readings, self.recipe, self.trends, extra)
+            events = events + self._run_control(now, readings, statuses)
             report_events = []
             while self._report_events:
                 report_events.append(self._report_events.pop(0))
@@ -353,7 +441,7 @@ class MonitorEngine:
                 ts=now, cycle_ms=(time.perf_counter() - t0) * 1000, pages=pages, statuses=statuses,
                 findings=findings, events=events, recipe=self.state.recipe, ocr_engine=self.ocr.name,
                 error=error, overall=overall, read_ok=sum(r.ok for r in visible), read_total=len(visible),
-                tour=tour_result, prompts=self.pending_prompts())
+                tour=tour_result, prompts=self.pending_prompts(), control=self.control.snapshot(self.config))
             if self._screen_problem is None:
                 # Sin pantalla no hay observación: queda como hueco (productivo si al volver todo está bien).
                 self._record_oee(snap)
@@ -513,14 +601,17 @@ class MonitorEngine:
         if self.running:
             return
         self._stop.clear()
+        self.cameras.start()
         self._thread = threading.Thread(target=self._run, name="monitor", daemon=True)
         self._thread.start()
 
     def stop(self, timeout: float = 5.0) -> None:
+        self.control.stop_all()  # al detener el monitoreo (o abrir la configuración) el control se desactiva
         self._stop.set()
         if self._thread:
             self._thread.join(timeout)
         self._thread = None
+        self.cameras.stop()
 
     @property
     def running(self) -> bool:
@@ -543,6 +634,15 @@ HEARTBEAT_S = 20.0
 JOB_RETRY_S = 600.0  # un recorrido pospuesto (operador activo, otra pantalla) se reintenta hasta 10 min  # un valor sin cambios se vuelve a guardar como máximo cada 20 s
 
 QUALITY_RULES = {"TOLERANCIA", "SELECTOR"}
+
+
+def camera_probes(config: AppConfig) -> dict:
+    """Luces por color de cada cámara: se miden en cada cuadro para detectar parpadeos."""
+    out: dict = {}
+    for v in config.variables:
+        if v.on_camera and v.kind == "selector" and v.state_method == "color":
+            out.setdefault(v.source, []).append((v.id, v.region))
+    return out
 
 
 def oee_sample(config: AppConfig, snap: Snapshot, recipe: Optional[Recipe],

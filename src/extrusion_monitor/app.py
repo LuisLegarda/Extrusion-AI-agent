@@ -2,7 +2,6 @@
 from __future__ import annotations
 
 import argparse
-import logging
 import sys
 from pathlib import Path
 
@@ -29,21 +28,34 @@ def main(argv: list[str] | None = None) -> int:
     home = args.home
     if args.demo and home is None:
         home = default_home() / "demo"
+    from .logsetup import setup_logging, show_startup_error
     home_dir = Path(home) if home else default_home()
-    home_dir.mkdir(parents=True, exist_ok=True)
-    logging.basicConfig(level=logging.INFO, filename=str(home_dir / "app.log"),
-                        format="%(asctime)s %(levelname)s %(name)s: %(message)s")
+    log_path = setup_logging(home_dir, "app")
 
     app = QApplication(sys.argv[:1])
     app.setApplicationName("Monitor de extrusión")
-    ctx = build(home_dir, demo=args.demo)
-    apply_ui_prefs(ctx.workspace.load_state().get("ui", {}))  # idioma y tema guardados
-    translator = Translator()
-    translator.install(app)
-    if ctx.exporter is not None:
-        ctx.exporter.start()  # no hace nada hasta que se configure la carpeta compartida
-    win = MainWindow(ctx)
+    from .ui.theme import app_icon
+    app.setWindowIcon(app_icon("monitor"))
+    try:
+        ctx = build(home_dir, demo=args.demo)
+        apply_ui_prefs(ctx.workspace.load_state().get("ui", {}))  # idioma y tema guardados
+        translator = Translator()
+        translator.install(app)
+        if ctx.exporter is not None:
+            ctx.exporter.start()  # no hace nada hasta que se configure la carpeta compartida
+        win = MainWindow(ctx)
+    except Exception as exc:  # configuración dañada, carpeta sin permisos…: que se vea por qué no abre
+        show_startup_error(exc, log_path)
+        return 1
     win.show()
+    if ctx.recovered:
+        from PySide6.QtWidgets import QMessageBox
+
+        from .i18n import tr
+        QMessageBox.warning(win, tr("Configuración recuperada"),
+                            tr("La configuración guardada estaba dañada (por ejemplo, por un apagón al guardar) y se "
+                               "recuperó del respaldo «{b}». La copia dañada quedó junto a ella como "
+                               "«config.dañado-….json». Revisa los últimos cambios.", b=ctx.recovered))
     if args.autostart or args.demo:
         start_timer_autorun(win)
     return app.exec()

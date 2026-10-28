@@ -7,9 +7,10 @@ from typing import Optional
 import numpy as np
 import pyqtgraph as pg
 from PySide6.QtCore import Qt
+from PySide6.QtCore import Signal
 from PySide6.QtWidgets import (
-    QComboBox, QHBoxLayout, QLabel, QListWidget, QListWidgetItem, QSplitter, QTableWidget, QVBoxLayout,
-    QWidget,
+    QComboBox, QFrame, QHBoxLayout, QLabel, QListWidget, QListWidgetItem, QSplitter, QTableWidget,
+    QVBoxLayout, QWidget,
 )
 
 from ..analysis.statistics import align, capability, correlation, linear_fit, xbar_chart
@@ -47,24 +48,123 @@ def _hline(plot, value, color, style=Qt.SolidLine, width=1.5, label: str = ""):
     return ln
 
 
+MAX_SPC = 4
+
+
 class StatsPanel(QWidget):
-    """Histograma con límites y curva normal, índices de capacidad y carta X̄."""
+    """SPC de varias variables (como Tendencias): lista a la izquierda y una tarjeta por variable marcada."""
+
+    selectionChanged = Signal(list)
 
     def __init__(self, engine: MonitorEngine):
         super().__init__()
         self.engine = engine
+        self.selected: list[str] = []
+        lay = QHBoxLayout(self)
+        split = QSplitter(Qt.Horizontal)
+        left = QWidget()
+        ll = QVBoxLayout(left)
+        ll.setContentsMargins(0, 0, 0, 0)
+        ll.addWidget(QLabel(f"<b>{tr('Variables para SPC')}</b> {tr('(máx. {n})', n=MAX_SPC)}"))
+        self.lst = QListWidget()
+        self.lst.setMaximumWidth(280)
+        self.lst.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        self.lst.setTextElideMode(Qt.ElideRight)
+        self.lst.itemChanged.connect(self._toggled)
+        ll.addWidget(self.lst, 1)
+        split.addWidget(left)
+        from .resizable import ResizableStack
+        right = QWidget()
+        rl = QVBoxLayout(right)
+        rl.setContentsMargins(0, 0, 0, 0)
+        self.placeholder = QLabel(tr("Marca una variable para ver su distribución, capacidad (Cp, Cpk, Pp, Ppk) "
+                                     "y carta de control."))
+        self.placeholder.setAlignment(Qt.AlignCenter)
+        rl.addWidget(self.placeholder)
+        self.area = ResizableStack(min_h=260)  # alto de cada tarjeta ajustable con el ratón
+        rl.addWidget(self.area, 1)
+        split.addWidget(right)
+        split.setSizes([240, 1100])
+        lay.addWidget(split)
+        self.cards: dict[str, SpcCard] = {}
+
+    @property
+    def lbl(self) -> QLabel:
+        """Resumen de la primera tarjeta (compatibilidad)."""
+        return next(iter(self.cards.values())).lbl if self.cards else self.placeholder
+
+    def set_variables(self, config, selected: Optional[list[str]] = None) -> None:
+        self.config = config
+        if selected is not None:
+            self.selected = list(selected)
+        ids = {v.id for v in config.variables if v.measured}
+        self.selected = [v for v in self.selected if v in ids][:MAX_SPC]
+        if not self.selected:
+            self.selected = [v.id for v in config.variables if v.measured and v.trend][:1]
+        self.lst.blockSignals(True)
+        self.lst.clear()
+        for v in config.variables:
+            if v.measured:
+                it = QListWidgetItem(config.var_label(v) + (f" [{v.unit}]" if v.unit else ""))
+                it.setData(Qt.UserRole, v.id)
+                it.setFlags(it.flags() | Qt.ItemIsUserCheckable)
+                it.setCheckState(Qt.Checked if v.id in self.selected else Qt.Unchecked)
+                self.lst.addItem(it)
+        self.lst.blockSignals(False)
+        self._sync_cards()
+
+    def _toggled(self, item) -> None:
+        vid, on = item.data(Qt.UserRole), item.checkState() == Qt.Checked
+        if on and vid not in self.selected:
+            self.selected.append(vid)
+            if len(self.selected) > MAX_SPC:
+                old = self.selected.pop(0)
+                self.lst.blockSignals(True)
+                for i in range(self.lst.count()):
+                    if self.lst.item(i).data(Qt.UserRole) == old:
+                        self.lst.item(i).setCheckState(Qt.Unchecked)
+                self.lst.blockSignals(False)
+        elif not on and vid in self.selected:
+            self.selected.remove(vid)
+        self._sync_cards()
+        self.selectionChanged.emit(list(self.selected))
+        self.refresh(self.engine.last)
+
+    def _sync_cards(self) -> None:
+        for vid in [v for v in self.cards if v not in self.selected]:
+            self.area.remove(self.cards.pop(vid))
+        for vid in self.selected:
+            if vid not in self.cards:
+                v = self.config.variable(vid)
+                card = SpcCard(self.engine, vid, self.config.var_label(v) + (f" [{v.unit}]" if v.unit else ""))
+                self.cards[vid] = card
+        for i, vid in enumerate(self.selected):  # en el orden de la lista
+            self.area.insert(i, self.cards[vid])
+        self.placeholder.setVisible(not self.cards)
+        self.area.setVisible(bool(self.cards))
+
+    def refresh(self, snap: Optional[Snapshot]) -> None:
+        for card in self.cards.values():
+            card.refresh(snap)
+
+
+class SpcCard(QFrame):
+    """Histograma con límites y curva normal, índices de capacidad y carta X̄ de una variable."""
+
+    def __init__(self, engine: MonitorEngine, vid: str, title: str):
+        super().__init__()
+        self.engine = engine
+        self.vid = vid
+        self.setFrameShape(QFrame.StyledPanel)
+        self.setMinimumHeight(240)
         lay = QVBoxLayout(self)
-        row = QHBoxLayout()
-        row.addWidget(QLabel("Variable:"))
-        self.cmb = QComboBox()
-        self.cmb.currentIndexChanged.connect(lambda _: self.refresh(self.engine.last))
-        row.addWidget(self.cmb, 1)
-        lay.addLayout(row)
+        t = QLabel(f"<b style='font-size:14px'>{title}</b>")
+        lay.addWidget(t)
         self.lbl = QLabel()
         self.lbl.setWordWrap(True)
         self.lbl.setTextFormat(Qt.RichText)
         lay.addWidget(self.lbl)
-        split = QSplitter(Qt.Vertical)
+        split = QSplitter(Qt.Horizontal)
         self.hist = pg.PlotWidget(title=tr("Distribución (ventana de tendencia)"))
         self.hist.showGrid(x=True, y=True, alpha=0.2)
         self.ctrl = pg.PlotWidget(title=tr("Carta de control X̄ (medias por subgrupo)"), axisItems=_time_axis())
@@ -73,18 +173,8 @@ class StatsPanel(QWidget):
         split.addWidget(self.ctrl)
         lay.addWidget(split, 1)
 
-    def set_variables(self, config) -> None:
-        cur = self.cmb.currentData()
-        self.cmb.blockSignals(True)
-        self.cmb.clear()
-        for v in config.variables:
-            if v.measured:
-                self.cmb.addItem(config.var_label(v) + (f" [{v.unit}]" if v.unit else ""), v.id)
-        self.cmb.setCurrentIndex(max(0, self.cmb.findData(cur)))
-        self.cmb.blockSignals(False)
-
     def refresh(self, snap: Optional[Snapshot]) -> None:
-        vid = self.cmb.currentData()
+        vid = self.vid
         self.hist.clear()
         self.ctrl.clear()
         if not vid or snap is None:
@@ -166,6 +256,8 @@ class StatsPanel(QWidget):
 class CorrelationPanel(QWidget):
     """Matriz de correlación en la ventana de tendencia y dispersión entre dos variables."""
 
+    changed = Signal()  # variables o ejes cambiados por el usuario (para guardarlos)
+
     def __init__(self, engine: MonitorEngine):
         super().__init__()
         self.engine = engine
@@ -173,7 +265,7 @@ class CorrelationPanel(QWidget):
         left = QVBoxLayout()
         left.addWidget(QLabel("Variables a comparar"))
         self.lst = QListWidget()
-        self.lst.itemChanged.connect(lambda _: self.refresh(self.engine.last))
+        self.lst.itemChanged.connect(lambda _: (self.refresh(self.engine.last), self.changed.emit()))
         left.addWidget(self.lst)
         lay.addLayout(left, 1)
         right = QVBoxLayout()
@@ -190,6 +282,7 @@ class CorrelationPanel(QWidget):
         row.addWidget(self.cmb_y, 1)
         for c in (self.cmb_x, self.cmb_y):
             c.currentIndexChanged.connect(lambda _: self.refresh(self.engine.last))
+            c.activated.connect(lambda _: self.changed.emit())
         right.addLayout(row)
         self.lbl = QLabel()
         right.addWidget(self.lbl)
@@ -198,7 +291,10 @@ class CorrelationPanel(QWidget):
         right.addWidget(self.scatter, 1)
         lay.addLayout(right, 3)
 
-    def set_variables(self, config, checked: list[str]) -> None:
+    def selected_ids(self) -> list[str]:
+        return self._checked()
+
+    def set_variables(self, config, checked: list[str], x: Optional[str] = None, y: Optional[str] = None) -> None:
         self.config = config
         self.lst.blockSignals(True)
         self.lst.clear()
@@ -211,6 +307,11 @@ class CorrelationPanel(QWidget):
                 self.lst.addItem(it)
         self.lst.blockSignals(False)
         self._fill_combos()
+        for c, want in ((self.cmb_x, x), (self.cmb_y, y)):
+            if want and c.findData(want) >= 0:
+                c.blockSignals(True)
+                c.setCurrentIndex(c.findData(want))
+                c.blockSignals(False)
 
     def _checked(self) -> list[str]:
         return [self.lst.item(i).data(Qt.UserRole) for i in range(self.lst.count())

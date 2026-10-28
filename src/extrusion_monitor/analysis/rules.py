@@ -142,13 +142,24 @@ class RuleEngine:
             return max(g.stale_after_s, self.config.tour_stale_s())
         return g.stale_after_s
 
-    def fresh_values(self, now: float, readings: dict[str, Reading]) -> dict[str, float]:
-        """Valores numéricos con dato vigente (para el modelo de comportamiento)."""
+    def fresh_values(self, now: float, readings: dict[str, Reading], strict: bool = False) -> dict[str, float]:
+        """Valores numéricos con dato vigente (para el modelo de comportamiento).
+
+        `strict`: solo lecturas recientes (unos pocos ciclos). Así una variable que dejó de leerse no se mezcla,
+        con su último valor, con los valores nuevos de las demás (eso daba picos falsos de inestabilidad). Las
+        variables que se leen en recorridos conservan su vigencia normal.
+        """
+        g = self.config.general
+        recent = max(3 * g.sample_interval_s, 10.0)
+        toured = self.config.toured_pages()
         out = {}
         for var in self.config.variables:
             rd = readings.get(var.id)
             if var.numeric and rd and rd.value is not None and rd.ts is not None:
-                if now - rd.ts <= self.stale_limit(var):
+                limit = self.stale_limit(var)
+                if strict and var.page not in toured:
+                    limit = min(limit, recent)
+                if now - rd.ts <= limit:
                     out[var.id] = rd.value
         return out
 

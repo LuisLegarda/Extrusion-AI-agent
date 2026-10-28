@@ -54,6 +54,71 @@ class Page(BaseModel):
 
 
 VariableKind = Literal["actual", "setpoint", "text", "selector", "formula"]
+SCREEN = "screen"  # fuente de las variables leídas de la pantalla del HMI (si no, id de una cámara)
+ReaderKind = Literal["ocr", "sevenseg", "gauge", "bar"]
+BLINK_SUFFIX = " parpadeando"
+
+
+class CameraSettings(BaseModel):
+    """Cámara (USB o IP) que mira un tablero, display o indicador de un equipo sin HMI legible."""
+
+    id: str
+    name: str = "Cámara"
+    # Índice de la cámara USB ("0", "1"…), URL (rtsp://…, http://…/video) o "demo" (tablero simulado).
+    device: str = "0"
+    width: Optional[int] = Field(None, ge=160, le=7680)
+    height: Optional[int] = Field(None, ge=120, le=4320)
+    rotate: Literal[0, 90, 180, 270] = 0
+    flip: Literal["none", "h", "v"] = "none"  # espejo (cámara frente a un espejo o montada al revés)
+    # Controlador en Windows para cámaras USB: DirectShow suele ser el más compatible.
+    backend: Literal["auto", "dshow", "msmf"] = "auto"
+    # Corrección de perspectiva: 4 esquinas [x, y] (sup. izq., sup. der., inf. der., inf. izq.) de la imagen original.
+    warp: Optional[list[list[float]]] = None
+    # Exposición manual (los LED y displays brillantes se saturan con la automática). None = automática.
+    exposure: Optional[float] = None
+    fps: float = Field(10.0, ge=1, le=30)  # cuadros que se analizan por segundo (luces y parpadeo)
+    # Enfoque fijo: el autoenfoque «busca» con los reflejos del vidrio del tablero. None = automático.
+    focus: Optional[float] = None
+    brightness: Optional[float] = None  # None = el de la cámara
+
+
+class SevenSegOptions(BaseModel):
+    """Display de 7 segmentos (LED o LCD)."""
+
+    digits: Optional[int] = Field(None, ge=1, le=12)  # None = automático
+    # «light»: segmentos que se encienden (LED); «dark»: segmentos oscuros sobre fondo claro (LCD).
+    polarity: Literal["auto", "light", "dark"] = "auto"
+    slant: Optional[float] = Field(None, ge=-30, le=30)  # inclinación de los dígitos en grados; None = automática
+
+
+class GaugeOptions(BaseModel):
+    """Manómetro o indicador de aguja: centro y marcas de mínimo y máximo, relativos a la región (0..1)."""
+
+    cx: float = 0.5
+    cy: float = 0.5
+    radius: float = Field(0.45, gt=0, le=2)  # fracción del lado menor de la región
+    angle_min: float = 135.0  # grados en la imagen (0 = derecha, 90 = abajo); la escala avanza en sentido horario
+    angle_max: float = 45.0
+    value_min: float = 0.0
+    value_max: float = 100.0
+    needle: Literal["auto", "dark", "light"] = "auto"
+    calibrated: bool = False
+
+
+class BarOptions(BaseModel):
+    """Barra de nivel o bargraph de LED: qué fracción está encendida."""
+
+    direction: Literal["up", "down", "right", "left"] = "up"
+    value_min: float = 0.0
+    value_max: float = 100.0
+    polarity: Literal["auto", "light", "dark"] = "auto"
+
+
+class ColorState(BaseModel):
+    """Estado de una luz o andon reconocido por su color (Lab de la parte más brillante)."""
+
+    name: str
+    lab: list[float] = Field(default_factory=lambda: [0.0, 128.0, 128.0])
 
 
 class Variable(BaseModel):
@@ -80,6 +145,18 @@ class Variable(BaseModel):
     # Selector: estados reconocidos por imagen (p. ej. «ON», «OFF»); las imágenes se guardan aparte.
     states: list[str] = Field(default_factory=list)
     state_threshold: float = Field(0.8, ge=0.3, le=1.0)
+    # Selector por color (luz, LED, torre andon): estados con su color y detección de parpadeo.
+    state_method: Literal["image", "color"] = "image"
+    color_states: list[ColorState] = Field(default_factory=list)
+    blink: bool = False
+    blink_window_s: float = Field(3.0, ge=1, le=30)
+
+    # Origen de la imagen y método de lectura de los valores numéricos.
+    source: str = SCREEN
+    reader: ReaderKind = "ocr"
+    seg: SevenSegOptions = Field(default_factory=SevenSegOptions)
+    gauge: GaugeOptions = Field(default_factory=GaugeOptions)
+    bar: BarOptions = Field(default_factory=BarOptions)
 
     # Fórmula: variable calculada a partir de otras (p. ej. «vel / rpm»).
     formula: str = ""
@@ -95,8 +172,25 @@ class Variable(BaseModel):
 
     @property
     def screen(self) -> bool:
-        """Se lee de la pantalla (las fórmulas no)."""
+        """Se lee de una imagen: pantalla del HMI o cámara (las fórmulas no)."""
         return self.kind != "formula"
+
+    @property
+    def on_camera(self) -> bool:
+        return self.kind != "formula" and self.source != SCREEN
+
+    @property
+    def state_names(self) -> list[str]:
+        """Estados posibles (con «… parpadeando» para las luces con detección de parpadeo)."""
+        if self.kind != "selector":
+            return []
+        if self.state_method != "color":
+            return list(self.states)
+        names = [c.name for c in self.color_states]
+        if self.blink and len(self.color_states) > 1:
+            off = min(self.color_states, key=lambda c: c.lab[0]).name
+            names += [n + BLINK_SUFFIX for n in names if n != off]
+        return names
 
 
 OcrEngineName = Literal["windows", "template", "tesseract"]
@@ -266,10 +360,10 @@ class ReportDef(BaseModel):
 
 # Mosaicos del tablero de Inicio: indicadores del sistema o una variable con el gráfico elegido.
 HomeTileKind = Literal["oee", "availability", "performance", "quality", "i5", "stability", "cpk", "conform", "read",
-                       "machine", "alarms", "cpk_bars", "shift", "var"]
+                       "machine", "alarms", "cpk_bars", "shift", "downtime", "var"]
 KPI_KINDS: tuple[str, ...] = ("oee", "availability", "performance", "quality", "i5", "stability", "cpk", "conform",
                               "read")  # indicadores con valor numérico: gauge, valor o gráfica de tiempo
-SINGLE_KINDS: tuple[str, ...] = ("machine", "alarms", "cpk_bars", "shift")  # una sola vez en el tablero
+SINGLE_KINDS: tuple[str, ...] = ("machine", "alarms", "cpk_bars", "shift", "downtime")  # una sola vez en el tablero
 KpiChart = Literal["gauge", "value", "trend"]
 HomeChart = Literal["value", "gauge", "bar", "trend", "histogram"]
 NUMERIC_CHARTS: tuple[str, ...] = ("value", "gauge", "bar", "trend", "histogram")
@@ -296,9 +390,10 @@ def default_home_tiles() -> list[HomeTile]:
     kpis = ["oee", "i5", "stability", "cpk", "conform", "read"]
     tiles = [HomeTile(id=k, kind=k) for k in kpis]
     tiles += [HomeTile(id="machine", kind="machine", width=2, height=2),
+              HomeTile(id="downtime", kind="downtime", width=2, height=2),
               HomeTile(id="alarms", kind="alarms", width=2, height=2),
-              HomeTile(id="cpk_bars", kind="cpk_bars", width=2, height=2),
-              HomeTile(id="shift", kind="shift", width=6)]
+              HomeTile(id="shift", kind="shift", width=6),
+              HomeTile(id="cpk_bars", kind="cpk_bars", width=6, height=1)]
     return tiles
 
 
@@ -307,6 +402,7 @@ class HomeSettings(BaseModel):
 
     columns: int = Field(6, ge=1, le=12)
     tiles: list[HomeTile] = Field(default_factory=default_home_tiles)
+    status_bar: bool = True  # tarjetas de estado (marcha, paros, alarmas, calidad, OEE) arriba del tablero
 
 
 def default_dock_tiles() -> list[HomeTile]:
@@ -343,6 +439,118 @@ class DockSettings(BaseModel):
         return self.thickness < DOCK_CHART_MIN
 
 
+class ProblemReason(BaseModel):
+    id: str
+    name: str
+
+
+class ProblemCategory(BaseModel):
+    """Categoría del catálogo (primer nivel) con sus causas o defectos (segundo nivel)."""
+
+    id: str
+    name: str
+    planned: bool = False  # paro planeado (cambio, comida…): no cuenta contra la Disponibilidad del OEE
+    reasons: list[ProblemReason] = Field(default_factory=list)
+
+
+def _cat(cid: str, name: str, reasons: list[str], planned: bool = False) -> ProblemCategory:
+    return ProblemCategory(id=cid, name=name, planned=planned,
+                           reasons=[ProblemReason(id=f"{cid}_{i}", name=r) for i, r in enumerate(reasons, 1)])
+
+
+def default_downtime_catalog() -> list[ProblemCategory]:
+    return [_cat("mec", "Mecánico", ["Rotura de material", "Atasco", "Falla de husillo", "Falla de jalador"]),
+            _cat("ele", "Eléctrico / control", ["Falla de calefacción", "Falla de motor", "Falla de sensor"]),
+            _cat("mat", "Material", ["Falta de compuesto", "Material húmedo", "Cambio de carrete"]),
+            _cat("ajuste", "Ajuste de proceso", ["Arranque / estabilización", "Ajuste de dimensiones"]),
+            _cat("cambio", "Cambio de producto", ["Cambio de receta", "Cambio de dado / punta"], planned=True),
+            _cat("prog", "Paro programado", ["Comida / descanso", "Mantenimiento programado", "Junta / capacitación"],
+                 planned=True)]
+
+
+def default_defect_catalog() -> list[ProblemCategory]:
+    return [_cat("dim", "Dimensional", ["Diámetro fuera de tolerancia", "Excentricidad", "Espesor de aislamiento"]),
+            _cat("sup", "Superficie", ["Burbujas / porosidad", "Grumos", "Rayas", "Quemado"]),
+            _cat("ele_d", "Eléctrico", ["Falla de chispa (spark)", "Capacitancia fuera"]),
+            _cat("otros", "Otros", ["Color incorrecto", "Marcado / impresión"])]
+
+
+class ProblemSettings(BaseModel):
+    """Problemas de proceso: catálogos de causas de paro y de defectos de calidad, y operadores."""
+
+    downtime: list[ProblemCategory] = Field(default_factory=default_downtime_catalog)
+    defects: list[ProblemCategory] = Field(default_factory=default_defect_catalog)
+    operators: list[str] = Field(default_factory=list)
+    prompt: bool = True  # al reanudar la línea, avisar para clasificar el paro
+    prompt_min_s: float = Field(120.0, ge=0, le=86400)  # solo paros de al menos este tiempo
+
+    def category(self, kind: str, cid: str) -> Optional[ProblemCategory]:
+        return next((c for c in (self.downtime if kind == "downtime" else self.defects) if c.id == cid), None)
+
+
+class ControlWrite(BaseModel):
+    """Cómo se cambia el input en el HMI: escribiendo el valor o con botones + / −."""
+
+    method: Literal["type", "buttons"] = "type"
+    field: Optional[Click] = None  # «type»: clic en el campo del valor
+    select_all: bool = True  # «type»: Ctrl+A antes de escribir (reemplaza el valor anterior)
+    confirm: Optional[Click] = None  # botón de confirmación del HMI tras Enter (p. ej. «OK»), si lo hay
+    inc: Optional[Click] = None  # «buttons»: botón que sube el valor
+    dec: Optional[Click] = None  # «buttons»: botón que lo baja
+    step: float = Field(1.0, gt=0)  # cuánto cambia el valor con cada clic de botón
+    max_clicks: int = Field(20, ge=1, le=200)
+    route_tour: Optional[str] = None  # recorrido para llegar a la pantalla del input (su regreso se usa al final)
+    settle_s: float = Field(1.0, ge=0.1, le=30)  # espera tras escribir antes de verificar
+    verify_s: float = Field(10.0, ge=1, le=120)  # tiempo máximo para ver el valor nuevo en el HMI
+
+    def clicks(self) -> list[Click]:
+        """Clics verificados por imagen. El del campo no: muestra el valor que cambia (se verifica la pantalla)."""
+        return [c for c in (self.confirm, self.inc, self.dec) if c is not None]
+
+
+class ControlLoop(BaseModel):
+    """Lazo de control: ajusta un input del HMI (p. ej. velocidad del capstan) según una medición (diámetro).
+
+    Seguridad: límites absolutos, paso máximo por ajuste y por minuto, banda muerta, intervalo mínimo,
+    verificación del valor escrito y paro automático (alarma, línea detenida, operador usando el HMI, dato viejo,
+    comportamiento anormal, cambio de receta). Al abrir el programa los lazos quedan desactivados.
+    """
+
+    id: str
+    name: str = "Lazo de control"
+    mode: Literal["simulate", "assist", "auto"] = "simulate"  # solo calcular · proponer al operador · automático
+    pv_var: Optional[str] = None  # medición a controlar (p. ej. diámetro)
+    input_var: Optional[str] = None  # input del HMI que se ajusta (consigna leída de la pantalla)
+    target: Literal["recipe", "fixed"] = "recipe"
+    target_value: Optional[float] = None
+    # PID: manual (por receta) o aprendido de los cambios del operador
+    tuning: Literal["manual", "learned"] = "manual"
+    action: Literal["inc_when_high", "dec_when_high"] = "inc_when_high"  # p. ej. diámetro alto → acelerar capstan
+    kp: float = Field(1.0, ge=0)  # unidades de input por unidad de error de la medición
+    ti_s: float = Field(120.0, ge=0)  # tiempo integral (0 = sin integral)
+    td_s: float = Field(0.0, ge=0)  # tiempo derivativo
+    aggressiveness: float = Field(1.0, ge=0.2, le=5)  # PID aprendido: 0.5 = rápido · 1 = normal · 2 = suave
+    # límites del input
+    u_min: Optional[float] = None
+    u_max: Optional[float] = None
+    max_step: Optional[float] = None  # cambio máximo por ajuste
+    max_rate_min: Optional[float] = None  # cambio máximo acumulado por minuto
+    deadband: float = Field(0.0, ge=0)  # error de la medición que se tolera sin ajustar
+    resolution: Optional[float] = None  # el input se redondea a esto (vacío = según sus decimales)
+    interval_s: float = Field(30.0, ge=2, le=3600)  # tiempo mínimo entre ajustes
+    write: ControlWrite = Field(default_factory=ControlWrite)
+    # seguridad
+    stop_on_alarm: bool = True  # alarma activa en otra variable
+    stop_when_line_stopped: bool = True
+    operator_idle_s: float = Field(20.0, ge=0, le=3600)  # sin uso del HMI por el operador durante…
+    operator_hold_s: float = Field(120.0, ge=0, le=86400)  # tras un cambio del operador, esperar…
+    max_pv_age_s: float = Field(20.0, ge=1, le=3600)
+    gate_behavior: Optional[str] = None  # comportamiento entrenado que debe estar normal para ajustar
+    # aprendizaje del comportamiento del proceso
+    learn: bool = True
+    learn_window_s: float = Field(300.0, ge=30, le=7200)  # observación de la medición tras cada cambio
+
+
 class AppConfig(BaseModel):
     version: int = CONFIG_VERSION
     machine_name: str = "Línea de extrusión"
@@ -356,6 +564,21 @@ class AppConfig(BaseModel):
     reports: list[ReportDef] = Field(default_factory=list)
     home: HomeSettings = Field(default_factory=HomeSettings)
     dock: DockSettings = Field(default_factory=DockSettings)
+    problems: ProblemSettings = Field(default_factory=ProblemSettings)
+    cameras: list[CameraSettings] = Field(default_factory=list)
+    controls: list[ControlLoop] = Field(default_factory=list)
+
+    def control(self, loop_id: str) -> Optional[ControlLoop]:
+        return next((c for c in self.controls if c.id == loop_id), None)
+
+    def camera(self, cam_id: str) -> Optional[CameraSettings]:
+        return next((c for c in self.cameras if c.id == cam_id), None)
+
+    @property
+    def needs_screen(self) -> bool:
+        """Hay algo que leer en la pantalla del HMI (si todo viene de cámaras, no se captura la pantalla)."""
+        return not any(v.on_camera for v in self.variables) or any(v.screen and v.source == SCREEN for v in self.variables) or bool(self.pages) or \
+            any(t.enabled and t.steps for t in self.tours)
 
     @model_validator(mode="after")
     def _migrate_tour(self) -> "AppConfig":
@@ -373,7 +596,8 @@ class AppConfig(BaseModel):
         return next((t for t in self.tours if t.id == tour_id), None)
 
     def all_tour_clicks(self) -> list[Click]:
-        return [c for t in self.tours for c in t.all_clicks()]
+        """Clics verificados por imagen: recorridos y escritura de los lazos de control."""
+        return [c for t in self.tours for c in t.all_clicks()] + [c for lp in self.controls for c in lp.write.clicks()]
 
     def toured_pages(self) -> set[str]:
         """Páginas que se leen durante recorridos (con sus ancestros): su dato vale hasta el siguiente."""
@@ -452,9 +676,14 @@ class AppConfig(BaseModel):
         if dup:
             problems.append(f"IDs de variable duplicados: {', '.join(sorted(dup))}")
         page_ids = {p.id for p in self.pages}
+        cam_ids = {c.id for c in self.cameras}
         for v in self.variables:
             if v.page and v.page not in page_ids:
                 problems.append(f"{v.id}: la página '{v.page}' no existe")
+            if v.on_camera and v.source not in cam_ids:
+                problems.append(f"{v.id}: la cámara '{v.source}' no existe")
+            if v.kind in ("actual", "setpoint") and v.reader == "gauge" and not v.gauge.calibrated:
+                problems.append(f"«{v.name}»: calibra la aguja (centro, mínimo y máximo)")
             if v.setpoint_var:
                 sp = self.variable(v.setpoint_var)
                 if sp is None:
@@ -506,6 +735,26 @@ class AppConfig(BaseModel):
             evaluation_order(formulas)
         except FormulaError as exc:
             problems.append(str(exc))
+        for lp in self.controls:
+            name = f"Control «{lp.name}»"
+            pv, inp = self.variable(lp.pv_var or ""), self.variable(lp.input_var or "")
+            if pv is None or not pv.numeric:
+                problems.append(f"{name}: elige la medición a controlar")
+            if inp is None or not inp.numeric:
+                problems.append(f"{name}: elige el input del HMI que se ajusta")
+            elif inp.on_camera or inp.kind == "formula":
+                problems.append(f"{name}: el input debe leerse de la pantalla del HMI")
+            if lp.u_min is None or lp.u_max is None or lp.u_min >= lp.u_max:
+                problems.append(f"{name}: indica los límites mínimo y máximo del input")
+            if lp.target == "fixed" and lp.target_value is None:
+                problems.append(f"{name}: indica el valor objetivo")
+            w = lp.write
+            if w.method == "type" and w.field is None:
+                problems.append(f"{name}: graba el clic del campo del input")
+            if w.method == "buttons" and (w.inc is None or w.dec is None):
+                problems.append(f"{name}: graba los botones + y −")
+            if w.route_tour and self.get_tour(w.route_tour) is None:
+                problems.append(f"{name}: el recorrido de la ruta no existe")
         rn = self.general.recipe_name_var
         if rn:
             var = self.variable(rn)
@@ -625,6 +874,10 @@ class Workspace:
 
 
 def _atomic_write(path: Path, text: str) -> None:
+    """Escribe a un temporal, lo fuerza a disco y lo reemplaza: un apagón no deja el archivo vacío o a medias."""
     tmp = path.with_suffix(path.suffix + ".tmp")
-    tmp.write_text(text, encoding="utf-8")
+    with open(tmp, "w", encoding="utf-8") as f:
+        f.write(text)
+        f.flush()
+        os.fsync(f.fileno())
     os.replace(tmp, path)

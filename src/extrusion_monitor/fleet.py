@@ -25,6 +25,7 @@ SCHEMA_VERSION = 1
 STATUS_FILE = "status.json"
 EVENTS_DIR = "events"
 TREND_DIR = "trend"
+PROBLEMS_DIR = "problems"  # AAAA-MM.jsonl: {"op": "add", …captura} / {"op": "del", "uid": …}
 
 
 class StationSettings(BaseModel):
@@ -37,7 +38,19 @@ class StationSettings(BaseModel):
     export_dir: str = ""  # p. ej. \\SERVIDOR\lineas
     interval_s: float = Field(5.0, ge=1, le=60)
     trend_interval_s: float = Field(60.0, ge=10, le=600)
-    retention_days: int = Field(30, ge=1, le=3650)
+    retention_days: int = Field(182, ge=0, le=36500)  # carpeta del dashboard global (0 = indefinido)
+    history_days: int = Field(182, ge=0, le=36500)  # historial de esta PC: lecturas, eventos y OEE (0 = indefinido)
+    # --- servidor propio (nube o servidor de planta) ---
+    server_enabled: bool = False
+    server_url: str = ""  # p. ej. https://monitor.miempresa.com
+    server_token: str = ""  # clave de esta línea (la entrega el servidor al registrarla)
+    server_verify_tls: bool = True  # solo se apaga con certificados internos de prueba
+    server_interval_s: float = Field(10.0, ge=2, le=300)  # estado actual como máximo cada…
+    server_heartbeat_s: float = Field(60.0, ge=10, le=900)  # …y aunque no cambie nada, cada…
+
+    @property
+    def server_ready(self) -> bool:
+        return self.server_enabled and bool(self.server_url and self.server_token)
 
 
 # --- configuración del dashboard global (fleet.json en la PC de supervisión) ------------------------
@@ -122,6 +135,10 @@ def line_slug(text: str) -> str:
 
 def day_name(ts: float) -> str:
     return time.strftime("%Y-%m-%d", time.localtime(ts)) + ".jsonl"
+
+
+def month_name(ts: float) -> str:
+    return time.strftime("%Y-%m", time.localtime(ts)) + ".jsonl"
 
 
 def write_atomic(path: Path, data: bytes, retries: int = 6) -> None:
@@ -365,3 +382,42 @@ class FleetReader:
             except OSError:
                 continue
         return t, mean, lo, hi
+
+
+def _months(since: float, until: float) -> list[str]:
+    out, t = [], since
+    while t <= until + 31 * 86400:
+        out.append(month_name(t))
+        t += 27 * 86400
+    return list(dict.fromkeys(out))
+
+
+def read_problems(line: LineState, since: float, until: Optional[float] = None) -> list[dict]:
+    """Capturas de problemas de una línea (paros y defectos) que tocan el periodo, ya con las eliminaciones."""
+    until = time.time() if until is None else until
+    recs: dict[str, dict] = {}
+    for name in _months(since - 31 * 86400, until):
+        path = line.path / PROBLEMS_DIR / name
+        try:
+            with open(path, "rb") as f:
+                for raw in f:
+                    try:
+                        op = json.loads(raw)
+                    except ValueError:
+                        continue
+                    uid = op.get("uid")
+                    if not uid:
+                        continue
+                    if op.get("op") == "del":
+                        recs.pop(uid, None)
+                    else:
+                        recs[uid] = {k: v for k, v in op.items() if k != "op"}
+        except OSError:
+            continue
+    out = []
+    for r in recs.values():
+        if (r.get("end") or 0) >= since and (r.get("start") or 0) <= until:
+            r["line"] = line.name
+            r["line_id"] = line.line_id
+            out.append(r)
+    return sorted(out, key=lambda r: r.get("start") or 0)

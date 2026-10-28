@@ -39,5 +39,8 @@ version = {attr = "extrusion_monitor.__version__"}
 [tool.setuptools.packages.find]
 where = ["src"]
 
+[tool.setuptools.package-data]
+extrusion_monitor = ["resources/*"]
+
 [tool.pytest.ini_options]
 testpaths = ["tests"]

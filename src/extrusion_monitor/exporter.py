@@ -1,4 +1,4 @@
-"""Exportación al dashboard global: escribe el estado de la línea en la carpeta compartida.
+"""Exportación al dashboard global: carpeta compartida y/o servidor propio (ver cloud.py).
 
 Corre en su propio hilo: una carpeta de red lenta o caída nunca detiene la lectura del HMI. Si la carpeta
 no está disponible, los eventos y tendencias se guardan en memoria (con límite) y se escriben al volver.
@@ -15,9 +15,10 @@ from typing import Optional
 from . import __version__
 from .analysis.oee import STATE_LABELS, OeeSample, compute, shift_start
 from .analysis.rules import Level
+from .cloud import CloudOutbox
 from .config import Workspace
-from .fleet import (EVENTS_DIR, SCHEMA_VERSION, STATUS_FILE, TREND_DIR, StationSettings, append_lines, day_name,
-                    dumps, line_slug, write_atomic)
+from .fleet import (EVENTS_DIR, PROBLEMS_DIR, SCHEMA_VERSION, STATUS_FILE, TREND_DIR, StationSettings, append_lines,
+                    day_name, dumps, line_slug, month_name, write_atomic)
 
 log = logging.getLogger(__name__)
 
@@ -57,10 +58,12 @@ class FleetExporter:
         self.settings = settings or load_station(workspace)
         self._lock = threading.Lock()
         self._snap = None
-        self._events: list[str] = []
+        self._events: list[dict] = []
         self._acc: dict[str, list[float]] = {}  # valores del minuto en curso por variable
         self._acc_start = time.time()
-        self._trend: list[tuple[float, str]] = []  # (ts, renglón) pendientes de escribir
+        self._problems: list[dict] = []  # capturas de problemas de proceso (operaciones add/del) para el servidor
+        self._fproblems: list[dict] = []  # las mismas, para la carpeta compartida
+        self._trend: list[dict] = []  # puntos de tendencia pendientes de escribir en la carpeta
         self._oee = None
         self._oee_at = 0.0
         self._last_purge = 0.0
@@ -69,6 +72,7 @@ class FleetExporter:
         self._thread: Optional[threading.Thread] = None
         self.last_ok: Optional[float] = None
         self.last_error = ""
+        self.cloud = CloudOutbox(workspace.home, lambda: self.settings)
         engine.listeners.append(self.offer)
 
     # --- configuración ---------------------------------------------------------------------
@@ -84,21 +88,25 @@ class FleetExporter:
             return None
         return Path(s.export_dir) / self.line_id
 
+    @property
+    def active(self) -> bool:
+        return self.line_dir is not None or self.settings.server_ready
+
     def reconfigure(self, settings: StationSettings) -> None:
         with self._lock:
             self.settings = settings
             self.last_error = ""
+            self.cloud.last_error = ""
         save_station(self.workspace, settings)
         self._wake.set()
+        self.cloud._wake.set()
 
     # --- entrada (hilo del monitoreo: solo copia datos, sin E/S) ------------------------------
     def offer(self, snap) -> None:
-        if not self.settings.enabled:
+        if not self.active:
             return
-        rows = []
-        for e in snap.events:
-            rows.append(dumps({"ts": round(e.ts, 3), "kind": e.kind, "level": LEVELS.get(e.level, str(e.level)),
-                               "rule": e.rule, "var": e.var_id, "msg": e.message, "recipe": snap.recipe}))
+        rows = [{"ts": round(e.ts, 3), "kind": e.kind, "level": LEVELS.get(e.level, str(e.level)), "rule": e.rule,
+                 "var": e.var_id, "msg": e.message, "recipe": snap.recipe} for e in snap.events]
         with self._lock:
             self._snap = snap
             self._events = (self._events + rows)[-MAX_PENDING:]
@@ -107,6 +115,17 @@ class FleetExporter:
                 if v is not None and st.fresh and st.var.numeric:
                     self._acc.setdefault(vid, []).append(v)
 
+    def queue_problem(self, op: str, rec: dict) -> None:
+        """Captura de problemas de proceso agregada («add») o eliminada («del»): carpeta y/o servidor."""
+        item = {"op": "add", **rec} if op == "add" else {"op": "del", "uid": rec.get("uid"), "ts": time.time()}
+        item.pop("id", None)  # el id local no significa nada fuera de esta PC (se identifica por uid)
+        with self._lock:
+            if self.settings.server_ready:
+                self._problems.append(item)
+            if self.line_dir is not None:
+                self._fproblems.append(item)
+        self._wake.set()
+
     # --- hilo ---------------------------------------------------------------------------------
     def start(self) -> None:
         if self._thread is not None and self._thread.is_alive():
@@ -114,6 +133,7 @@ class FleetExporter:
         self._stop.clear()
         self._thread = threading.Thread(target=self._run, name="fleet-export", daemon=True)
         self._thread.start()
+        self.cloud.start()
 
     def stop(self, closed: bool = True) -> None:
         """Detiene el hilo; con `closed` deja escrito que el programa se cerró (no es una falla de red)."""
@@ -122,16 +142,19 @@ class FleetExporter:
         if self._thread is not None:
             self._thread.join(5.0)
         self._thread = None
-        if closed and self.line_dir is not None:
+        if closed and self.active:
             try:
                 self.write_once(closed=True)
             except OSError:
                 pass
+        self.cloud.stop()
+        if closed and self.settings.server_ready:
+            self.cloud.flush(force_status=True, timeout=3.0)  # «programa cerrado» (sin esperar si no hay red)
 
     def _run(self) -> None:
         while not self._stop.is_set():
             t0 = time.monotonic()
-            if self.line_dir is not None:
+            if self.active:
                 try:
                     self.write_once()
                 except Exception as exc:  # carpeta no disponible: se reintenta en el siguiente ciclo
@@ -143,7 +166,8 @@ class FleetExporter:
 
     def write_once(self, closed: bool = False) -> None:
         d = self.line_dir
-        if d is None:
+        cloud = self.settings.server_ready
+        if d is None and not cloud:
             return
         now = time.time()
         self._roll_trend(now)
@@ -151,21 +175,42 @@ class FleetExporter:
             snap = self._snap
             events, self._events = self._events, []
             trend, self._trend = self._trend, []
+            problems, self._problems = self._problems, []
+            fprob, self._fproblems = self._fproblems, []
+        status = self.payload(snap, now, closed)
+        if cloud:  # a disco primero: el hilo de envío lo manda cuando haya red
+            try:
+                self.cloud.enqueue(events, trend, problems)
+            except OSError as exc:
+                log.warning("Cola del servidor: %s", exc)
+            self.cloud.set_status(status)
+            if closed:
+                self.cloud._wake.set()
+        if d is None:
+            return
         try:
             (d / EVENTS_DIR).mkdir(parents=True, exist_ok=True)
             (d / TREND_DIR).mkdir(exist_ok=True)
-            append_lines(d / EVENTS_DIR / day_name(now), events)
+            append_lines(d / EVENTS_DIR / day_name(now), [dumps(e) for e in events])
             by_day: dict[str, list[str]] = {}
-            for ts, row in trend:
-                by_day.setdefault(day_name(ts), []).append(row)
+            for row in trend:
+                by_day.setdefault(day_name(row["ts"]), []).append(dumps(row))
             for name, rows in by_day.items():
                 append_lines(d / TREND_DIR / name, rows)
-            events, trend = [], []
-            write_atomic(d / STATUS_FILE, json.dumps(self.payload(snap, now, closed), ensure_ascii=False,
+            if fprob:
+                (d / PROBLEMS_DIR).mkdir(exist_ok=True)
+                by_month: dict[str, list[str]] = {}
+                for p in fprob:
+                    by_month.setdefault(month_name(p.get("captured_at") or p.get("ts") or now), []).append(dumps(p))
+                for name, rows in by_month.items():
+                    append_lines(d / PROBLEMS_DIR / name, rows)
+            events, trend, fprob = [], [], []
+            write_atomic(d / STATUS_FILE, json.dumps(status, ensure_ascii=False,
                                                      separators=(",", ":")).encode("utf-8"))
         finally:
-            if events or trend:  # no se pudo escribir: vuelven a la cola
+            if events or trend or fprob:  # no se pudo escribir en la carpeta: vuelven a su cola
                 with self._lock:
+                    self._fproblems = fprob + self._fproblems
                     self._events = (events + self._events)[-MAX_PENDING:]
                     self._trend = (trend + self._trend)[-MAX_PENDING:]
         self.last_ok = now
@@ -183,11 +228,33 @@ class FleetExporter:
             kpis = {k: round(v, 4) for k, v in (self.engine.kpis or {}).items() if v is not None}
             if acc or kpis:
                 v = {vid: [round(sum(xs) / len(xs), 6), min(xs), max(xs), xs[-1]] for vid, xs in acc.items()}
-                self._trend.append((now, dumps({"ts": round(now, 1), "from": round(start, 1), "v": v,
-                                                "k": kpis})))
+                row = {"ts": round(now, 1), "from": round(start, 1), "v": v, "k": kpis}
+                row.update(self._production_fields())
+                self._trend.append(row)
                 self._trend = self._trend[-MAX_PENDING:]
 
+    def _production_fields(self) -> dict:
+        """Para el dashboard: producción acumulada del turno («p»: [inicio del turno, total, conforme]), estado de
+        la máquina («s») y usuario en turno («u»). Sirven para producción contra meta, horas de operación y la
+        comparación de turnos y operadores entre líneas."""
+        out = {}
+        res = self._oee
+        if res is not None:
+            out["p"] = [round(res.start, 1), round(res.length_total or 0, 3), round(res.length_good or 0, 3)]
+            if res.intervals:
+                out["s"] = res.intervals[-1].state
+        try:
+            from .personnel import crew
+            user = crew(self.workspace.load_state())["user"]
+            if user:
+                out["u"] = user
+        except Exception:
+            pass
+        return out
+
     def _purge(self, d: Path, now: float) -> None:
+        if not self.settings.retention_days:  # indefinido
+            return
         keep = self.settings.retention_days * 86400
         for sub in (EVENTS_DIR, TREND_DIR):
             for f in (d / sub).glob("*.jsonl"):
@@ -208,7 +275,8 @@ class FleetExporter:
             rows = eng.historian.oee_samples(a, now)
             samples = [OeeSample(r[0], r[1], r[2], r[3], r[4], None if r[5] is None else bool(r[5]), r[6] or 0)
                        for r in rows]
-            self._oee = compute(samples, a, now, o.microstop_s, o.length_factor)
+            self._oee = compute(samples, a, now, o.microstop_s, o.length_factor,
+                                planned=eng.historian.planned_intervals(a, now))
             self._oee_at = now
         return self._oee
 
@@ -221,6 +289,9 @@ class FleetExporter:
             "machine_name": cfg.machine_name, "area": s.area, "app_version": __version__, "ts": round(now, 3),
             "interval_s": s.interval_s, "closed": closed, "monitoring": bool(eng.running) and not closed,
             "recipe": eng.state.recipe, "auto_recipe": eng.state.auto_recipe,
+            # catálogo de variables de la receta: el análisis del dashboard lo usa aunque no se esté monitoreando
+            "catalog": [{"id": v.id, "name": v.name, "label": cfg.var_label(v), "group": v.group, "unit": v.unit,
+                         "kind": v.kind} for v in cfg.variables if v.numeric],
         }
         if snap is not None:
             counts = {lvl: sum(1 for f in snap.findings if f.level == lvl) for lvl in (Level.WARN, Level.ALARM)}
@@ -233,6 +304,9 @@ class FleetExporter:
                            for f in sorted(snap.findings, key=lambda f: (-int(f.level), f.since))
                            if f.level >= Level.WARN][:50],
                 "variables": [self._var(st, cfg) for st in snap.statuses.values()],
+                "control": [{"id": lid, "name": c.get("name"), "mode": c.get("mode"), "active": c.get("active"),
+                             "status": c.get("status"), "detail": c.get("detail")}
+                            for lid, c in (snap.control or {}).items()],
             })
         try:
             res = self._oee_now(now)

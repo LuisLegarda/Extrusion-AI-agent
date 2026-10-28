@@ -1,0 +1,5 @@
+.env
+respaldos/
+*.db
+*.sqlite*
+.claude/
