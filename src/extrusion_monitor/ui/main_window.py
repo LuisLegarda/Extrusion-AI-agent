@@ -1286,14 +1286,33 @@ class MainWindow(QMainWindow):
                 self.engine.clicker = make_clicker(self.engine.source)
             self.ctx.config = dlg.config
             self.engine.reconfigure(dlg.config, make_ocr(self.ctx))
-            self._save_profile()  # la receta activa guarda la configuración completa
+            self._save_profile(ask_all=True)  # la receta activa (y, si se elige, las demás) guarda la configuración
             self.rebuild_table()
             self._update_title()
         if was_running:
             self.engine.start()
 
-    def _save_profile(self) -> None:
-        err = self.engine.save_profile()
+    def _save_profile(self, ask_all: bool = False, apply_all: Optional[bool] = None) -> None:
+        """Guarda la configuración en la receta activa. Con `ask_all`, si hay otras recetas pregunta si los
+        cambios (pantallas, posiciones de las variables, recorridos) se aplican también a ellas."""
+        also: list[str] = []
+        others = self.engine.other_profiles() if ask_all and self.engine.state.recipe else []
+        if others:
+            if apply_all is None:
+                box = QMessageBox(QMessageBox.Question, tr("Guardar en las recetas"),
+                                  tr("Cada receta guarda su propia copia de la configuración (pantallas, posiciones "
+                                     "de las variables, recorridos…). Si solo se guarda en «{r}», al cargarse otra "
+                                     "receta (por ejemplo, cuando el HMI la muestra) volverán las posiciones "
+                                     "anteriores.\n\n¿Aplicar estos cambios también a las otras {n} recetas?",
+                                     r=self.engine.state.recipe, n=len(others)), parent=self)
+                b_all = box.addButton(tr("Todas las recetas (recomendado)"), QMessageBox.AcceptRole)
+                box.addButton(tr("Solo «{r}»", r=self.engine.state.recipe), QMessageBox.RejectRole)
+                box.setDefaultButton(b_all)
+                box.exec()
+                apply_all = box.clickedButton() is b_all
+            if apply_all:
+                also = others
+        err = self.engine.save_profile(also)
         if err:
             QMessageBox.warning(self, tr("Receta no actualizada"),
                                 err + "\n\n" + tr("La configuración quedó guardada, pero si cambias de receta y vuelves "
@@ -1720,6 +1739,8 @@ class MainWindow(QMainWindow):
             self.log.insertItem(0, item)
             if e.level == Level.ALARM and e.kind in ("raised", "escalated"):
                 alarm = True
+            if e.kind == "recipe_change":  # que se vea: cambia toda la configuración (pantallas y posiciones)
+                self.statusBar().showMessage("📋 " + translate_text(e.message), 15000)
         while self.log.count() > 1000:
             self.log.takeItem(self.log.count() - 1)
         if alarm:
