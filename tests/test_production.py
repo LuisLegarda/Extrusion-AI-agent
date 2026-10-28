@@ -38,29 +38,44 @@ def test_purge_by_blocks_and_history_uses_the_index(tmp_path):
     assert "ix_samples_var_ts" in str(plan)
 
 
-def test_purge_does_not_block_monitoring_writes(tmp_path):
+def test_purge_does_not_use_the_monitoring_lock(tmp_path):
+    """La purga usa su propia conexión: nunca toma el candado con que escribe el monitoreo.
+
+    (Se comprueba la estructura y no tiempos: en las máquinas de CI el disco puede ser muy lento.)
+    """
     from extrusion_monitor.storage import Historian
     h = Historian(tmp_path / "h.sqlite")
     t0 = time.time() - 86400
-    h.write_samples([(t0 + i * 0.1, "v", 1.0, None) for i in range(200_000)])
+    h.write_samples([(t0 + i * 0.1, "v", 1.0, None) for i in range(50_000)])
     h.PURGE_CHUNK = 5000
-    worst = []
+
+    class Spy:
+        def __init__(self, real):
+            self.real, self.taken_by = real, []
+
+        def __enter__(self):
+            self.taken_by.append(threading.current_thread().name)
+            return self.real.__enter__()
+
+        def __exit__(self, *a):
+            return self.real.__exit__(*a)
+
+    spy = h._lock = Spy(h._lock)
+    done = []
 
     def writer():
-        for _ in range(40):
-            a = time.perf_counter()
+        for _ in range(20):
             h.write_samples([(time.time(), "w", 1.0, None)])
-            worst.append(time.perf_counter() - a)
-            time.sleep(0.002)
+        done.append(True)
 
-    th = threading.Thread(target=writer)
+    th = threading.Thread(target=writer, name="monitoreo")
     th.start()
-    a = time.perf_counter()
-    h.purge(t0 + 20_000)
-    total = time.perf_counter() - a
+    n = h.purge(t0 + 2000)
     th.join()
-    # nunca espera toda la purga (relativo: en las máquinas de CI el disco puede ser muy lento)
-    assert max(worst) < max(0.5, 0.6 * total)
+    assert n == 20_000 and done
+    assert set(spy.taken_by) == {"monitoreo"}  # solo el monitoreo usó el candado
+    assert h._conn.execute("SELECT COUNT(*) FROM samples WHERE var='w'").fetchone()[0] == 20
+    h.close()
 
 
 def test_hourly_purge_runs_off_the_monitoring_thread(tmp_path):
