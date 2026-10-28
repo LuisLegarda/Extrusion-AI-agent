@@ -37,7 +37,8 @@ class Historian:
         self.path = str(path)
         self.retention_days = retention_days
         self._lock = threading.Lock()
-        self._conn = sqlite3.connect(self.path, check_same_thread=False)
+        # timeout: si la purga (con su propia conexión) tiene la escritura un instante, se espera en lugar de fallar
+        self._conn = sqlite3.connect(self.path, check_same_thread=False, timeout=30)
         self._conn.execute("PRAGMA journal_mode=WAL")
         self._conn.execute("PRAGMA synchronous=NORMAL")  # seguro con WAL y mucho más rápido
         self._conn.executescript(SCHEMA)
@@ -171,11 +172,7 @@ class Historian:
     def _purge_background(self, cutoff: float) -> None:
         try:
             self.purge(cutoff)
-            with self._lock:  # el traspaso del diario (WAL) lo paga este hilo, no una escritura del monitoreo
-                self._conn.execute("PRAGMA wal_checkpoint(PASSIVE)")
-        except sqlite3.ProgrammingError:  # se cerró el historial mientras purgaba
-            pass
-        except Exception:
+        except sqlite3.Error:
             log.exception("purga del historial")
 
     def wait_purge(self, timeout: float = 30.0) -> None:
@@ -186,30 +183,35 @@ class Historian:
     def purge(self, cutoff: float) -> int:
         """Borra lo anterior a `cutoff`. Devuelve cuántas muestras borró.
 
-        Las muestras se guardan en orden de tiempo, así que lo viejo está al inicio de la tabla (rowid bajo):
-        se busca el primer rowid que se conserva y se borra por bloques de rowid, sin recorrer toda la tabla.
+        Usa su propia conexión (no el candado del monitoreo): en modo WAL las escrituras del monitoreo siguen
+        mientras tanto y solo esperan, si acaso, lo que tarda un bloque. Las muestras se guardan en orden de
+        tiempo, así que lo viejo está al inicio de la tabla (rowid bajo): se borra por bloques de rowid sin
+        recorrer toda la tabla. Al final traspasa el diario (checkpoint pasivo, que no bloquea a nadie).
         """
-        with self._lock:
-            row = self._conn.execute("SELECT rowid FROM samples WHERE ts >= ? ORDER BY rowid LIMIT 1",
-                                     (cutoff,)).fetchone()
+        conn = sqlite3.connect(self.path, timeout=30)
+        try:
+            row = conn.execute("SELECT rowid FROM samples WHERE ts >= ? ORDER BY rowid LIMIT 1", (cutoff,)).fetchone()
             if row is None:
-                row = self._conn.execute("SELECT MAX(rowid) + 1 FROM samples").fetchone()
-            first = self._conn.execute("SELECT MIN(rowid) FROM samples").fetchone()[0]
-        keep_from = row[0] if row and row[0] is not None else None
-        n = 0
-        if first is not None and keep_from is not None:
-            lo = first
-            while lo < keep_from:
-                hi = min(keep_from, lo + self.PURGE_CHUNK)
-                with self._lock, self._conn:
-                    n += self._conn.execute("DELETE FROM samples WHERE rowid >= ? AND rowid < ? AND ts < ?",
-                                            (lo, hi, cutoff)).rowcount
-                lo = hi
-                time.sleep(0.002)  # deja pasar las escrituras del monitoreo que esperan el candado
-        with self._lock, self._conn:  # tablas chicas con índice por tiempo
-            self._conn.execute("DELETE FROM events WHERE ts < ?", (cutoff,))
-            self._conn.execute("DELETE FROM oee WHERE ts < ?", (cutoff,))
-        return n
+                row = conn.execute("SELECT MAX(rowid) + 1 FROM samples").fetchone()
+            first = conn.execute("SELECT MIN(rowid) FROM samples").fetchone()[0]
+            keep_from = row[0] if row and row[0] is not None else None
+            n = 0
+            if first is not None and keep_from is not None:
+                lo = first
+                while lo < keep_from:
+                    hi = min(keep_from, lo + self.PURGE_CHUNK)
+                    with conn:
+                        n += conn.execute("DELETE FROM samples WHERE rowid >= ? AND rowid < ? AND ts < ?",
+                                          (lo, hi, cutoff)).rowcount
+                    lo = hi
+                    time.sleep(0.002)  # deja pasar las escrituras del monitoreo
+            with conn:  # tablas chicas con índice por tiempo
+                conn.execute("DELETE FROM events WHERE ts < ?", (cutoff,))
+                conn.execute("DELETE FROM oee WHERE ts < ?", (cutoff,))
+            conn.execute("PRAGMA wal_checkpoint(PASSIVE)")
+            return n
+        finally:
+            conn.close()
 
     # --- problemas de proceso (capturados por el operador) ------------------------------------
     def add_problem(self, rec: dict) -> dict:

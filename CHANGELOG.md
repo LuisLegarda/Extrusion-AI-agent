@@ -10,6 +10,15 @@ Numeración `MAYOR.MENOR.PARCHE`:
 
 ## [Sin publicar]
 
+## [0.3.1] - 2026-10-27
+
+Corrección de la 0.3.0; no cambia la configuración.
+
+### Purga del historial con conexión propia (rama `fix/purga-conexion-propia`)
+- La limpieza horaria del historial usa su propia conexión a la base de datos y ya no toma el candado del
+  monitoreo: en una PC con disco lento (o con el antivirus revisando el archivo) el monitoreo ya no puede
+  quedarse esperando varios segundos. La prueba comprueba esto sin depender de tiempos.
+
 ## [0.3.0] - 2026-10-27
 
 ### Icono (rama `feature/icono`)
