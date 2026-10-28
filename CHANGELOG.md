@@ -10,6 +10,10 @@ Numeración `MAYOR.MENOR.PARCHE`:
 
 ## [Sin publicar]
 
+## [0.3.2] - 2026-10-28
+
+Corrección de la 0.3.1; no cambia la configuración.
+
 ### Posiciones de las variables en todas las recetas (rama `fix/posiciones-todas-las-recetas`)
 - Cada receta guarda su propia copia de la configuración (pantallas, posiciones de las variables, recorridos).
   Al corregir una posición solo se guardaba en la receta activa, y al cargarse otra receta (p. ej. porque el
