@@ -191,16 +191,33 @@ class MonitorEngine:
                     msg += " (configuración completa de la receta cargada)"
             self._pending_events.append(Event(self.clock(), "recipe_change", Level.INFO, "RECETA", "", msg))
 
-    def save_profile(self) -> Optional[str]:
-        """Guarda la configuración activa en el perfil de la receta activa. Devuelve el error, si lo hubo."""
+    def other_profiles(self) -> list[str]:
+        """Recetas (distintas de la activa) que tienen su propia copia de la configuración."""
+        return [n for n in self.recipes.names() if n != self.state.recipe and has_profile(self.workspace, n)]
+
+    def save_profile(self, also: Optional[list[str]] = None) -> Optional[str]:
+        """Guarda la configuración activa en el perfil de la receta activa (y en las recetas de `also`).
+
+        Cada receta guarda una copia completa de la configuración (pantallas, posiciones de las variables,
+        recorridos…): si una posición se corrige solo en una receta, al cargarse otra (p. ej. porque el HMI la
+        muestra) vuelve la posición anterior. Devuelve el error, si lo hubo.
+        """
         if self.state.recipe:
-            try:
-                save_profile(self.workspace, self.state.recipe, self.config)
-            except OSError as exc:
-                log.exception("No se pudo guardar el perfil")
-                msg = f"No se pudo guardar la configuración en la receta «{self.state.recipe}»: {exc}"
+            errors = []
+            for name in [self.state.recipe, *(also or [])]:
+                try:
+                    save_profile(self.workspace, name, self.config)
+                except OSError as exc:
+                    log.exception("No se pudo guardar el perfil de %s", name)
+                    errors.append(f"No se pudo guardar la configuración en la receta «{name}»: {exc}")
+            if errors:
+                msg = "\n".join(errors)
                 self._pending_events.append(Event(self.clock(), "profile", Level.WARN, "RECETA", "", msg))
                 return msg
+            if also:
+                self._pending_events.append(Event(
+                    self.clock(), "profile", Level.INFO, "RECETA", "",
+                    f"Configuración guardada en «{self.state.recipe}» y en {len(also)} recetas más"))
         else:
             # Sin receta activa: la próxima receta que se active tomará esta configuración.
             try:
