@@ -12,6 +12,13 @@ Numeración `MAYOR.MENOR.PARCHE`:
 
 ## [0.3.0] - 2026-10-27
 
+### Icono (rama `feature/icono`)
+- Icono propio del monitor (anillo con tendencia y punto verde) y su pareja para el dashboard global, en los
+  ejecutables y en las ventanas. El `.ico` lleva los tamaños estándar de Windows (16 a 256 px), con un dibujo
+  simplificado de 16 a 32 px. Se regeneran con `python packaging/icon/make_icons.py`.
+- La limpieza horaria del historial corre en un hilo aparte: el monitoreo ya no la espera (en una PC con disco
+  lento podía tardar varios segundos).
+
 ### Exportar y traducciones (rama `feature/exportar-produccion`)
 - «Exportar» en lugar de «Exportar CSV» en el monitor (historial: 24 h, 7 o 30 días), el dashboard (resumen de
   las líneas o sus datos por minuto de 24 h / 7 días), los problemas de proceso y el análisis estadístico (sus

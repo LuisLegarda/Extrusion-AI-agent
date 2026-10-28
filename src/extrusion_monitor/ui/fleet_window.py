@@ -1100,6 +1100,7 @@ def run_fleet(folder: Optional[str], home: Optional[Path] = None) -> int:
     log_path = setup_logging(home_dir, "fleet")
     app = QApplication.instance() or QApplication(sys.argv[:1])
     app.setApplicationName("Dashboard global de líneas")
+    app.setWindowIcon(theme.app_icon("dashboard"))
     try:
         state = json.loads((home_dir / "state.json").read_text(encoding="utf-8"))
     except (OSError, ValueError):

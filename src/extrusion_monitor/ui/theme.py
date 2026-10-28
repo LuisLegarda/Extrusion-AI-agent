@@ -175,3 +175,15 @@ def apply(app) -> None:
     app.setPalette(palette())
     app.setStyleSheet(stylesheet())
     pg.setConfigOptions(antialias=True, background=c("plot_bg"), foreground=c("plot_fg"))
+
+
+def app_icon(kind: str = "monitor"):
+    """Icono de las ventanas («monitor» o «dashboard»); en el .exe lo pone también PyInstaller."""
+    from pathlib import Path
+
+    from PySide6.QtGui import QIcon
+    base = Path(__file__).resolve().parent.parent / "resources"
+    for name in (f"{kind}.ico", f"{kind}.png"):
+        if (base / name).exists():
+            return QIcon(str(base / name))
+    return QIcon()
