@@ -1950,6 +1950,14 @@ EN: dict[str, str] = {
     "¿Continuar?":
         "With the new period the oldest data will be deleted (at the next cleanup, within an hour at most). Continue?",
     "{r} (se cambia en Configuración › Guardado de datos)": "{r} (changed in Settings › Data retention)",
+    "Guardar en las recetas": "Save to the recipes",
+    "Cada receta guarda su propia copia de la configuración (pantallas, posiciones de las variables, recorridos…). "
+    "Si solo se guarda en «{r}», al cargarse otra receta (por ejemplo, cuando el HMI la muestra) volverán las "
+    "posiciones anteriores.\n\n¿Aplicar estos cambios también a las otras {n} recetas?":
+        "Each recipe keeps its own copy of the configuration (screens, variable positions, tours…). If it is saved "
+        "only to “{r}”, the previous positions come back when another recipe is loaded (for example, when the HMI "
+        "shows it).\n\nApply these changes to the other {n} recipes too?",
+    "Todas las recetas (recomendado)": "All recipes (recommended)", "Solo «{r}»": "Only “{r}”",
 }
 
 # Textos con valores: la clave es la plantilla en español («{}» = valor) y el resultado su traducción.
@@ -2115,6 +2123,7 @@ EN_PATTERNS: dict[str, str] = {
     "Control «{}»: graba los botones + y −": "Control “{}”: record the + and − buttons",
     "Control «{}»: el recorrido de la ruta no existe": "Control “{}”: the route tour does not exist",
     # --- reporte PDF, analizador de planta, notificaciones (revisión de traducciones) ---
+    "Configuración guardada en «{}» y en {} recetas más": "Configuration saved to “{}” and {} more recipes",
     "Cpk mín. {}": "min Cpk {}",
     "en spec y Cpk mín. {}": "in spec and min Cpk {}",
     "en spec y Cpk mín. {} ({})": "in spec and min Cpk {} ({})",

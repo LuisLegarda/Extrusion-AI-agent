@@ -10,6 +10,13 @@ Numeración `MAYOR.MENOR.PARCHE`:
 
 ## [Sin publicar]
 
+### Posiciones de las variables en todas las recetas (rama `fix/posiciones-todas-las-recetas`)
+- Cada receta guarda su propia copia de la configuración (pantallas, posiciones de las variables, recorridos).
+  Al corregir una posición solo se guardaba en la receta activa, y al cargarse otra receta (p. ej. porque el
+  HMI la muestra, con «Cargar automáticamente la receta del HMI») volvía la posición anterior. Ahora, al
+  guardar la configuración, se pregunta si los cambios se aplican también a las demás recetas (recomendado).
+- Cuando el programa cambia de receta (y con ella toda la configuración) lo avisa en la barra de estado.
+
 ## [0.3.1] - 2026-10-27
 
 Corrección de la 0.3.0; no cambia la configuración.
