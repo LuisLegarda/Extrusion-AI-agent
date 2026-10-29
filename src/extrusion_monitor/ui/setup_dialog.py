@@ -12,7 +12,7 @@ from PySide6.QtGui import QBrush, QColor, QFont, QIcon
 from PySide6.QtWidgets import (
     QAbstractItemView, QApplication, QCheckBox, QComboBox, QDialog, QDialogButtonBox, QDoubleSpinBox,
     QFileDialog, QFormLayout, QFrame, QGroupBox, QHBoxLayout, QInputDialog, QLabel, QLineEdit, QMessageBox,
-    QListWidget, QListWidgetItem, QPushButton, QScrollArea, QSizePolicy, QSpinBox, QSplitter, QStackedWidget, QTabWidget, QTreeWidget,
+    QListWidget, QListWidgetItem, QPushButton, QScrollArea, QSpinBox, QSplitter, QStackedWidget, QTabWidget, QTreeWidget,
     QTreeWidgetItem, QVBoxLayout, QWidget,
 )
 
@@ -356,19 +356,11 @@ class SetupDialog(QDialog):
         # misma altura mínima en los dos formularios: el divisor no se mueve al cambiar la selección
         page_scroll.setMinimumHeight(var_form.minimumSizeHint().height())
 
-        def fit_current(i: int) -> None:  # la pila mide lo de la página visible (no lo de la más grande)
-            for k in range(self.stack.count()):
-                pol = QSizePolicy.Preferred if k == i else QSizePolicy.Ignored
-                self.stack.widget(k).setSizePolicy(pol, pol)
-            self.stack.adjustSize()
-
-        self.stack.currentChanged.connect(fit_current)
-        fit_current(self.stack.currentIndex())
         lay.addWidget(self.stack, 1)  # el formulario de la variable ya se desplaza dentro de su propia área
         self.tree_split.setStretchFactor(0, 2)
         self.tree_split.setStretchFactor(1, 3)
         self._restore_tree_split()
-        self.tree_split.splitterMoved.connect(lambda *_: self._save_tree_split())
+        self.tree_split.splitterMoved.connect(self._save_tree_split)  # método (no lambda): Qt lo desconecta al destruir
         return w
 
     TREE_SPLIT_KEY = "setup_tree_split"
@@ -382,7 +374,7 @@ class SetupDialog(QDialog):
         frac = min(0.85, max(0.15, frac))
         self.tree_split.setSizes([int(1000 * frac), int(1000 * (1 - frac))])
 
-    def _save_tree_split(self) -> None:
+    def _save_tree_split(self, *_args) -> None:
         a, b = self.tree_split.sizes()
         if a + b <= 0:
             return
