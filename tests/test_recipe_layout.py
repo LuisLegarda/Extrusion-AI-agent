@@ -59,3 +59,26 @@ def test_setup_save_asks_and_applies_to_all(ctx):
     ctx.engine.set_recipe(ctx.other)
     assert ctx.engine.config.variables[0].region.x == x
     win.close()
+
+
+def test_tree_keeps_its_height_when_selecting_a_variable(ctx):
+    """Pestañas y variables: el árbol no se encoge al seleccionar una variable (su formulario es más alto)."""
+    from PySide6.QtWidgets import QApplication
+    app = QApplication.instance() or QApplication([])
+    from extrusion_monitor.ui.setup_dialog import SetupDialog
+    for height in (900, 600):
+        d = SetupDialog(ctx)
+        d.resize(1400, height)
+        d.show()
+        app.processEvents()
+        top = d.tree.topLevelItem(1)
+        d.tree.setCurrentItem(top)
+        app.processEvents()
+        with_tab = d.tree.height()
+        item = top
+        while item.childCount():
+            item = item.child(0)
+        d.tree.setCurrentItem(item)
+        app.processEvents()
+        assert d.stack.currentIndex() == 2 and d.tree.height() == with_tab
+        d.close()

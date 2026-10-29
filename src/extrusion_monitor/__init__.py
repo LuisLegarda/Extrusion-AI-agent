@@ -1,7 +1,7 @@
 """Monitor de parámetros, recetas y tendencias para líneas de extrusión (Fase 1)."""
 
 # Única fuente del número de versión (pyproject.toml lo lee de aquí). Ver CHANGELOG.md y docs/DESARROLLO.md.
-__version__ = "0.3.2"
+__version__ = "0.3.3"
 
 try:  # lo genera GitHub Actions al construir el .exe: canal (estable / prueba / rama), commit y fecha
     from ._build import BUILD

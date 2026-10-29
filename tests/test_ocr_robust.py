@@ -67,3 +67,41 @@ def test_new_value_needs_confirmation_or_is_held():
     cv2.putText(img, "88", (5, 24), cv2.FONT_HERSHEY_SIMPLEX, 0.8, (0, 0, 0), 2)
     res = rr.read_number(img, var(), 50.0, lambda v: True)
     assert res.value is None  # sin consenso no se acepta un valor nuevo
+
+
+def test_bare_zero_is_read_even_when_the_variable_has_decimals():
+    """Muchos HMI muestran «0» (sin punto) aunque la variable lleve decimales («12.5»): no es un punto perdido."""
+    from extrusion_monitor.ocr import OcrResult
+    from extrusion_monitor.ocr.robust import bare_zero
+    assert bare_zero("0") and bare_zero("-0") and bare_zero(" 00 ") and not bare_zero("0.0")
+    assert not bare_zero("10") and not bare_zero("77")
+
+    class Says:
+        name = "fake"
+
+        def __init__(self, text):
+            self.text = text
+
+        def read_binary(self, img, numeric):
+            return OcrResult(self.text, 0.9)
+
+    img = np.full((30, 80, 3), 255, np.uint8)
+    cv2.putText(img, "0", (5, 24), cv2.FONT_HERSHEY_SIMPLEX, 0.8, (0, 0, 0), 2)
+    for declared, learned in ((1, None), (None, 1)):  # decimales declarados en la variable o aprendidos
+        res = RobustReader(Says("0")).read_number(img, var(decimals=declared), 12.5, lambda v: True,
+                                                  decimals=learned)
+        assert res.value == 0.0
+    # «77» cuando se esperan decimales sigue rechazándose (punto perdido)
+    assert RobustReader(Says("77")).read_number(img, var(), 7.7, lambda v: True, decimals=1).value is None
+
+
+def test_a_zero_does_not_change_the_learned_decimals(tmp_path):
+    from extrusion_monitor.acquisition import Reading
+    from extrusion_monitor.bootstrap import build
+    ctx = build(tmp_path / "home", demo=True)
+    acq = ctx.engine.acquirer
+    v = ctx.engine.config.variables[0]
+    rd = Reading(v.id)
+    acq._accept(v, rd, 12.5, "12.5", 1.0)
+    acq._accept(v, rd, 0.0, "0", 2.0)
+    assert rd.value == 0.0 and rd.decimals == 1  # sigue esperando un decimal para «12.5»
