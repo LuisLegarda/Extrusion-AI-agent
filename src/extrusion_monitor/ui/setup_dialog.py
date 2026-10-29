@@ -11,8 +11,8 @@ from PySide6.QtCore import QSize
 from PySide6.QtGui import QBrush, QColor, QFont, QIcon
 from PySide6.QtWidgets import (
     QAbstractItemView, QApplication, QCheckBox, QComboBox, QDialog, QDialogButtonBox, QDoubleSpinBox,
-    QFileDialog, QFormLayout, QGroupBox, QHBoxLayout, QInputDialog, QLabel, QLineEdit, QMessageBox,
-    QListWidget, QListWidgetItem, QPushButton, QScrollArea, QSpinBox, QSplitter, QStackedWidget, QTabWidget, QTreeWidget,
+    QFileDialog, QFormLayout, QFrame, QGroupBox, QHBoxLayout, QInputDialog, QLabel, QLineEdit, QMessageBox,
+    QListWidget, QListWidgetItem, QPushButton, QScrollArea, QSizePolicy, QSpinBox, QSplitter, QStackedWidget, QTabWidget, QTreeWidget,
     QTreeWidgetItem, QVBoxLayout, QWidget,
 )
 
@@ -258,7 +258,18 @@ class SetupDialog(QDialog):
         self.tree.setSelectionMode(QAbstractItemView.ExtendedSelection)
         self.tree.itemSelectionChanged.connect(self._tree_selected)
         self.tree.setColumnWidth(0, 300)
-        lay.addWidget(self.tree, 3)
+        self.tree.setMinimumHeight(120)
+        # El árbol y lo de abajo (botones y formulario) van en un divisor con proporción fija: al seleccionar una
+        # variable su formulario (más alto que el de una pestaña) ya no aplasta el árbol.
+        self.tree_split = QSplitter(Qt.Vertical)
+        self.tree_split.setChildrenCollapsible(False)
+        self.tree_split.addWidget(self.tree)
+        lower = QWidget()
+        outer_lay = lay
+        lay = QVBoxLayout(lower)
+        lay.setContentsMargins(0, 4, 0, 0)
+        self.tree_split.addWidget(lower)
+        outer_lay.addWidget(self.tree_split, 1)
 
         self.row_pages = QWidget()
         r1 = QHBoxLayout(self.row_pages)
@@ -335,10 +346,53 @@ class SetupDialog(QDialog):
 
         self.stack = QStackedWidget()
         self.stack.addWidget(QLabel("Selecciona una pestaña o una variable del árbol."))
-        self.stack.addWidget(self._build_page_form())
-        self.stack.addWidget(self._build_var_form())
-        lay.addWidget(self.stack, 4)
+        page_scroll = QScrollArea()  # como el de la variable: se desplaza en su área y no empuja al árbol
+        page_scroll.setWidgetResizable(True)
+        page_scroll.setFrameShape(QFrame.NoFrame)
+        page_scroll.setWidget(self._build_page_form())
+        self.stack.addWidget(page_scroll)
+        var_form = self._build_var_form()
+        self.stack.addWidget(var_form)
+        # misma altura mínima en los dos formularios: el divisor no se mueve al cambiar la selección
+        page_scroll.setMinimumHeight(var_form.minimumSizeHint().height())
+
+        def fit_current(i: int) -> None:  # la pila mide lo de la página visible (no lo de la más grande)
+            for k in range(self.stack.count()):
+                pol = QSizePolicy.Preferred if k == i else QSizePolicy.Ignored
+                self.stack.widget(k).setSizePolicy(pol, pol)
+            self.stack.adjustSize()
+
+        self.stack.currentChanged.connect(fit_current)
+        fit_current(self.stack.currentIndex())
+        lay.addWidget(self.stack, 1)  # el formulario de la variable ya se desplaza dentro de su propia área
+        self.tree_split.setStretchFactor(0, 2)
+        self.tree_split.setStretchFactor(1, 3)
+        self._restore_tree_split()
+        self.tree_split.splitterMoved.connect(lambda *_: self._save_tree_split())
         return w
+
+    TREE_SPLIT_KEY = "setup_tree_split"
+
+    def _restore_tree_split(self) -> None:
+        """Proporción árbol / formulario: la última que eligió el usuario (o 40 % / 60 %)."""
+        try:
+            frac = float(self.ctx.workspace.load_state().get("ui", {}).get(self.TREE_SPLIT_KEY, 0.4))
+        except (TypeError, ValueError):
+            frac = 0.4
+        frac = min(0.85, max(0.15, frac))
+        self.tree_split.setSizes([int(1000 * frac), int(1000 * (1 - frac))])
+
+    def _save_tree_split(self) -> None:
+        a, b = self.tree_split.sizes()
+        if a + b <= 0:
+            return
+        ws = self.ctx.workspace
+        state = ws.load_state()
+        state.setdefault("ui", {})[self.TREE_SPLIT_KEY] = round(a / (a + b), 3)
+        try:
+            ws.save_state(state)
+        except OSError:
+            pass
 
     def _build_page_form(self) -> QWidget:
         box = QGroupBox("Pestaña seleccionada")

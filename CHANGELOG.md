@@ -10,6 +10,13 @@ Numeración `MAYOR.MENOR.PARCHE`:
 
 ## [Sin publicar]
 
+### Ajustes probando en el HMI (rama `fix/arbol-variables-y-cero`)
+- «Pestañas y variables»: el árbol ya no se encoge al seleccionar una variable. El árbol y el formulario van en
+  un divisor con proporción fija (se puede arrastrar y se recuerda) y cada formulario se desplaza en su área.
+- Una variable en cero ya se lee cuando el HMI muestra «0» sin punto aunque la variable lleve decimales
+  (p. ej. «12.5»): antes se descartaba como si el OCR hubiera perdido el punto; con «0.0» sí se leía.
+  Un «0» tampoco cambia los decimales aprendidos de la variable.
+
 ## [0.3.2] - 2026-10-28
 
 Corrección de la 0.3.1; no cambia la configuración.

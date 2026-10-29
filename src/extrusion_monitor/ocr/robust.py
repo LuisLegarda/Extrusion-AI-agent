@@ -161,8 +161,9 @@ class RobustReader:
             value = parse_number(res.text, var)
             if value is None or not plausible(value):
                 continue
-            if decimals is not None and not var.fix_missing_decimal and decimals_of(res.text) != decimals:
-                continue  # p. ej. «77» cuando el HMI muestra «7.7»: se perdió el punto
+            if (decimals is not None and not var.fix_missing_decimal and decimals_of(res.text) != decimals
+                    and not bare_zero(res.text)):
+                continue  # p. ej. «77» cuando el HMI muestra «7.7»: se perdió el punto (un «0» solo no pierde nada)
             family = variant[:2]  # con/sin suavizado cuentan como una sola opinión
             if family in families.setdefault(value, set()):
                 continue
@@ -232,6 +233,11 @@ def _close(value: float, previous: float, var: Variable) -> bool:
     if var.max_step is not None:
         return abs(value - previous) <= var.max_step
     return abs(value - previous) <= max(abs(previous) * 0.25, 1.0)
+
+
+def bare_zero(text: str) -> bool:
+    """«0», «-0» o «00» sin punto: muchos HMI muestran el cero así aunque la variable lleve decimales."""
+    return re.fullmatch(r"[-+]?0+", re.sub(r"[^0-9.,+-]", "", text.replace(" ", ""))) is not None
 
 
 def decimals_of(text: str) -> int:

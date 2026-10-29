@@ -12,7 +12,7 @@ import cv2
 from .capture import crop, similarity
 from .config import AppConfig, Variable
 from .ocr import OcrEngine, parse_number
-from .ocr.robust import RobustReader
+from .ocr.robust import RobustReader, bare_zero
 from .pages import PageDetector
 
 
@@ -177,8 +177,9 @@ class Acquirer:
                 return
         rd._pending = None
         rd.value, rd.ts, rd.ok, rd.reason, rd.fail_count = value, now, True, "", 0
-        m = re.search(r"\d[.,](\d+)", res.text)
-        rd.decimals = len(m.group(1)) if m else 0
+        if not bare_zero(res.text):
+            m = re.search(r"\d[.,](\d+)", res.text)
+            rd.decimals = len(m.group(1)) if m else 0
 
     def _read_robust(self, var: Variable, rd: Reading, img: np.ndarray, now: float) -> None:
         try:
@@ -217,8 +218,9 @@ class Acquirer:
                 return
         rd._pending = None
         rd.value, rd.ts, rd.ok, rd.reason, rd.fail_count = value, now, True, "", 0
-        m = re.search(r"\d[.,](\d+)", text)
-        rd.decimals = len(m.group(1)) if m else 0
+        if not bare_zero(text):  # un «0» sin punto no enseña cuántos decimales usa la variable
+            m = re.search(r"\d[.,](\d+)", text)
+            rd.decimals = len(m.group(1)) if m else 0
 
     def _stable(self, var_id: str) -> bool:
         h = self.robust.history.get(var_id)
