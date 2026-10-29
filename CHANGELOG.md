@@ -10,6 +10,10 @@ Numeración `MAYOR.MENOR.PARCHE`:
 
 ## [Sin publicar]
 
+## [0.3.3] - 2026-10-29
+
+Corrección de la 0.3.2; no cambia la configuración.
+
 ### Ajustes probando en el HMI (rama `fix/arbol-variables-y-cero`)
 - «Pestañas y variables»: el árbol ya no se encoge al seleccionar una variable. El árbol y el formulario van en
   un divisor con proporción fija (se puede arrastrar y se recuerda) y cada formulario se desplaza en su área.
