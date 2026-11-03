@@ -10,7 +10,7 @@ from PySide6.QtWidgets import QHeaderView, QTreeWidget, QTreeWidgetItem
 from ..analysis.rules import Level, VarStatus, fmt
 from ..config import AppConfig, Variable
 from ..engine import Snapshot
-from ..i18n import tr
+from ..i18n import tr, translate_text
 from . import theme
 from .common import level_color, level_text, level_text_color
 
@@ -167,7 +167,7 @@ class VariableTree(QTreeWidget):
         fresh = st.fresh or (sp is not None and sp.fresh)
         state = level_text(level) if level is not None else (
             tr("no visible") if not rd.visible else (tr("sin dato") if not fresh else level_text(None)))
-        reasons = [f"{tr('consigna') if x is sp else tr('medición')}: {x.reading.reason}"
+        reasons = [f"{tr('consigna') if x is sp else tr('medición')}: {translate_text(x.reading.reason)}"
                    for x in (st, sp) if x is not None and not x.reading.ok and x.reading.reason]
         ref_dec = sp.reading.decimals if sp is not None and st.ref_source == "consigna" else rd.decimals
         ref = f"{fmt(st.reference, var, ref_dec)} ({tr(st.ref_source)})" if st.reference is not None else ""

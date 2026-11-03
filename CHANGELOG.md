@@ -10,6 +10,28 @@ Numeración `MAYOR.MENOR.PARCHE`:
 
 ## [Sin publicar]
 
+### Ajustes probando en el HMI (rama `fix/hmi-captura-guardar-traducciones`)
+- **Ventanas del programa sobre el HMI.** Todas las ventanas del monitor (también los diálogos) se excluyen de la
+  captura. En Windows que no lo permiten (anteriores a Windows 10 2004: Windows 7, Windows 10 1809 / LTSC 2019):
+  - las capturas puntuales (al abrir la configuración, al grabar recorridos) vuelven transparentes las ventanas
+    un instante, así la captura de referencia ya no sale tapada;
+  - durante el monitoreo, las variables que una ventana del programa tapa no se leen (conservan su último valor
+    y dicen «tapada por la ventana del monitor») en lugar de leer lo que hay en la ventana; la barra de estado
+    dice cuántas están tapadas y la primera vez se explica qué hacer.
+- **Configuración: «Guardar» ya no cierra la ventana.** Cada «Guardar» se aplica al momento (motor, tablas,
+  gráficas y recetas) y la ventana muestra «✔ Configuración guardada y aplicada»; «Cerrar» la cierra. La
+  pregunta de aplicar a todas las recetas se hace una vez por ventana. El motor OCR se conserva si no cambió
+  (antes se volvía a crear y olvidaba lo aprendido).
+- **Dashboard sin conexión con la carpeta de datos.** Ya no se traba: la carpeta se prueba aparte con tiempo
+  límite. Si no responde, avisa «No se logró establecer conexión con la base de datos… intente más tarde» y abre
+  de todos modos (para cambiar la configuración); se reintenta solo.
+- **Indicadores por tarjeta del dashboard:** hasta 12 (antes 5); la tarjeta los acomoda en filas.
+- **Traducciones:** el motivo por el que no se leyó una variable (Variables en vivo), «Siempre visible (sin
+  pestaña)» y los textos nuevos. Herramienta `tools/i18n_audit.py` (con `--ui` abre todas las ventanas en
+  inglés) para repetir la revisión.
+- **Arranque:** `app.log` / `fleet.log` registran cuánto tarda cada etapa (respaldo, configuración, motor OCR,
+  historial, perfiles y ventana) para ubicar qué lo hace lento en cada PC.
+
 ## [0.3.3] - 2026-10-29
 
 Corrección de la 0.3.2; no cambia la configuración.

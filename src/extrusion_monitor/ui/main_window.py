@@ -20,7 +20,7 @@ from .. import version_label
 from ..analysis.rules import Level
 from ..bootstrap import AppContext, make_clicker, make_ocr
 from ..capture import ScreenSource
-from ..navigation import exclude_window_from_capture
+from . import capture_guard
 from ..engine import Snapshot
 from ..recipes import Bounds
 from ..i18n import LANGS, lang as i18n_lang, tr, translate_text
@@ -413,8 +413,18 @@ class MainWindow(QMainWindow):
         self.lbl_ocr = QLabel()
         self.lbl_cycle = QLabel()
         self.lbl_export = QLabel()
-        for w in (self.lbl_tour, self.lbl_page, self.lbl_ocr, self.lbl_export, self.lbl_cycle):
+        self.lbl_covered = QLabel()  # variables tapadas por la ventana (Windows sin exclusión de captura)
+        self.lbl_covered.setStyleSheet(f"color:{theme.c('warning_text')}; font-weight:bold;")
+        self.lbl_covered.hide()
+        for w in (self.lbl_covered, self.lbl_tour, self.lbl_page, self.lbl_ocr, self.lbl_export, self.lbl_cycle):
             self.statusBar().addPermanentWidget(w)
+        # Cada segundo: qué zonas del HMI tapan las ventanas del programa (solo si Windows no las excluye).
+        self._occluder_timer = QTimer(self)
+        self._occluder_timer.setInterval(1000)
+        self._occluder_timer.timeout.connect(self._update_occluders)
+        self._occluder_timer.start()
+        self._capture_offset: tuple[int, int] = (0, 0)
+        self._offset_at = 0.0
 
     # --- acciones y menús ---------------------------------------------------------
     def _build_actions(self) -> None:
@@ -1279,20 +1289,30 @@ class MainWindow(QMainWindow):
                     break
         if cameras:
             QTimer.singleShot(0, dlg._open_cameras)
-        accepted = dlg.exec()
-        if accepted:
-            if not self.ctx.demo and dlg.config.general.monitor != self.ctx.config.general.monitor:
-                self.engine.source = ScreenSource(dlg.config.general.monitor)
-                self.engine.clicker = make_clicker(self.engine.source)
-            self.ctx.config = dlg.config
-            self.engine.reconfigure(dlg.config, make_ocr(self.ctx))
-            self._save_profile(ask_all=True)  # la receta activa (y, si se elige, las demás) guarda la configuración
-            self.rebuild_table()
-            self._update_title()
+        dlg.saved.connect(lambda: self._apply_setup(dlg))  # cada «Guardar» se aplica sin cerrar la ventana
+        dlg.exec()
         if was_running:
             self.engine.start()
 
-    def _save_profile(self, ask_all: bool = False, apply_all: Optional[bool] = None) -> None:
+    def _apply_setup(self, dlg) -> None:
+        """Aplica la configuración recién guardada: motor, tablas, gráficas y perfiles de las recetas."""
+        if not self.ctx.demo and dlg.config.general.monitor != self.ctx.config.general.monitor:
+            self.engine.source = ScreenSource(dlg.config.general.monitor)
+            self.engine.clicker = make_clicker(self.engine.source)
+        cfg = dlg.config.model_copy(deep=True)  # el diálogo sigue editando su copia
+        old = self.ctx.config.general
+        same_ocr = (old.ocr_engine, old.tesseract_path) == (cfg.general.ocr_engine, cfg.general.tesseract_path)
+        self.ctx.config = cfg
+        # Mismo motor OCR: se conserva (crearlo de nuevo tarda y olvida las variantes de lectura aprendidas).
+        self.engine.reconfigure(cfg, None if same_ocr else make_ocr(self.ctx))
+        self._config_version = self.engine.config_version
+        # la receta activa (y, si se elige, las demás); la respuesta se recuerda mientras la ventana siga abierta
+        dlg._apply_all = self._save_profile(ask_all=True, apply_all=getattr(dlg, "_apply_all", None), parent=dlg)
+        self.rebuild_table()
+        self._update_title()
+
+    def _save_profile(self, ask_all: bool = False, apply_all: Optional[bool] = None,
+                      parent=None) -> Optional[bool]:
         """Guarda la configuración en la receta activa. Con `ask_all`, si hay otras recetas pregunta si los
         cambios (pantallas, posiciones de las variables, recorridos) se aplican también a ellas."""
         also: list[str] = []
@@ -1304,7 +1324,7 @@ class MainWindow(QMainWindow):
                                      "de las variables, recorridos…). Si solo se guarda en «{r}», al cargarse otra "
                                      "receta (por ejemplo, cuando el HMI la muestra) volverán las posiciones "
                                      "anteriores.\n\n¿Aplicar estos cambios también a las otras {n} recetas?",
-                                     r=self.engine.state.recipe, n=len(others)), parent=self)
+                                     r=self.engine.state.recipe, n=len(others)), parent=parent or self)
                 b_all = box.addButton(tr("Todas las recetas (recomendado)"), QMessageBox.AcceptRole)
                 box.addButton(tr("Solo «{r}»", r=self.engine.state.recipe), QMessageBox.RejectRole)
                 box.setDefaultButton(b_all)
@@ -1314,10 +1334,11 @@ class MainWindow(QMainWindow):
                 also = others
         err = self.engine.save_profile(also)
         if err:
-            QMessageBox.warning(self, tr("Receta no actualizada"),
+            QMessageBox.warning(parent or self, tr("Receta no actualizada"),
                                 err + "\n\n" + tr("La configuración quedó guardada, pero si cambias de receta y vuelves "
                                                    "se cargará la versión anterior. Cierra programas que tengan abierta "
                                                    "la carpeta de datos y vuelve a guardar."))
+        return apply_all
 
     def open_storage(self) -> None:
         """Cuánto se conserva el historial de esta PC y lo publicado para el dashboard (borrar datos: protegido)."""
@@ -1454,7 +1475,37 @@ class MainWindow(QMainWindow):
     def showEvent(self, event) -> None:
         super().showEvent(event)
         # La ventana del monitor no debe aparecer en las capturas del HMI (Windows 10 2004+).
-        exclude_window_from_capture(int(self.winId()))
+        capture_guard.exclude(self)
+        if not getattr(self, "_guard_checked", False) and not self.ctx.demo:
+            self._guard_checked = True
+            QTimer.singleShot(1500, self._capture_guard_notice)
+
+    def _update_occluders(self) -> None:
+        if self.ctx.demo or capture_guard.exclusion_supported() is not False:
+            self.engine.occluders = []
+            return
+        src = self.engine.source
+        if hasattr(src, "offset") and time.monotonic() - self._offset_at > 10:
+            try:
+                self._capture_offset = src.offset()
+            except Exception:
+                pass
+            self._offset_at = time.monotonic()
+        self.engine.occluders = capture_guard.occluders(self._capture_offset)
+
+    def _capture_guard_notice(self) -> None:
+        """Una vez: este Windows no permite que la ventana del monitor quede fuera de la captura."""
+        if capture_guard.exclusion_supported() is not False or self._ui_pref("capture_guard_seen", False):
+            return
+        state = self.ctx.workspace.load_state()
+        state["ui"] = {**state.get("ui", {}), "capture_guard_seen": True}
+        self.ctx.workspace.save_state(state)
+        QMessageBox.information(
+            self, tr("Ventana del monitor sobre el HMI"),
+            tr("Este Windows no permite que las ventanas del monitor queden fuera de la captura (eso requiere "
+               "Windows 10 versión 2004 o posterior).\n\nLas variables que una ventana del monitor tape no se "
+               "leen: conservan su último valor y en la barra de abajo se indica cuántas están tapadas. Para leer "
+               "todo, minimiza el monitor, usa el dock en una orilla libre de la pantalla o pásalo a otro monitor."))
 
     def _fill_tour_menu(self) -> None:
         self._tour_menu.clear()
@@ -1527,6 +1578,11 @@ class MainWindow(QMainWindow):
 
     # --- actualización -----------------------------------------------------------
     def on_snapshot(self, snap: Snapshot) -> None:
+        from ..acquisition import COVERED
+        covered = sum(1 for st in snap.statuses.values() if st.reading.reason == COVERED)
+        self.lbl_covered.setVisible(bool(covered))
+        if covered:
+            self.lbl_covered.setText(tr("⚠ {n} variables tapadas por la ventana del monitor", n=covered))
         if self.engine.config_version != self._config_version:
             # Se cargó el perfil de otra receta: la configuración completa cambió.
             self._config_version = self.engine.config_version

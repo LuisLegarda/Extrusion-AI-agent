@@ -16,6 +16,7 @@ from ..capture import crop, load_png
 from ..config import Click, TourDef, TourStep
 from ..navigation import TourAborted, TourRunner, click_rect
 from ..pages import PageDetector
+from .capture_guard import grab_clean
 
 if TYPE_CHECKING:
     from .setup_dialog import SetupDialog
@@ -479,7 +480,7 @@ class TourTab(QWidget):
         settle = self.sp_settle.value()
         if self.dlg.ctx.demo:
             clicker.click(x, y)
-            self.dlg._set_frame(self.dlg.ctx.engine.grab_frame(), fit=False)
+            self.dlg._set_frame(grab_clean(self.dlg.ctx.engine.grab_frame), fit=False)
             self.show_markers()
             return
         tops = [w for w in QApplication.topLevelWidgets() if w.isVisible()]
@@ -495,7 +496,7 @@ class TourTab(QWidget):
 
         def grab():
             try:
-                frame = self.dlg.ctx.engine.grab_frame()
+                frame = grab_clean(self.dlg.ctx.engine.grab_frame)
             finally:
                 for w in tops:
                     w.show()
@@ -535,7 +536,7 @@ class TourTab(QWidget):
             for w in tops:
                 w.show()
         try:
-            self.dlg._set_frame(engine.grab_frame(), fit=False)  # pantalla final
+            self.dlg._set_frame(grab_clean(engine.grab_frame), fit=False)  # pantalla final
         except Exception:
             pass
         color = "#43a047" if res.ok else "#e53935"

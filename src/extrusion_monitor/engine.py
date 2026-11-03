@@ -80,6 +80,9 @@ class MonitorEngine:
         self._data_lock = threading.RLock()  # tendencias/estado, para que la UI no espere al recorrido
         self._pending_events: list[Event] = []
         self.config_version = 0  # cambia al cargar el perfil de una receta (la interfaz se reconstruye)
+        # Zonas de la captura tapadas por las ventanas del programa (las pone la interfaz cuando Windows no
+        # permite excluirlas de la captura): se pasan al lector en cada ciclo.
+        self.occluders: list[tuple[int, int, int, int]] = []
         self._missing_recipe: Optional[str] = None
         self.behaviors = BehaviorMonitor(BehaviorStore(workspace.behaviors_file))
         self._stored: dict[str, float] = {}
@@ -424,6 +427,7 @@ class MonitorEngine:
                             frame = self._check_screen(self.source.grab())
                         except ScreenUnavailable as exc:
                             screen_exc = exc  # las cámaras se siguen leyendo
+                    self.acquirer.occluders = self.occluders
                     pages, readings = self.acquirer.read(frame, now, cams)
                     self._camera_events(cams)
                     if frame is not None and pages and \
