@@ -35,11 +35,21 @@ class AppContext:
 
 def build(home: Optional[Path] = None, demo: bool = False, source: Optional[FrameSource] = None,
           clock=None, sleep=None) -> AppContext:
+    import time as _time
+    t0 = _time.perf_counter()
+
+    def stage(name: str) -> None:  # cuánto tarda cada etapa del arranque (queda en app.log)
+        nonlocal t0
+        now = _time.perf_counter()
+        log.info("Arranque: %s %.2f s", name, now - t0)
+        t0 = now
+
     ws = Workspace(home)
     if not demo:
         from .backup import apply_pending_restore, auto_backup
         apply_pending_restore(ws.home)  # «Restaurar respaldo…» pedido antes de cerrar
         auto_backup(ws.home)  # antes de cargar (y migrar) la configuración
+        stage("respaldo")
     if demo:
         demo_source = setup_demo(ws)
         source = source or demo_source
@@ -64,16 +74,20 @@ def build(home: Optional[Path] = None, demo: bool = False, source: Optional[Fram
         log.warning("config.json dañado: se recuperó de %s", used)
         recovered = used.name
         config = ws.load_config()
+    stage("configuración")
     recipes = RecipeStore(ws.recipes_dir)
     template = TemplateOcr(ws.glyphs_file)
     ocr = template if config.general.ocr_engine == "template" else create_engine(config.general, ws.glyphs_file)
+    stage(f"motor OCR ({getattr(ocr, 'name', '?')})")
     source = source or ScreenSource(config.general.monitor)
     extra = {k: v for k, v in (("clock", clock), ("sleep", sleep)) if v is not None}
     from .exporter import load_station
     history = Historian(ws.history_db, retention_days=load_station(ws).history_days)
     engine = MonitorEngine(ws, config, recipes, source, ocr, history,
                            clicker=make_clicker(source), **extra)
+    stage("historial y motor")
     ensure_profiles(ws, recipes)
+    stage("perfiles de recetas")
     state = ws.load_state()
     engine.state.auto_recipe = bool(state.get("auto_recipe", True))
     if state.get("recipe") in recipes.names():

@@ -1958,6 +1958,30 @@ EN: dict[str, str] = {
         "only to “{r}”, the previous positions come back when another recipe is loaded (for example, when the HMI "
         "shows it).\n\nApply these changes to the other {n} recipes too?",
     "Todas las recetas (recomendado)": "All recipes (recommended)", "Solo «{r}»": "Only “{r}”",
+    "Sin conexión": "No connection",
+    "No se logró establecer conexión con la base de datos ({d}). Intente más tarde.\n\nEl dashboard queda abierto "
+    "por si necesita cambiar la configuración; se reintenta solo cada pocos segundos.":
+        "Could not connect to the database ({d}). Please try again later.\n\nThe dashboard stays open in case you "
+        "need to change the settings; it retries on its own every few seconds.",
+    "No se logró establecer conexión con la carpeta de datos. Intente más tarde.":
+        "Could not connect to the data folder. Please try again later.",
+    "No se logró establecer conexión con la carpeta de datos ({d}). Intente más tarde; se reintenta solo cada "
+    "pocos segundos.":
+        "Could not connect to the data folder ({d}). Please try again later; it retries on its own every few "
+        "seconds.",
+    "Ventana del monitor sobre el HMI": "Monitor window over the HMI",
+    "Este Windows no permite que las ventanas del monitor queden fuera de la captura (eso requiere Windows 10 "
+    "versión 2004 o posterior).\n\nLas variables que una ventana del monitor tape no se leen: conservan su último "
+    "valor y en la barra de abajo se indica cuántas están tapadas. Para leer todo, minimiza el monitor, usa el dock "
+    "en una orilla libre de la pantalla o pásalo a otro monitor.":
+        "This version of Windows cannot keep the monitor windows out of the screen capture (that requires Windows 10 "
+        "version 2004 or later).\n\nVariables covered by a monitor window are not read: they keep their last value "
+        "and the bar at the bottom shows how many are covered. To read everything, minimize the monitor, use the "
+        "dock on a free edge of the screen or move it to another display.",
+    "⚠ {n} variables tapadas por la ventana del monitor": "⚠ {n} variables covered by the monitor window",
+    "✔ Configuración guardada y aplicada ({t})": "✔ Configuration saved and applied ({t})",
+    "tapada por la ventana del monitor": "covered by the monitor window",
+    "texto ilegible": "unreadable text", "confianza OCR baja": "low OCR confidence",
 }
 
 # Textos con valores: la clave es la plantilla en español («{}» = valor) y el resultado su traducción.
@@ -2123,6 +2147,9 @@ EN_PATTERNS: dict[str, str] = {
     "Control «{}»: graba los botones + y −": "Control “{}”: record the + and − buttons",
     "Control «{}»: el recorrido de la ruta no existe": "Control “{}”: the route tour does not exist",
     # --- reporte PDF, analizador de planta, notificaciones (revisión de traducciones) ---
+    "sin lectura válida ({} intentos)": "no valid reading ({} attempts)",
+    "variantes en desacuerdo ({} intentos)": "variants disagree ({} attempts)",
+    "error OCR: {}": "OCR error: {}",
     "Configuración guardada en «{}» y en {} recetas más": "Configuration saved to “{}” and {} more recipes",
     "Cpk mín. {}": "min Cpk {}",
     "en spec y Cpk mín. {}": "in spec and min Cpk {}",

@@ -21,7 +21,7 @@ from PySide6.QtWidgets import (
 )
 
 from .. import version_label
-from ..fleet import FleetReader, FleetSettings, load_fleet_settings, save_fleet_settings
+from ..fleet import FleetReader, FleetSettings, PathProbe, load_fleet_settings, save_fleet_settings
 from ..i18n import LANGS, lang as i18n_lang, tr, translate_text
 from . import icons, theme
 from .home_status import StatusTile
@@ -247,6 +247,7 @@ class FleetWindow(QMainWindow):
         self.setWindowTitle(tr("Dashboard global de líneas"))
         self.resize(1500, 900)
         self.reader = FleetReader(self.settings.dir)
+        self.probe = PathProbe(self.settings.dir or ".")  # carpeta de red caída: no se traba la ventana
         self.cards: dict[str, LineCard] = {}
         self.selected: Optional[str] = None
         self.plant_events: list[dict] = []
@@ -376,7 +377,7 @@ class FleetWindow(QMainWindow):
         self.timer.timeout.connect(self.refresh)
         self.timer.start(int(self.settings.poll_s * 1000))
         self.trend_timer = QTimer(self)
-        self.trend_timer.timeout.connect(self.detail.refresh_trend)
+        self.trend_timer.timeout.connect(lambda: self.data_available() and self.detail.refresh_trend())
         self.trend_timer.start(60000)  # la tendencia llega por minuto
         self.tv_timer = QTimer(self)
         self.tv_timer.timeout.connect(self._next_page)
@@ -486,7 +487,10 @@ class FleetWindow(QMainWindow):
                 return
             self.pages[key] = w
             self.stack.addWidget(w)
-        if key == "analysis":
+        if not self.data_available():  # sin conexión no se lee nada de la carpeta (se trabaría la ventana)
+            self.statusBar().showMessage(tr("No se logró establecer conexión con la carpeta de datos. Intente más "
+                                            "tarde."), 8000)
+        elif key == "analysis":
             self.stats_ctx.refresh()  # variables y líneas que haya en este momento
         elif key in ("analyzer", "problems", "map", "maintenance"):
             self.pages[key].refresh()  # con los datos más recientes al abrirla
@@ -656,8 +660,18 @@ class FleetWindow(QMainWindow):
             self._rebuild_cards()
             self.refresh()
 
+    def data_available(self) -> bool:
+        """La carpeta de datos responde (sin bloquear: la prueba corre aparte y tiene tiempo límite)."""
+        if not self.settings.dir:
+            return False
+        ok = self.probe.ok()
+        if ok is None:  # primera vez: se espera un momento la respuesta
+            ok = self.probe.check(wait=self.probe.timeout)
+        return bool(ok)
+
     def set_folder(self, d: str) -> None:
         self.settings.dir = d
+        self.probe = PathProbe(d or ".")
         self.reader = FleetReader(d)
         self.detail.reader = self.reader
         self.plant_events.clear()
@@ -682,6 +696,11 @@ class FleetWindow(QMainWindow):
         s = self.settings
         if not s.dir:
             self.empty.setText(tr("Elige la carpeta donde escriben las líneas (⚙ Configuración)."))
+            self.empty.setVisible(True)
+            return
+        if not self.data_available():
+            self.empty.setText(tr("No se logró establecer conexión con la carpeta de datos ({d}). Intente más tarde; "
+                                  "se reintenta solo cada pocos segundos.", d=s.dir))
             self.empty.setVisible(True)
             return
         if rescan:
@@ -991,6 +1010,8 @@ class FleetWindow(QMainWindow):
         now = now or time.time()
         if not force and not self.weekly_due(now):
             return None
+        if not self.data_available():  # sin conexión: se intenta en el siguiente minuto
+            return None
         home = self.settings_file.parent
         an = FleetAnalyzer(lambda: self.reader, home)
         an.cmb_period.setCurrentIndex(max(0, an.cmb_period.findData(7 * 86400)))
@@ -1113,6 +1134,13 @@ def run_fleet(folder: Optional[str], home: Optional[Path] = None) -> int:
         show_startup_error(exc, log_path)
         return 1
     win.show()
+    QApplication.processEvents()  # que la ventana se vea antes de probar la conexión
+    if win.settings.dir and not win.data_available():
+        # Se avisa y la ventana queda abierta (p. ej. para cambiar la carpeta en la configuración).
+        QMessageBox.warning(win, tr("Sin conexión"),
+                            tr("No se logró establecer conexión con la base de datos ({d}). Intente más tarde.\n\n"
+                               "El dashboard queda abierto por si necesita cambiar la configuración; se reintenta "
+                               "solo cada pocos segundos.", d=win.settings.dir))
     if not win.settings.dir:
         QTimer.singleShot(300, win.open_setup)  # primera vez: pedir la carpeta de datos
     return app.exec()

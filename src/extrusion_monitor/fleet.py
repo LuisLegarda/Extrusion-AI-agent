@@ -14,6 +14,7 @@ from __future__ import annotations
 import json
 import os
 import re
+import threading
 import time
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -54,7 +55,7 @@ class StationSettings(BaseModel):
 
 
 # --- configuración del dashboard global (fleet.json en la PC de supervisión) ------------------------
-MAX_LINE_TILES = 5
+MAX_LINE_TILES = 12  # la tarjeta acomoda los indicadores en filas; cada tendencia lee más datos por ciclo
 FleetTileKind = Literal["kpi", "var", "production", "alarms"]
 FleetChart = Literal["value", "gauge", "bar", "trend"]
 
@@ -216,6 +217,63 @@ class LineState:
 
 
 MAX_EVENTS = 300
+
+
+class PathProbe:
+    """¿Responde la carpeta de datos? Sin bloquear: una carpeta de red caída puede tardar 20 s o más en cada
+    llamada de Windows. La prueba corre en un hilo; si no responde en `timeout`, se da por no disponible y
+    se vuelve a intentar cada `every` segundos (nunca hay dos pruebas a la vez)."""
+
+    def __init__(self, path: Path | str, timeout: float = 4.0, every: float = 10.0, check=os.path.isdir):
+        self.path = str(path)
+        self.timeout, self.every = timeout, every
+        self._check = check
+        self._lock = threading.Lock()
+        self._result: Optional[bool] = None
+        self._started = 0.0  # cuándo empezó la prueba en curso (0 = ninguna)
+        self._last = -1e18  # cuándo terminó la última
+
+    def _run(self) -> None:
+        try:
+            ok = bool(self._check(self.path))
+        except Exception:  # cualquier error de red cuenta como «no disponible»
+            ok = False
+        with self._lock:
+            self._result, self._started, self._last = ok, 0.0, time.monotonic()
+
+    def _start(self) -> None:
+        with self._lock:
+            if self._started:
+                return
+            self._started = time.monotonic()
+        threading.Thread(target=self._run, name="prueba-carpeta", daemon=True).start()
+
+    def ok(self) -> Optional[bool]:
+        """Último resultado conocido (lanza una prueba nueva si toca). False si la prueba en curso no responde."""
+        now = time.monotonic()
+        with self._lock:
+            started, result, last = self._started, self._result, self._last
+        if started and now - started > self.timeout:
+            return False
+        if not started and now - last > self.every:
+            self._start()
+        return result
+
+    def check(self, wait: Optional[float] = None) -> bool:
+        """Prueba ahora y espera la respuesta como máximo `wait` (por omisión `timeout`) segundos."""
+        with self._lock:
+            pending = bool(self._started)
+        if not pending:
+            with self._lock:
+                self._last = -1e18
+            self._start()
+        end = time.monotonic() + (self.timeout if wait is None else wait)
+        while time.monotonic() < end:
+            with self._lock:
+                if not self._started:
+                    return bool(self._result)
+            time.sleep(0.02)
+        return False
 
 
 class FleetReader:

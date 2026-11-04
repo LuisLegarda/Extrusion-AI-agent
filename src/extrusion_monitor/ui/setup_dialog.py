@@ -1,12 +1,14 @@
 """Asistente de configuración: árbol de pestañas del HMI, variables, regiones y OCR."""
 from __future__ import annotations
 
+import time
+
 import re
 from pathlib import Path
 from typing import Optional
 
 import numpy as np
-from PySide6.QtCore import Qt, QTimer
+from PySide6.QtCore import Qt, QTimer, Signal
 from PySide6.QtCore import QSize
 from PySide6.QtGui import QBrush, QColor, QFont, QIcon
 from PySide6.QtWidgets import (
@@ -113,6 +115,8 @@ class SeriesDialog(QDialog):
 
 
 class SetupDialog(QDialog):
+    saved = Signal()  # cada «Guardar» (la ventana sigue abierta): la ventana principal aplica el cambio
+
     def __init__(self, ctx: AppContext, parent=None):
         super().__init__(parent)
         self.setWindowTitle("Configuración de variables y lectura del HMI")
@@ -146,8 +150,9 @@ class SetupDialog(QDialog):
         self._refresh_sources()
         self._refresh_tree()
         try:
-            if self.config.needs_screen:
-                self._set_frame(ctx.engine.grab_frame())
+            if self.config.needs_screen:  # sin las ventanas del programa encima (Windows sin exclusión)
+                from .capture_guard import grab_clean
+                self._set_frame(grab_clean(ctx.engine.grab_frame))
         except Exception:
             pass
         if self.config.cameras and not self.config.needs_screen:
@@ -212,12 +217,18 @@ class SetupDialog(QDialog):
         split.setSizes([950, 650])
         root.addWidget(split)
 
-        buttons = QDialogButtonBox(QDialogButtonBox.Save | QDialogButtonBox.Cancel)
+        buttons = QDialogButtonBox(QDialogButtonBox.Save | QDialogButtonBox.Close)
         buttons.button(QDialogButtonBox.Save).setText("Guardar")
-        buttons.button(QDialogButtonBox.Cancel).setText("Cancelar")
+        buttons.button(QDialogButtonBox.Close).setText("Cerrar")
         buttons.accepted.connect(self._save)
         buttons.rejected.connect(self.reject)
-        root.addWidget(buttons)
+        self.lbl_saved = QLabel()  # «✔ Guardado …»: guardar ya no cierra la ventana
+        self.lbl_saved.setStyleSheet("color:#1b8a3a; font-weight:bold;")
+        bottom = QHBoxLayout()
+        bottom.addWidget(self.lbl_saved, 1)
+        bottom.addWidget(buttons)
+        root.addLayout(bottom)
+        self.saved_count = 0
 
     def _tab_changed(self, index: int) -> None:
         if self.tabs.widget(index) is self.tour_tab:
@@ -884,7 +895,7 @@ class SetupDialog(QDialog):
         bold.setBold(True)
         nodes: dict[Optional[str], QTreeWidgetItem] = {}
         phys = self.section == "phys"
-        none = QTreeWidgetItem(["Siempre visible (sin pestaña)", "", ""])
+        none = QTreeWidgetItem([tr("Siempre visible (sin pestaña)"), "", ""])
         none.setData(0, ROLE, ("page", NO_PAGE))
         none.setFont(0, bold)
         if not phys:
@@ -1999,4 +2010,8 @@ class SetupDialog(QDialog):
             h, w = screen.shape[:2]
             self.config.general.screen_size = [int(w), int(h)]  # resolución con la que se marcaron las regiones
         ws.save_config(self.config)
-        self.accept()
+        # Guardar no cierra la ventana: se aplica en el monitor (señal `saved`) y se sigue configurando.
+        self._baseline = self._fingerprint()
+        self.saved_count += 1
+        self.saved.emit()
+        self.lbl_saved.setText(tr("✔ Configuración guardada y aplicada ({t})", t=time.strftime("%H:%M:%S")))

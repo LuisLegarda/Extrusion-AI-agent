@@ -174,7 +174,7 @@ def test_fleet_settings_template_overrides_and_areas(tmp_path):
     assert s2.area_of(LineState("L1", None, status={"area": "Nave B"})) == "Nave A"  # la del dashboard manda
     assert s2.area_of(LineState("L3", None, status={"area": "Nave B"})) == "Nave B"
     with pytest.raises(ValueError):
-        FleetSettings(tiles=[FleetTile(id=str(i)) for i in range(6)])  # máximo 5 por línea
+        FleetSettings(tiles=[FleetTile(id=str(i)) for i in range(13)])  # máximo 12 por línea
 
 
 def test_trend_series_incremental(tmp_path):
@@ -253,9 +253,9 @@ def test_fleet_setup_dialog(tmp_path, monkeypatch):
     monkeypatch.setattr(QMessageBox, "information", lambda *a, **k: None)
     dlg = FleetSetupDialog(FleetSettings(dir=str(tmp_path)), r.lines)
     ed = dlg.template
-    for _ in range(4):
+    for _ in range(11):
         ed._add()
-    assert len(ed.tiles) == 5  # 3 por defecto + 2: el máximo es 5
+    assert len(ed.tiles) == 12  # 3 por defecto + 9: el máximo es 12
     ed.lst.setCurrentRow(4)
     ed.cmb_kind.setCurrentIndex(ed.cmb_kind.findData("var"))
     ed.cmb_var.setCurrentIndex(ed.cmb_var.findData("diam"))
@@ -266,7 +266,7 @@ def test_fleet_setup_dialog(tmp_path, monkeypatch):
     dlg.chk_own.setChecked(True)
     dlg._own_editors["L1"].tiles = dlg._own_editors["L1"].tiles[:1]
     s = dlg.result_settings()
-    assert len(s.tiles) == 5 and len(s.overrides["L1"]) == 1 and s.areas["L1"] == "Nave 9"
+    assert len(s.tiles) == 12 and len(s.overrides["L1"]) == 1 and s.areas["L1"] == "Nave 9"
 
 
 def test_cards_fill_the_width_and_allow_many_columns(tmp_path):
@@ -310,4 +310,30 @@ def test_cards_fill_the_width_and_allow_many_columns(tmp_path):
     old_width = card.width()
     assert w.cards["L1"].columns == 2 and w.cards["L1"].width() < old_width
     assert w._columns() >= 2 and wide_scale > 0
+    w.close()
+
+
+def test_line_card_takes_up_to_twelve_indicators(tmp_path):
+    """Antes el límite era 5; la tarjeta acomoda los indicadores en filas."""
+    pytest.importorskip("PySide6")
+    from PySide6.QtWidgets import QApplication
+
+    from extrusion_monitor.fleet import MAX_LINE_TILES, FleetSettings, FleetTile, save_fleet_settings
+    from extrusion_monitor.ui.fleet_window import FleetWindow
+    assert MAX_LINE_TILES == 12
+    QApplication.instance() or QApplication([])
+    shared = tmp_path / "planta"
+    _status(shared, "L1", name="Línea 1")
+    tiles = [FleetTile(id=f"t{i}", kind="kpi", kpi="oee", chart="value") for i in range(10)]
+    cfg = tmp_path / "fleet.json"
+    save_fleet_settings(cfg, FleetSettings(dir=str(shared), card_columns=4, tiles=tiles))
+    w = FleetWindow(None, cfg)
+    w.resize(1400, 900)
+    w.show()
+    w.refresh()
+    card = w.cards["L1"]
+    assert len(card.tiles) == 10 and card.rows == 3  # 4 + 4 + 2
+    assert all(t.isVisible() for t in card.tiles)
+    with pytest.raises(ValueError):
+        FleetSettings(tiles=[FleetTile(id=f"t{i}") for i in range(13)])
     w.close()

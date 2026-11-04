@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import argparse
+import logging
 import sys
 from pathlib import Path
 
@@ -34,8 +35,10 @@ def main(argv: list[str] | None = None) -> int:
 
     app = QApplication(sys.argv[:1])
     app.setApplicationName("Monitor de extrusión")
+    from .ui import capture_guard
     from .ui.theme import app_icon
     app.setWindowIcon(app_icon("monitor"))
+    capture_guard.install(app)  # ninguna ventana del programa (diálogos incluidos) aparece en la captura
     try:
         ctx = build(home_dir, demo=args.demo)
         apply_ui_prefs(ctx.workspace.load_state().get("ui", {}))  # idioma y tema guardados
@@ -43,7 +46,10 @@ def main(argv: list[str] | None = None) -> int:
         translator.install(app)
         if ctx.exporter is not None:
             ctx.exporter.start()  # no hace nada hasta que se configure la carpeta compartida
+        import time as _time
+        t0 = _time.perf_counter()
         win = MainWindow(ctx)
+        logging.getLogger(__name__).info("Arranque: ventana principal %.2f s", _time.perf_counter() - t0)
     except Exception as exc:  # configuración dañada, carpeta sin permisos…: que se vea por qué no abre
         show_startup_error(exc, log_path)
         return 1
