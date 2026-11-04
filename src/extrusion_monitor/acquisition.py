@@ -40,6 +40,9 @@ MIN_CONFIDENCE = 0.55
 _AMBIGUOUS = re.compile(r"[0-9.,]\?+[0-9]")
 
 
+COVERED = "tapada por la ventana del monitor"
+
+
 class Acquirer:
     def __init__(self, config: AppConfig, ocr: OcrEngine, pages: Optional[PageDetector] = None,
                  selector_images: Optional[dict[str, dict[str, np.ndarray]]] = None):
@@ -52,6 +55,9 @@ class Acquirer:
         # Validación opcional de textos (p. ej. que el nombre leído sea una receta conocida).
         self.text_accept: dict[str, Callable[[str], bool]] = {}
         self._lamp_hist: dict[str, list] = {}
+        # Zonas de la pantalla tapadas por ventanas del propio programa (solo en Windows que no permiten
+        # excluirlas de la captura): (x, y, ancho, alto). Lo que quede debajo no se lee.
+        self.occluders: list[tuple[int, int, int, int]] = []
         self._compile_formulas()
 
     def read(self, frame: Optional[np.ndarray], now: float,
@@ -84,9 +90,15 @@ class Acquirer:
             if not rd.visible:
                 rd.ok, rd.raw, rd.reason = False, "", "página no visible"
                 continue
+            if self._covered(var.region):  # conserva el último valor: no es una falla de lectura
+                rd.ok, rd.raw, rd.reason = False, "", COVERED
+                continue
             self._read_var(var, rd, frame, now)
         self._eval_formulas()
         return visible, self.readings
+
+    def _covered(self, r) -> bool:
+        return any(r.x < x + w and x < r.x + r.w and r.y < y + h and y < r.y + r.h for x, y, w, h in self.occluders)
 
     def _compile_formulas(self) -> None:
         from .analysis.formula import FormulaError, compile_formula, evaluation_order
