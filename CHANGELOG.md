@@ -33,6 +33,7 @@ Correcciones y funciones de la 0.3.3 probando en el HMI; no cambia la configurac
 - **Traducciones:** el motivo por el que no se leyó una variable (Variables en vivo), «Siempre visible (sin
   pestaña)» y los textos nuevos. Herramienta `tools/i18n_audit.py` (con `--ui` abre todas las ventanas en
   inglés) para repetir la revisión.
+- La protección de captura no se activa sin pantalla real (pruebas automáticas en Windows).
 - **Arranque:** `app.log` / `fleet.log` registran cuánto tarda cada etapa (respaldo, configuración, motor OCR,
   historial, perfiles y ventana) para ubicar qué lo hace lento en cada PC.
 

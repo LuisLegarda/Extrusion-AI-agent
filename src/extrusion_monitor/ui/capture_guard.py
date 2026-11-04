@@ -27,10 +27,16 @@ def exclusion_supported() -> Optional[bool]:
     return _supported
 
 
+def _real_screen() -> bool:
+    """Sin pantalla real (pruebas con QT_QPA_PLATFORM=offscreen) no hay ventanas de verdad que excluir."""
+    app = QApplication.instance()
+    return app is not None and app.platformName() not in ("offscreen", "minimal")
+
+
 def exclude(w: QWidget) -> bool:
     """Excluye una ventana de la captura; recuerda si este Windows lo permite."""
     global _supported
-    if sys.platform != "win32":
+    if sys.platform != "win32" or not _real_screen():
         return False
     ok = exclude_window_from_capture(int(w.winId()))
     if _supported is None or ok:
@@ -50,7 +56,7 @@ class _ShowFilter(QObject):
 
 def install(app: QApplication) -> None:
     """Cada ventana que se muestre (principal, dock, diálogos, mensajes) se excluye de la captura."""
-    if sys.platform != "win32" or getattr(app, "_capture_guard", None) is not None:
+    if sys.platform != "win32" or not _real_screen() or getattr(app, "_capture_guard", None) is not None:
         return
     app._capture_guard = _ShowFilter()
     app.installEventFilter(app._capture_guard)
