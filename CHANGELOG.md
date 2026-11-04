@@ -10,6 +10,10 @@ Numeración `MAYOR.MENOR.PARCHE`:
 
 ## [Sin publicar]
 
+## [0.3.4] - 2026-11-04
+
+Correcciones y funciones de la 0.3.3 probando en el HMI; no cambia la configuración.
+
 ### Ajustes probando en el HMI (rama `fix/hmi-captura-guardar-traducciones`)
 - **Ventanas del programa sobre el HMI.** Todas las ventanas del monitor (también los diálogos) se excluyen de la
   captura. En Windows que no lo permiten (anteriores a Windows 10 2004: Windows 7, Windows 10 1809 / LTSC 2019):
